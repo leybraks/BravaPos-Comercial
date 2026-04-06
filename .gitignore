@@ -1,0 +1,32 @@
+# ========================
+# 1. IGNORAR COSAS DE DJANGO (Backend)
+# ========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.sqlite3
+db.sqlite3
+/media/
+/static/
+.env
+venv/
+env/
+ENV/
+
+# ========================
+# 2. IGNORAR COSAS DE REACT (Frontend)
+# ========================
+# OJO: Aquí le decimos que ignore los node_modules que están DENTRO de pos-frontend
+pos-frontend/node_modules/
+pos-frontend/dist/
+pos-frontend/build/
+pos-frontend/.env
+pos-frontend/.env.*
+pos-frontend/npm-debug.log*
+
+# ========================
+# 3. IGNORAR COSAS DE MAC/WINDOWS/VSCODE
+# ========================
+.DS_Store
+.vscode/
+.idea/
