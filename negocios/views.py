@@ -4,9 +4,10 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework import viewsets
 from django.utils import timezone
+from decimal import Decimal
 from django.db.models import Sum
 from rest_framework.permissions import AllowAny
-from rest_framework.decorators import action , permission_classes
+from rest_framework.decorators import action , permission_classes,api_view
 import time 
 from .models import Negocio, Sede, Mesa, Producto, Orden, DetalleOrden, Pago, ModificadorRapido, GrupoVariacion, OpcionVariacion, Rol, Empleado, SesionCaja
 from .serializers import (
@@ -79,14 +80,14 @@ class OrdenViewSet(viewsets.ModelViewSet):
                 producto_id=d['producto'],
                 cantidad=d['cantidad'],
                 precio_unitario=d['precio_unitario'],
-                notas_y_modificadores=d.get('notas_y_modificadores', ''),
+                notas_y_modificadores=d.get('notas_y_modificadores', {}),
                 notas_cocina=d.get('notas_cocina', '')
             )
             detalles_creados.append(detalle)
-            nuevo_total += float(d['precio_unitario']) * int(d['cantidad'])
+            nuevo_total += Decimal(d['precio_unitario']) * Decimal(d['cantidad'])
             
         # 2. Actualizamos la cuenta final de la mesa
-        orden.total = float(orden.total) + nuevo_total
+        orden.total += nuevo_total
         orden.save()
 
         # 3. Armamos el ticket para el KDS (Solo enviamos LO NUEVO, no toda la mesa)
@@ -245,6 +246,65 @@ class SesionCajaViewSet(viewsets.ModelViewSet):
         })
 
 
+# ==========================================
+# VISTAS INDEPENDIENTES (ERP Y DASHBOARD)
+# ==========================================
 
+@api_view(['GET'])
+@permission_classes([AllowAny]) 
+def metricas_dashboard(request):
+    hoy = timezone.now().date()
+    
+    # Obtenemos las órdenes pagadas de hoy, ordenadas de la más nueva a la más vieja
+    ordenes_hoy = Orden.objects.filter(creado_en__date=hoy, estado='pagado').order_by('-creado_en')
+    
+    total_ordenes = ordenes_hoy.count()
+    ventas_totales = float(ordenes_hoy.aggregate(Sum('total'))['total__sum'] or 0.00)
+    ticket_promedio = (ventas_totales / total_ordenes) if total_ordenes > 0 else 0.00
+    
+    # ✨ NUEVO: Sacamos las 5 últimas órdenes para la Actividad Reciente
+    ultimas_ordenes = ordenes_hoy[:5]
+    actividad_reciente = []
+    
+    for o in ultimas_ordenes:
+        # Averiguamos de dónde vino (Mesa o Llevar)
+        origen = f"Mesa {o.mesa.numero_o_nombre}" if o.mesa else (o.cliente_nombre or "Para Llevar")
+        
+        actividad_reciente.append({
+            'id': o.id,
+            'origen': origen,
+            'total': float(o.total),
+            'hora': o.creado_en.strftime("%H:%M") # Formato 14:30
+        })
+    
+    return Response({
+        'ventas': ventas_totales,
+        'ordenes': total_ordenes,
+        'ticketPromedio': ticket_promedio,
+        'actividadReciente': actividad_reciente # Lo mandamos a React
+    })
 
+@api_view(['GET', 'PUT'])
+@permission_classes([AllowAny]) 
+def configuracion_negocio(request):
+    # Por ahora asumimos que es el negocio 1 (el único en el sistema)
+    negocio = Negocio.objects.first()
+    
+    if not negocio:
+        return Response({'error': 'No hay negocio creado'}, status=404)
 
+    if request.method == 'GET':
+        return Response({
+            'nombre': negocio.nombre,
+            'mod_cocina_activo': negocio.mod_cocina_activo,
+            'mod_delivery_activo': negocio.mod_delivery_activo,
+            # Aquí podrías agregar campos extra a tu modelo luego, como 'numero_yape'
+        })
+        
+    elif request.method == 'PUT':
+        negocio.mod_cocina_activo = request.data.get('modCocina', negocio.mod_cocina_activo)
+        negocio.mod_delivery_activo = request.data.get('modDelivery', negocio.mod_delivery_activo)
+        # Igual, aquí actualizarías 'numero_yape' si lo agregas al modelo
+        negocio.save()
+        
+        return Response({'mensaje': 'Configuración actualizada'})

@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-
+import React, { useState, useEffect } from 'react';
+import { obtenerMetricasDashboard } from './api/api'; // Ajusta la ruta si tu api.js está en otra carpeta
+import { getEmpleados, getRoles, getSedes, crearEmpleado } from './api/api';
 export default function ErpDashboard({ onVolverAlPos }) {
   const [vistaActiva, setVistaActiva] = useState('dashboard');
   const [sedeFiltro, setSedeFiltro] = useState('Todas');
@@ -7,28 +8,151 @@ export default function ErpDashboard({ onVolverAlPos }) {
   const [modalEmpleado, setModalEmpleado] = useState(false);
   // Estados simulados para Configuración
   const [config, setConfig] = useState({
-    numeroYape: '999 888 777',
-    modCocina: true,
+    numeroYape: '',
+    modCocina: false,
     modDelivery: false,
     modInventario: false
   });
-  const [empleados, setEmpleados] = useState([
-    { id: 1, nombre: 'Admin Master', rol: 'Administrador', pin: '1234', sede: 'Todas', estado: 'Activo' },
-    { id: 2, nombre: 'Carlos Mesero', rol: 'Mesero', pin: '4321', sede: 'Local Principal', estado: 'Activo' },
-    { id: 3, nombre: 'Ana Cajera', rol: 'Cajero', pin: '0000', sede: 'Sede Surco', estado: 'Activo' },
-    { id: 4, nombre: 'Roberto Chef', rol: 'Cocinero', pin: '8888', sede: 'Local Principal', estado: 'Activo' },
-  ]);
+  const [guardandoConfig, setGuardandoConfig] = useState(false);
+
+  // --- ESTADOS PARA EL MÓDULO DE PERSONAL ---
+  const [empleadosReales, setEmpleadosReales] = useState([]);
+  const [rolesReales, setRolesReales] = useState([]);
+  const [sedesReales, setSedesReales] = useState([]);
+  
+  const [formEmpleado, setFormEmpleado] = useState({
+    nombre: '',
+    pin: '',
+    rol: '', // Guardará el ID del rol
+    sede: '' // Guardará el ID de la sede
+  });
   const sedes = ['Todas', 'Local Principal', 'Sede Surco'];
-  const rolesDisponibles = ['Administrador', 'Cajero', 'Mesero', 'Cocinero'];
   // Ventas simuladas en vivo
-  const metricas = {
-    'Todas': { ventas: 1450.50, ordenes: 42, ticketPromedio: 34.50 },
-    'Local Principal': { ventas: 950.00, ordenes: 25, ticketPromedio: 38.00 },
-    'Sede Surco': { ventas: 500.50, ordenes: 17, ticketPromedio: 29.40 },
-  };
+  const [metricas, setMetricas] = useState({
+    'Todas': { ventas: 0, ordenes: 0, ticketPromedio: 0 },
+    'Local Principal': { ventas: 0, ordenes: 0, ticketPromedio: 0 },
+    'Sede Surco': { ventas: 0, ordenes: 0, ticketPromedio: 0 },
+  });
 
   const currentMetricas = metricas[sedeFiltro];
+  
+  // ==========================================
+  // 📊 EFECTO 1: SOLO PARA EL DASHBOARD
+  // ==========================================
+  useEffect(() => {
+    if (vistaActiva === 'dashboard') {
+      const cargarDatos = async () => {
+        try {
+          const res = await obtenerMetricasDashboard();
+          const datosReales = res.data;
+          
+          setMetricas(prev => ({
+            ...prev,
+            'Todas': {
+              ventas: datosReales.ventas,
+              ordenes: datosReales.ordenes,
+              ticketPromedio: datosReales.ticketPromedio,
+              actividadReciente: datosReales.actividadReciente
+            }
+          }));
+        } catch (error) {
+          console.error("Error al cargar métricas:", error);
+        }
+      };
 
+      cargarDatos();
+      
+      const intervalo = setInterval(() => {
+        cargarDatos();
+      }, 10000);
+
+      return () => clearInterval(intervalo);
+    }
+  }, [vistaActiva]);
+
+
+  // ==========================================
+  // 👥 EFECTO 2: SOLO PARA EL PERSONAL
+  // ==========================================
+  useEffect(() => {
+    if (vistaActiva === 'personal') {
+      const cargarDatosPersonal = async () => {
+        try {
+          const [resEmpleados, resRoles, resSedes] = await Promise.all([
+            getEmpleados(), getRoles(), getSedes()
+          ]);
+          setEmpleadosReales(resEmpleados.data);
+          setRolesReales(resRoles.data);
+          setSedesReales(resSedes.data);
+          
+          if (resRoles.data.length > 0) setFormEmpleado(prev => ({ ...prev, rol: resRoles.data[0].id }));
+          if (resSedes.data.length > 0) setFormEmpleado(prev => ({ ...prev, sede: resSedes.data[0].id }));
+          
+        } catch (error) {
+          console.error("Error cargando personal:", error);
+        }
+      };
+
+      cargarDatosPersonal();
+    }
+  }, [vistaActiva]);
+
+  useEffect(() => {
+    if (vistaActiva === 'config') {
+      const cargarConfig = async () => {
+        try {
+          const res = await getNegocioConfig();
+          setConfig(prev => ({
+            ...prev,
+            modCocina: res.data.mod_cocina_activo,
+            modDelivery: res.data.mod_delivery_activo,
+            // numeroYape: res.data.numero_yape || '' // Descomenta esto si agregas el campo a Django
+          }));
+        } catch (error) {
+          console.error("Error cargando configuración:", error);
+        }
+      };
+      cargarConfig();
+    }
+  }, [vistaActiva]);
+
+  const manejarCrearEmpleado = async () => {
+    if (!formEmpleado.nombre || formEmpleado.pin.length !== 4) {
+      alert("Por favor ingresa un nombre y un PIN de 4 dígitos.");
+      return;
+    }
+    try {
+      // Le mandamos los datos a Django (por ahora negocio va en null o 1 según tu lógica)
+      await crearEmpleado({ ...formEmpleado, activo: true });
+      
+      // Cerramos modal, limpiamos form y recargamos la lista
+      setModalEmpleado(false);
+      setFormEmpleado({ ...formEmpleado, nombre: '', pin: '' });
+      
+      const resEmpleados = await getEmpleados();
+      setEmpleadosReales(resEmpleados.data);
+      alert("¡Empleado creado con éxito! 🎉");
+    } catch (error) {
+      console.error("Error creando empleado:", error);
+      alert("Hubo un error al crear el acceso.");
+    }
+  };
+  const manejarGuardarConfig = async () => {
+    setGuardandoConfig(true);
+    try {
+      await updateNegocioConfig({
+        modCocina: config.modCocina,
+        modDelivery: config.modDelivery,
+        // numeroYape: config.numeroYape // Descomenta si agregas el campo a Django
+      });
+      alert("✅ ¡Configuración guardada con éxito!");
+    } catch (error) {
+      console.error("Error guardando:", error);
+      alert("❌ Hubo un error al guardar los cambios.");
+    } finally {
+      setGuardandoConfig(false);
+    }
+  };
   // Componente de Menú Lateral (Sidebar)
   const Sidebar = () => (
     <div className={`fixed inset-y-0 left-0 w-64 bg-[#111] border-r border-[#222] transform ${menuAbierto ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 transition-transform duration-300 z-50 flex flex-col`}>
@@ -131,24 +255,32 @@ export default function ErpDashboard({ onVolverAlPos }) {
                 </div>
               </div>
 
-              {/* Tarjetas de Métricas */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-[#121212] p-6 rounded-3xl border border-[#222] relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-24 h-24 bg-green-500/10 rounded-bl-full"></div>
-                  <p className="text-neutral-500 font-bold uppercase tracking-widest text-xs mb-2">Ingresos Totales</p>
-                  <h3 className="text-4xl font-black text-white">S/ {currentMetricas.ventas.toFixed(2)}</h3>
-                  <p className="text-green-400 text-sm font-bold mt-2 flex items-center gap-1">↑ 12% vs ayer</p>
+              {/* Tarjetas de Métricas Optimizadas */}
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  
+                  {/* 1. Ingresos Totales: Ocupa 2 columnas en móvil (toda la fila) y 1 en desktop */}
+                  <div className="col-span-2 md:col-span-1 bg-[#121212] p-6 rounded-3xl border border-[#222] relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-green-500/10 rounded-bl-full"></div>
+                    <p className="text-neutral-500 font-bold uppercase tracking-widest text-[10px] mb-2">Ingresos Totales</p>
+                    <h3 className="text-3xl md:text-4xl font-black text-white">S/ {currentMetricas.ventas.toFixed(2)}</h3>
+                    <p className="text-green-400 text-xs font-bold mt-2 flex items-center gap-1">↑ 12% vs ayer</p>
+                  </div>
+
+                  {/* 2. Órdenes Pagadas: Ocupa 1 columna */}
+                  <div className="col-span-1 bg-[#121212] p-5 md:p-6 rounded-3xl border border-[#222]">
+                    <p className="text-neutral-500 font-bold uppercase tracking-widest text-[10px] mb-2">Órdenes</p>
+                    <h3 className="text-2xl md:text-4xl font-black text-white">{currentMetricas.ordenes}</h3>
+                    <p className="text-neutral-400 text-[10px] font-bold mt-2 truncate">En {sedeFiltro}</p>
+                  </div>
+
+                  {/* 3. Ticket Promedio: Ocupa 1 columna */}
+                  <div className="col-span-1 bg-[#121212] p-5 md:p-6 rounded-3xl border border-[#222]">
+                    <p className="text-neutral-500 font-bold uppercase tracking-widest text-[10px] mb-2">Ticket Prom.</p>
+                    <h3 className="text-2xl md:text-4xl font-black text-white">S/ {currentMetricas.ticketPromedio.toFixed(2)}</h3>
+                    <p className="text-neutral-400 text-[10px] font-bold mt-2">Promedio hoy</p>
+                  </div>
+
                 </div>
-                <div className="bg-[#121212] p-6 rounded-3xl border border-[#222]">
-                  <p className="text-neutral-500 font-bold uppercase tracking-widest text-xs mb-2">Órdenes Pagadas</p>
-                  <h3 className="text-4xl font-black text-white">{currentMetricas.ordenes}</h3>
-                  <p className="text-neutral-400 text-sm font-bold mt-2">En {sedeFiltro}</p>
-                </div>
-                <div className="bg-[#121212] p-6 rounded-3xl border border-[#222]">
-                  <p className="text-neutral-500 font-bold uppercase tracking-widest text-xs mb-2">Ticket Promedio</p>
-                  <h3 className="text-4xl font-black text-white">S/ {currentMetricas.ticketPromedio.toFixed(2)}</h3>
-                </div>
-              </div>
 
               {/* Gráfico de Ventas Simuladas (UI) */}
               <div className="bg-[#121212] border border-[#222] rounded-3xl p-6">
@@ -156,22 +288,28 @@ export default function ErpDashboard({ onVolverAlPos }) {
                    <span className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse"></span>
                    Actividad Reciente
                  </h3>
-                 <div className="space-y-4">
-                    {[1, 2, 3].map(i => (
-                      <div key={i} className="flex justify-between items-center bg-[#1a1a1a] p-4 rounded-xl border border-[#2a2a2a]">
-                        <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 bg-[#ff5a1f]/20 text-[#ff5a1f] rounded-full flex items-center justify-center font-bold">✓</div>
-                          <div>
-                            <p className="text-white font-bold">Orden #104{i}</p>
-                            <p className="text-neutral-500 text-xs">Mesa {i + 1} • {sedeFiltro === 'Todas' ? (i%2===0?'Sede Surco':'Local Principal') : sedeFiltro}</p>
+                 {/* ✨ MAGIA AQUÍ: max-h-[260px] define la altura para ~3 items y overflow-y-auto habilita el scroll */}
+                 <div className="space-y-4 max-h-[260px] overflow-y-auto pr-2">
+                    
+                    {!currentMetricas.actividadReciente || currentMetricas.actividadReciente.length === 0 ? (
+                        <p className="text-neutral-500 text-sm text-center py-4">Aún no hay ventas el día de hoy.</p>
+                    ) : (
+                        currentMetricas.actividadReciente.map(orden => (
+                          <div key={orden.id} className="flex justify-between items-center bg-[#1a1a1a] p-4 rounded-xl border border-[#2a2a2a] shrink-0">
+                            <div className="flex items-center gap-4">
+                              <div className="w-10 h-10 bg-[#ff5a1f]/20 text-[#ff5a1f] rounded-full flex items-center justify-center font-bold">✓</div>
+                              <div>
+                                <p className="text-white font-bold">Orden #{orden.id}</p>
+                                <p className="text-neutral-500 text-xs">{orden.origen} • Hoy a las {orden.hora}</p>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                               <p className="text-white font-black">S/ {orden.total.toFixed(2)}</p>
+                               <p className="text-neutral-500 text-[10px] uppercase font-bold">Pagado</p>
+                            </div>
                           </div>
-                        </div>
-                        <div className="text-right">
-                           <p className="text-white font-black">S/ {(15.5 * i).toFixed(2)}</p>
-                           <p className="text-neutral-500 text-[10px] uppercase font-bold">Pagado</p>
-                        </div>
-                      </div>
-                    ))}
+                        ))
+                    )}
                  </div>
               </div>
             </div>
@@ -247,8 +385,12 @@ export default function ErpDashboard({ onVolverAlPos }) {
 
               {/* Botón Guardar */}
               <div className="flex justify-end">
-                 <button className="bg-[#ff5a1f] hover:bg-[#e04a15] text-white px-8 py-4 rounded-xl font-black tracking-widest shadow-[0_4px_15px_rgba(255,90,31,0.3)] transition-all active:scale-95">
-                   GUARDAR CAMBIOS
+                 <button 
+                    onClick={manejarGuardarConfig}
+                    disabled={guardandoConfig}
+                    className="bg-[#ff5a1f] hover:bg-[#e04a15] text-white px-8 py-4 rounded-xl font-black tracking-widest shadow-[0_4px_15px_rgba(255,90,31,0.3)] transition-all active:scale-95 disabled:opacity-50"
+                 >
+                   {guardandoConfig ? 'GUARDANDO...' : 'GUARDAR CAMBIOS'}
                  </button>
               </div>
 
@@ -347,19 +489,25 @@ export default function ErpDashboard({ onVolverAlPos }) {
                 </button>
               </div>
 
-              {/* LISTADO DE EMPLEADOS (Responsive) */}
+              {/* LISTADO DE EMPLEADOS REALES */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {empleados.map(emp => (
-                  <div key={emp.id} className="bg-[#121212] border border-[#222] p-5 rounded-3xl flex items-center justify-between group hover:border-[#ff5a1f]/50 transition-colors">
+                {empleadosReales.length === 0 && <p className="text-neutral-500 py-4">Aún no hay empleados registrados.</p>}
+                
+                {empleadosReales.map(emp => (
+                  <div key={emp.id} className="bg-[#121212] border border-[#222] p-5 rounded-3xl flex items-center justify-between group hover:border-[#ff5a1f]/50 transition-colors animate-slideUp">
                     <div className="flex items-center gap-4">
                       <div className="w-12 h-12 bg-[#222] rounded-full flex items-center justify-center text-xl border border-[#333]">
-                        {emp.rol === 'Administrador' ? '👑' : emp.rol === 'Cajero' ? '💰' : emp.rol === 'Mesero' ? '🏃' : '👨‍🍳'}
+                        {emp.rol_nombre?.includes('Admin') ? '👑' : emp.rol_nombre?.includes('Cajer') ? '💰' : emp.rol_nombre?.includes('Mesero') ? '🏃' : '👨‍🍳'}
                       </div>
                       <div>
                         <h4 className="font-bold text-white text-lg">{emp.nombre}</h4>
                         <div className="flex gap-2 mt-1">
-                          <span className="text-[10px] font-black bg-[#1a1a1a] text-[#ff5a1f] px-2 py-0.5 rounded border border-[#ff5a1f]/20 uppercase">{emp.rol}</span>
-                          <span className="text-[10px] font-black bg-[#1a1a1a] text-neutral-500 px-2 py-0.5 rounded border border-[#333] uppercase">{emp.sede}</span>
+                          <span className="text-[10px] font-black bg-[#1a1a1a] text-[#ff5a1f] px-2 py-0.5 rounded border border-[#ff5a1f]/20 uppercase">
+                            {emp.rol_nombre || 'Sin Rol'}
+                          </span>
+                          <span className={`text-[10px] font-black bg-[#1a1a1a] px-2 py-0.5 rounded border uppercase ${emp.activo ? 'text-green-500 border-green-500/20' : 'text-red-500 border-red-500/20'}`}>
+                            {emp.activo ? 'ACTIVO' : 'INACTIVO'}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -525,7 +673,7 @@ export default function ErpDashboard({ onVolverAlPos }) {
 
         </main>
       </div>
-      {/* MODAL PARA AGREGAR EMPLEADO */}
+      {/* MODAL PARA AGREGAR EMPLEADO REAL */}
       {modalEmpleado && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="bg-[#121212] border border-[#333] rounded-3xl w-full max-w-md overflow-hidden animate-fadeIn">
@@ -536,27 +684,52 @@ export default function ErpDashboard({ onVolverAlPos }) {
             <div className="p-6 space-y-4">
               <div>
                 <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest mb-2 block">Nombre Completo</label>
-                <input type="text" className="w-full bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3 text-white focus:border-[#ff5a1f] outline-none" placeholder="Ej. Juan Pérez" />
+                <input 
+                  type="text" 
+                  value={formEmpleado.nombre}
+                  onChange={(e) => setFormEmpleado({...formEmpleado, nombre: e.target.value})}
+                  className="w-full bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3 text-white focus:border-[#ff5a1f] outline-none" 
+                  placeholder="Ej. Juan Pérez" 
+                />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest mb-2 block">Rol</label>
-                  <select className="w-full bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3 text-white focus:border-[#ff5a1f] outline-none">
-                    {rolesDisponibles.map(r => <option key={r} value={r}>{r}</option>)}
+                  <select 
+                    value={formEmpleado.rol}
+                    onChange={(e) => setFormEmpleado({...formEmpleado, rol: e.target.value})}
+                    className="w-full bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3 text-white focus:border-[#ff5a1f] outline-none"
+                  >
+                    {rolesReales.map(r => <option key={r.id} value={r.id}>{r.nombre}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest mb-2 block">PIN (4 Dígitos)</label>
-                  <input type="password" maxLength="4" className="w-full bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3 text-white text-center font-mono text-xl tracking-[10px] focus:border-[#ff5a1f] outline-none" placeholder="0000" />
+                  <input 
+                    type="password" 
+                    maxLength="4" 
+                    value={formEmpleado.pin}
+                    onChange={(e) => setFormEmpleado({...formEmpleado, pin: e.target.value.replace(/\D/g, '')})} // Solo números
+                    className="w-full bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3 text-white text-center font-mono text-xl tracking-[10px] focus:border-[#ff5a1f] outline-none" 
+                    placeholder="0000" 
+                  />
                 </div>
               </div>
               <div>
                 <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest mb-2 block">Sede Asignada</label>
-                <select className="w-full bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3 text-white focus:border-[#ff5a1f] outline-none">
-                  {sedes.map(s => <option key={s} value={s}>{s}</option>)}
+                <select 
+                  value={formEmpleado.sede}
+                  onChange={(e) => setFormEmpleado({...formEmpleado, sede: e.target.value})}
+                  className="w-full bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3 text-white focus:border-[#ff5a1f] outline-none"
+                >
+                  {sedesReales.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
                 </select>
               </div>
-              <button className="w-full bg-[#ff5a1f] text-white py-4 rounded-xl font-black mt-4 shadow-lg active:scale-95 transition-all">
+              <button 
+                onClick={manejarCrearEmpleado}
+                disabled={!formEmpleado.nombre || formEmpleado.pin.length !== 4}
+                className="w-full bg-[#ff5a1f] text-white py-4 rounded-xl font-black mt-4 shadow-lg active:scale-95 transition-all disabled:opacity-50"
+              >
                 CREAR ACCESO
               </button>
             </div>

@@ -17,4 +17,6 @@ router.register(r'sesiones_caja', views.SesionCajaViewSet)
 urlpatterns = [
     # Todas tus APIs vivirán bajo la ruta /api/
     path('', include(router.urls)),
+    path('negocio/configuracion/', views.configuracion_negocio, name='configuracion_negocio'),
+    path('dashboard/metricas/', views.metricas_dashboard, name='metricas_dashboard'),
 ]

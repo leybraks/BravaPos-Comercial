@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import usePosStore from './store/usePosStore';
 import ModalCobro from './ModalCobro';
 import ModalModificadores from './ModalModificadores';
-import { getProductos, crearOrden, getOrdenes, crearPago, agregarProductosAOrden } from './api/api';
+import { getProductos, crearOrden,actualizarOrden, getOrdenes, crearPago, agregarProductosAOrden } from './api/api';
 
 export default function PosView({ mesaId, onVolver }) {
   const [categoriaActiva, setCategoriaActiva] = useState('Todos');
@@ -347,7 +347,7 @@ export default function PosView({ mesaId, onVolver }) {
                         </span>
                       )}
                       
-                      <p className="font-mono text-[#ff5a1f] text-sm font-bold mt-1.5">{formatearSoles(precioAMostrar)} /u</p>
+                      <p className="font-mono text-[#ff5a1f] text-sm font-bold mt-1.5">{formatearSoles(item.precio_unitario)} /u</p>
                     </div>
                     <div className="text-neutral-500 font-black px-4 py-2 bg-[#1a1a1a] rounded-xl border border-[#222] text-xl">
                       x{item.cantidad}
@@ -406,21 +406,24 @@ export default function PosView({ mesaId, onVolver }) {
         </div>
 
         <div className="p-4 border-t border-[#222] flex flex-col gap-3 bg-[#0d0d0d] sticky bottom-0 left-0 w-full z-10">
-            {carrito.length > 0 && (
-              <div className="bg-[#ff5a1f]/5 border border-[#ff5a1f]/20 rounded-xl p-3 flex items-center gap-3">
-                <span className="text-[#ff5a1f] text-xl">⚠️</span>
-                <p className="text-neutral-500 text-xs leading-relaxed">
-                  Tienes platos nuevos. <strong className="text-neutral-300">Envíalos a cocina</strong> para completar el ticket.
-                </p>
-              </div>
+            {carrito.length > 0 ? (
+                <button 
+                  onClick={manejarEnviarCocina}
+                  disabled={procesando}
+                  className="w-full bg-[#ff5a1f] text-white rounded-xl h-16 font-black text-lg flex justify-center items-center shadow-lg shadow-[#ff5a1f]/20 transition-all active:scale-[0.98]"
+                >
+                  {procesando ? 'PROCESANDO...' : 'ENVIAR A COCINA 🚀'}
+                </button>
+            ) : (
+                ordenActiva && (
+                    <button 
+                      onClick={() => setModalCobroAbierto(true)}
+                      className="w-full bg-green-500 hover:bg-green-600 text-white rounded-xl h-16 font-black text-lg flex justify-center items-center shadow-lg shadow-green-500/20 transition-all active:scale-[0.98]"
+                    >
+                      COBRAR TICKET 💵
+                    </button>
+                )
             )}
-            <button 
-              onClick={manejarEnviarCocina}
-              disabled={procesando || carrito.length === 0}
-              className="w-full bg-[#ff5a1f] text-white rounded-xl h-16 font-black text-lg flex justify-center items-center shadow-lg shadow-[#ff5a1f]/20 disabled:opacity-20 transition-all active:scale-[0.98]"
-            >
-              {procesando ? 'PROCESANDO...' : 'ENVIAR A COCINA 🚀'}
-            </button>
         </div>
       </div>
 
@@ -439,10 +442,44 @@ export default function PosView({ mesaId, onVolver }) {
           <ModalCobro 
             isOpen={modalCobroAbierto} 
             onClose={() => setModalCobroAbierto(false)} 
-            orden={ordenActiva}
-            crearPago={crearPago}
-            cargarData={cargarData}
-            vaciarCarrito={vaciarStore}
+            total={totalMesa} 
+            carrito={ordenActiva ? ordenActiva.detalles : []} 
+            onCobroExitoso={async (datosPago) => {
+              try {
+                // 1. Guardamos el pago en la base de datos
+                let metodoParaDjango = datosPago[0].metodo;
+                if (metodoParaDjango === 'yape') {
+                    metodoParaDjango = 'yape_plin';
+                }
+                await crearPago({
+                   orden: ordenActiva.id,
+                   metodo: metodoParaDjango,
+                   monto: datosPago[0].monto
+                });
+                
+                // 2. ✨ ¡LO QUE FALTABA! Decirle a Django que cierre la mesa ✨
+                await actualizarOrden(ordenActiva.id, { 
+                  estado: 'pagado', 
+                  pago_confirmado: true 
+                });
+
+                // 3. Cerramos el modal de cobro
+                setModalCobroAbierto(false);
+                
+                // 4. Limpiamos la memoria
+                vaciarStore();
+                
+                // 5. Escondemos el panel del carrito
+                setCarritoAbierto(false);
+                
+                // 6. Regresamos a la vista de mesas (¡Ahora sí la verá libre!)
+                onVolver();
+                
+              } catch (error) {
+                console.error("Error al cobrar", error);
+                alert("Hubo un error al procesar el pago");
+              }
+            }}
           />
       )}
       {/* ✨ EL BLOQUEO: Si el polling detecta que la caja se cerró, cubre toda la pantalla */}

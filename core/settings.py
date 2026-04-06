@@ -159,7 +159,14 @@ SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
 }
+# settings.py
+LANGUAGE_CODE = 'es-pe'
 
+# Cámbialo a la zona horaria de tu país
+TIME_ZONE = 'America/Lima' 
+
+USE_I18N = True
+USE_TZ = True
 
 
 

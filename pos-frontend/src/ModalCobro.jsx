@@ -54,7 +54,7 @@ export default function ModalCobro({ isOpen, onClose, total, onCobroExitoso, car
 
   const seleccionarMontoRapido = (monto) => {
     if (monto === 'exacto') {
-      setMontoIngresado(totalCalculado.toFixed(2));
+      setMontoIngresado(parseFloat(totalCalculado || 0).toFixed(2));
     } else {
       setMontoIngresado(monto.toString());
     }
@@ -81,7 +81,7 @@ export default function ModalCobro({ isOpen, onClose, total, onCobroExitoso, car
     if (pagado > totalCalculado && metodo === 'efectivo') vuelto = pagado - totalCalculado;
 
     if (vuelto > 0) {
-      alert(`💰 Vuelto a entregar: S/ ${vuelto.toFixed(2)}`);
+      alert(`💰 Vuelto a entregar: S/ ${parseFloat(vuelto || 0).toFixed(2)}`);
     }
 
     // Pasamos a la pantalla de Éxito (Ticket Digital)
@@ -107,7 +107,7 @@ export default function ModalCobro({ isOpen, onClose, total, onCobroExitoso, car
                 <p className="text-neutral-500 font-bold tracking-widest uppercase text-xs mb-1">Total a Cobrar</p>
                 <h2 className="text-6xl font-black text-white tracking-tighter">
                   <span className="text-2xl text-neutral-400 mr-1 font-mono">S/</span>
-                  {totalCalculado.toFixed(2)}
+                  {parseFloat(totalCalculado || 0).toFixed(2)}
                 </h2>
               </div>
               <button onClick={onClose} className="absolute right-6 top-6 w-10 h-10 bg-[#222] rounded-full flex items-center justify-center text-neutral-400 hover:text-white font-bold z-10 transition-colors">
@@ -135,7 +135,7 @@ export default function ModalCobro({ isOpen, onClose, total, onCobroExitoso, car
                       <div key={item.id} onClick={() => toggleItem(item.id)} className="flex justify-between items-center p-3 rounded-xl border border-[#333] hover:bg-[#222] cursor-pointer transition-colors">
                         <div>
                           <p className="text-neutral-200 font-bold text-sm">{item.nombre}</p>
-                          <p className="text-neutral-500 text-xs">S/ {item.precio.toFixed(2)} c/u</p>
+                          <p className="text-neutral-500 text-xs">S/ {parseFloat(item.precio_unitario || item.precio || 0).toFixed(2)} c/u</p>
                         </div>
                         <div className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-colors ${itemsSeleccionados.includes(item.id) ? 'bg-[#ff5a1f] border-[#ff5a1f]' : 'border-neutral-600'}`}>
                           {itemsSeleccionados.includes(item.id) && <span className="text-white text-xs font-black">✓</span>}

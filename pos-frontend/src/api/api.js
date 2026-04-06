@@ -1,3 +1,4 @@
+// pos-frontend\src\api\api.js
 import axios from 'axios';
 
 const API_URL = 'http://127.0.0.1:8000/api';
@@ -50,6 +51,14 @@ export const getEstadoCaja = () => axios.get(`${API_URL}/sesiones_caja/estado_ac
 export const abrirCajaBD = (payload) => axios.post(`${API_URL}/sesiones_caja/abrir_caja/`, payload);
 export const agregarProductosAOrden = (idOrden, payload) => api.post(`${API_URL}/ordenes/${idOrden}/agregar_productos/`, payload);
 // Agrega esto junto a tus otras funciones:
+// Llamada para traer los números del ERP
+export const getNegocioConfig = () => api.get('negocio/configuracion/');
+export const updateNegocioConfig = (data) => api.put('negocio/configuracion/', data);
+export const getEmpleados = () => api.get('empleados/');
+export const getRoles = () => api.get('roles/');
+export const getSedes = () => api.get('sedes/');
+export const crearEmpleado = (data) => api.post('empleados/', data);
+export const obtenerMetricasDashboard = () => api.get('dashboard/metricas/');
 export const cerrarCaja = (data) => api.post('/sesiones_caja/cerrar_caja/', data);
 export const validarPinEmpleado = (payload) => axios.post(`${API_URL}/empleados/validar_pin/`, payload);
 export default api;

@@ -258,7 +258,7 @@ export default function ModalModificadores({ isOpen, onClose, producto, modifica
           >
             {/* Texto adaptable (si es muy largo se cortará con puntos suspensivos en lugar de desbordarse) */}
             <span className="text-xs sm:text-lg uppercase truncate pr-2 text-left leading-tight">
-              {todosLosObligatoriosListos ? 'Confirmar' : 'Agregar'}11
+              {todosLosObligatoriosListos ? 'Confirmar' : 'Agregar'}
             </span>
             
             {/* Caja de Precio Inamovible */}
