@@ -4,16 +4,18 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework import viewsets
 from django.utils import timezone
+from django.db import transaction
 from decimal import Decimal
 from django.db.models import Sum
+from django.contrib.auth.hashers import check_password
 from rest_framework.permissions import AllowAny
 from rest_framework.decorators import action , permission_classes,api_view
 import time 
-from .models import Negocio, Sede, Mesa, Producto, Orden, DetalleOrden, Pago, ModificadorRapido, GrupoVariacion, OpcionVariacion, Rol, Empleado, SesionCaja
+from .models import Negocio, Sede, Mesa, Producto, Orden, DetalleOrden, Pago, ModificadorRapido,DetalleOrdenOpcion, GrupoVariacion, OpcionVariacion, Rol, Empleado, SesionCaja
 from .serializers import (
     NegocioSerializer, SedeSerializer, MesaSerializer,
     ProductoSerializer, ModificadorRapidoSerializer, GrupoVariacionSerializer, OpcionVariacionSerializer,
-    OrdenSerializer, DetalleOrdenSerializer, PagoSerializer, RolSerializer, EmpleadoSerializer, SesionCajaSerializer
+    OrdenSerializer, DetalleOrdenSerializer,OrdenCocinaSerializer, PagoSerializer, RolSerializer, EmpleadoSerializer, SesionCajaSerializer
 )
 
 class NegocioViewSet(viewsets.ModelViewSet):
@@ -33,76 +35,105 @@ class ProductoViewSet(viewsets.ModelViewSet):
     serializer_class = ProductoSerializer
 
 class OrdenViewSet(viewsets.ModelViewSet):
-    queryset = Orden.objects.all()
+    queryset = Orden.objects.prefetch_related('detalles__producto', 'detalles__opciones_seleccionadas').all()
     serializer_class = OrdenSerializer
 
-    def get_queryset(self):
-        # SOLO DEJAMOS EL PRODUCTO. ¡Adiós 'detalles__variacion'! 👋
-        return Orden.objects.prefetch_related('detalles__producto').all()
+    def perform_create(self, serializer):
+        # ✨ TRANSACCIÓN ATÓMICA: Si algo falla, nada se guarda
+        with transaction.atomic():
+            orden = serializer.save()
+            
+            detalles_data = self.request.data.get('detalles', [])
+            nuevo_total = Decimal('0.00')
 
-    # ==========================================
-    # LA MAGIA: INTERCEPTAR LA CREACIÓN
-    # ==========================================
-    def create(self, request, *args, **kwargs):
-        # 1. Guardamos la orden normal en la Base de Datos
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        self.perform_create(serializer)
-        
-        # 2. Preparamos el megáfono (WebSocket)
+            for d in detalles_data:
+                detalle = DetalleOrden.objects.create(
+                    orden=orden,
+                    producto_id=d['producto'],
+                    cantidad=d['cantidad'],
+                    precio_unitario=d['precio_unitario'],
+                    notas_y_modificadores=d.get('notas_y_modificadores', {}),
+                    notas_cocina=d.get('notas_cocina', '')
+                )
+
+                opciones_ids = d.get('opciones', [])
+                for opc_id in opciones_ids:
+                    try:
+                        opcion = OpcionVariacion.objects.get(id=opc_id)
+                        DetalleOrdenOpcion.objects.create(
+                            detalle_orden=detalle,
+                            opcion_variacion=opcion,
+                            precio_adicional_aplicado=opcion.precio_adicional
+                        )
+                    except OpcionVariacion.DoesNotExist:
+                        pass 
+
+                nuevo_total += Decimal(str(d['precio_unitario'])) * int(d['cantidad'])
+
+            orden.total = nuevo_total
+            orden.save()
+
+        # El envío por WS se hace FUERA del atomic block, cuando los datos ya son reales en la BD
+        orden_data = self.get_serializer(orden).data 
         channel_layer = get_channel_layer()
-        
-        # 3. ¡Gritamos la orden por el túnel de la cocina!
         async_to_sync(channel_layer.group_send)(
-            "cocina", 
+            f"cocina_sede_{orden.sede_id}", 
             {
-                "type": "enviar_orden", 
-                "orden": serializer.data 
+                "type": "orden_nueva", 
+                "orden": orden_data
             }
         )
 
-        # 4. Le respondemos a la tablet de la cajera que todo salió bien
-        headers = self.get_success_headers(serializer.data)
-        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
-    
     @action(detail=True, methods=['post'])
     def agregar_productos(self, request, pk=None):
         orden = self.get_object()
+        
+        if orden.estado == 'cancelado' or orden.estado_pago == 'pagado':
+            return Response({'error': 'No se pueden agregar productos a una orden cerrada o pagada.'}, status=status.HTTP_400_BAD_REQUEST)
+
         detalles_data = request.data.get('detalles', [])
-        
         detalles_creados = []
-        nuevo_total = 0
+        nuevo_total = Decimal('0.00')
 
-        # 1. Guardamos los nuevos platos en la BD
-        for d in detalles_data:
-            detalle = DetalleOrden.objects.create(
-                orden=orden,
-                producto_id=d['producto'],
-                cantidad=d['cantidad'],
-                precio_unitario=d['precio_unitario'],
-                notas_y_modificadores=d.get('notas_y_modificadores', {}),
-                notas_cocina=d.get('notas_cocina', '')
-            )
-            detalles_creados.append(detalle)
-            nuevo_total += Decimal(d['precio_unitario']) * Decimal(d['cantidad'])
-            
-        # 2. Actualizamos la cuenta final de la mesa
-        orden.total += nuevo_total
-        orden.save()
+        # ✨ TRANSACCIÓN ATÓMICA TAMBIÉN AQUÍ
+        with transaction.atomic():
+            for d in detalles_data:
+                detalle = DetalleOrden.objects.create(
+                    orden=orden,
+                    producto_id=d['producto'],
+                    cantidad=d['cantidad'],
+                    precio_unitario=d['precio_unitario'],
+                    notas_y_modificadores=d.get('notas_y_modificadores', {}),
+                    notas_cocina=d.get('notas_cocina', '')
+                )
+                
+                opciones_ids = d.get('opciones', []) 
+                for opc_id in opciones_ids:
+                    try:
+                        opcion = OpcionVariacion.objects.get(id=opc_id)
+                        DetalleOrdenOpcion.objects.create(
+                            detalle_orden=detalle,
+                            opcion_variacion=opcion,
+                            precio_adicional_aplicado=opcion.precio_adicional
+                        )
+                    except OpcionVariacion.DoesNotExist:
+                        pass 
 
-        # 3. Armamos el ticket para el KDS (Solo enviamos LO NUEVO, no toda la mesa)
-        from .serializers import DetalleOrdenSerializer # Asegúrate de tenerlo importado
+                detalles_creados.append(detalle)
+                nuevo_total += Decimal(str(d['precio_unitario'])) * int(d['cantidad'])
+                
+            orden.total += nuevo_total
+            orden.save()
+
         nuevos_detalles_json = DetalleOrdenSerializer(detalles_creados, many=True).data
-        
         channel_layer = get_channel_layer()
         async_to_sync(channel_layer.group_send)(
-            "cocina", 
+            f"cocina_sede_{orden.sede_id}", 
             {
-                "type": "enviar_orden", 
+                "type": "orden_nueva", 
                 "orden": {
-                    # ID único para que React no cruce los cables con el ticket original
                     "id": f"{orden.id}-{int(time.time())}", 
-                    "real_id": orden.id, # El ID verdadero en la base de datos
+                    "real_id": orden.id, 
                     "mesa": f"{orden.mesa.numero_o_nombre} (AGREGADO)" if orden.mesa else "LLEVAR (AGREGADO)",
                     "detalles": nuevos_detalles_json
                 }
@@ -110,7 +141,7 @@ class OrdenViewSet(viewsets.ModelViewSet):
         )
         
         return Response({'status': 'Productos agregados correctamente'}, status=status.HTTP_200_OK)
-    
+
 class DetalleOrdenViewSet(viewsets.ModelViewSet):
     queryset = DetalleOrden.objects.all()
     serializer_class = DetalleOrdenSerializer
@@ -139,112 +170,127 @@ class EmpleadoViewSet(viewsets.ModelViewSet):
     queryset = Empleado.objects.all()
     serializer_class = EmpleadoSerializer
 
-    # ✨ LA CORRECCIÓN: permission_classes va ADENTRO del @action
     @action(detail=False, methods=['post'], permission_classes=[AllowAny])
     def validar_pin(self, request):
-        pin = request.data.get('pin')
+        pin_ingresado = request.data.get('pin')
+        sede_id = request.data.get('sede_id')
         accion = request.data.get('accion')
 
-        if not pin:
-            return Response({'error': 'PIN no proporcionado'}, status=status.HTTP_400_BAD_REQUEST)
+        if not pin_ingresado or not sede_id:
+            return Response({'error': 'PIN y sede_id son obligatorios'}, status=status.HTTP_400_BAD_REQUEST)
 
-        try:
-            empleado = Empleado.objects.get(pin=pin, activo=True)
+        # Buscamos en la sede específica
+        empleados = Empleado.objects.filter(sede_id=sede_id, activo=True)
+        empleado_valido = None
+
+        for emp in empleados:
+            if check_password(pin_ingresado, emp.pin):
+                empleado_valido = emp
+                break
+
+        if not empleado_valido:
+            return Response({'error': 'PIN incorrecto o inactivo'}, status=status.HTTP_404_NOT_FOUND)
             
-            if accion == 'asistencia':
-                empleado.ultimo_ingreso = timezone.now()
-                empleado.save()
+        if accion == 'asistencia':
+            empleado_valido.ultimo_ingreso = timezone.now()
+            empleado_valido.save()
 
-            return Response({
-                'id': empleado.id,
-                'nombre': empleado.nombre,
-                'rol': empleado.rol.nombre if empleado.rol else 'Sin Rol',
-                'hora_asistencia': empleado.ultimo_ingreso
-            }, status=status.HTTP_200_OK)
-
-        except Empleado.DoesNotExist:
-            return Response({'error': 'PIN incorrecto o usuario inactivo'}, status=status.HTTP_404_NOT_FOUND)
-
+        return Response({
+            'id': empleado_valido.id,
+            'nombre': empleado_valido.nombre,
+            'rol': empleado_valido.rol.nombre if empleado_valido.rol else 'Sin Rol',
+        }, status=status.HTTP_200_OK)
 class SesionCajaViewSet(viewsets.ModelViewSet):
     queryset = SesionCaja.objects.all()
     serializer_class = SesionCajaSerializer
-    # Ruta 1: React pregunta "¿El local está abierto?"
+
+    # ✨ PERMISO AÑADIDO: AllowAny para que React pueda consultar sin token
     @action(detail=False, methods=['get'], permission_classes=[AllowAny])
     def estado_actual(self, request):
-        # Buscamos si hay alguna caja con estado 'abierta'
-        sesion = SesionCaja.objects.filter(estado='abierta').first()
+        sede_id = request.query_params.get('sede_id')
+        if not sede_id:
+            return Response({'error': 'Falta sede_id'}, status=400)
+            
+        sesion = SesionCaja.objects.filter(sede_id=sede_id, estado='abierta').first()
         if sesion:
             return Response({'estado': 'abierto', 'fondo': sesion.fondo_inicial})
         return Response({'estado': 'cerrado'})
 
-    # Ruta 2: El cajero manda el fondo de caja para abrir
+    # ✨ PERMISO AÑADIDO
     @action(detail=False, methods=['post'], permission_classes=[AllowAny])
     def abrir_caja(self, request):
         empleado_id = request.data.get('empleado_id')
+        sede_id = request.data.get('sede_id')
         fondo = request.data.get('fondo_inicial', 0)
         
+        if not sede_id:
+            return Response({'error': 'Falta sede_id'}, status=400)
+
         sesion = SesionCaja.objects.create(
             empleado_abre_id=empleado_id,
+            sede_id=sede_id,
             fondo_inicial=fondo,
             estado='abierta'
         )
-        return Response({'mensaje': 'Caja abierta con éxito', 'estado': 'abierto'})
+        return Response({'mensaje': 'Caja abierta con éxito'})
     
+    # ✨ CÁLCULO DE DIFERENCIAS DIGITALES
     @action(detail=False, methods=['post'], permission_classes=[AllowAny])
     def cerrar_caja(self, request):
+        sede_id = request.data.get('sede_id')
         empleado_id = request.data.get('empleado_id')
         
-        # Datos enviados por el modal del Frontend (Arqueo Ciego)
+        if not sede_id:
+             return Response({'error': 'Se requiere sede_id'}, status=400)
+
+        sesion = SesionCaja.objects.filter(sede_id=sede_id, estado='abierta').first()
+        if not sesion:
+            return Response({'error': 'No hay caja abierta en esta sede'}, status=400)
+
+        pagos_turno = Pago.objects.filter(sesion_caja=sesion)
+        
+        total_efectivo = pagos_turno.filter(metodo='efectivo').aggregate(Sum('monto'))['monto__sum'] or 0
+        total_yape = pagos_turno.filter(metodo='yape_plin').aggregate(Sum('monto'))['monto__sum'] or 0
+        total_tarjeta = pagos_turno.filter(metodo='tarjeta').aggregate(Sum('monto'))['monto__sum'] or 0
+        total_digital = total_yape + total_tarjeta
+
         conteo_efectivo = float(request.data.get('conteo_efectivo', 0))
         conteo_yape = float(request.data.get('conteo_yape', 0))
         conteo_tarjeta = float(request.data.get('conteo_tarjeta', 0))
         
-        # 1. Buscamos la sesión abierta
-        sesion = SesionCaja.objects.filter(estado='abierta').first()
-        if not sesion:
-            return Response({'error': 'No hay una caja abierta'}, status=400)
-
-        # 2. Sumamos los pagos realizados durante esta sesión
-        pagos_del_turno = Pago.objects.filter(fecha_pago__gte=sesion.hora_apertura)
+        esperado_efectivo = float(sesion.fondo_inicial) + float(total_efectivo)
         
-        efectivo = pagos_del_turno.filter(metodo='efectivo').aggregate(Sum('monto'))['monto__sum'] or 0
-        digital = pagos_del_turno.exclude(metodo='efectivo').aggregate(Sum('monto'))['monto__sum'] or 0
+        diferencia_efectivo = conteo_efectivo - esperado_efectivo
+        diferencia_yape = conteo_yape - float(total_yape)
+        diferencia_tarjeta = conteo_tarjeta - float(total_tarjeta)
 
-        # 3. El cálculo maestro (Esperado vs Declarado)
-        esperado_efectivo_total = float(sesion.fondo_inicial) + float(efectivo)
-        diferencia_final = conteo_efectivo - esperado_efectivo_total
-
-        # 4. Guardamos los datos finales y cerramos la sesión
         sesion.empleado_cierra_id = empleado_id
         sesion.hora_cierre = timezone.now()
         
-        sesion.ventas_efectivo = efectivo
-        sesion.ventas_digitales = digital
-        
-        sesion.esperado_efectivo = esperado_efectivo_total
-        sesion.esperado_digital = digital
+        sesion.ventas_efectivo = total_efectivo
+        sesion.ventas_digitales = total_digital
+        sesion.esperado_efectivo = esperado_efectivo
+        sesion.esperado_digital = total_digital
         
         sesion.declarado_efectivo = conteo_efectivo
         sesion.declarado_yape = conteo_yape
         sesion.declarado_tarjeta = conteo_tarjeta
         
-        sesion.diferencia = diferencia_final
+        # Guardamos la diferencia de efectivo principal (o suma de todas, según prefieras)
+        sesion.diferencia = diferencia_efectivo 
         sesion.estado = 'cerrada'
-        
         sesion.save()
 
-        # 5. Le respondemos a React con la diferencia para que muestre la alerta
         return Response({
-            'mensaje': 'Caja cerrada correctamente',
-            'diferencia': diferencia_final,
+            'mensaje': 'Caja cerrada correctamente', 
+            'diferencia': diferencia_efectivo,
+            'diferencia_yape': diferencia_yape,
+            'diferencia_tarjeta': diferencia_tarjeta,
             'resumen': {
-                'fondo_inicial': float(sesion.fondo_inicial),
-                'ventas_efectivo': float(efectivo),
-                'total_esperado_en_efectivo': esperado_efectivo_total,
-                'declarado_en_efectivo': conteo_efectivo
+                'esperado_efectivo': esperado_efectivo,
+                'declarado_efectivo': conteo_efectivo
             }
         })
-
 
 # ==========================================
 # VISTAS INDEPENDIENTES (ERP Y DASHBOARD)
@@ -253,36 +299,42 @@ class SesionCajaViewSet(viewsets.ModelViewSet):
 @api_view(['GET'])
 @permission_classes([AllowAny]) 
 def metricas_dashboard(request):
+    sede_id = request.query_params.get('sede_id')
+    
+    if not sede_id:
+        return Response({'error': 'Falta el parámetro sede_id'}, status=400)
+
     hoy = timezone.now().date()
     
-    ordenes_hoy = Orden.objects.filter(creado_en__date=hoy, pago_confirmado=True).order_by('-creado_en')
+    # Buscamos ventas de ESA sede, que estén pagadas, y que no estén canceladas
+    ordenes_hoy = Orden.objects.filter(
+        sede_id=sede_id,
+        creado_en__date=hoy, 
+        estado_pago='pagado'
+    ).exclude(estado='cancelado').order_by('-creado_en')
     
     total_ordenes = ordenes_hoy.count()
     ventas_totales = float(ordenes_hoy.aggregate(Sum('total'))['total__sum'] or 0.00)
     ticket_promedio = (ventas_totales / total_ordenes) if total_ordenes > 0 else 0.00
     
-    # ✨ NUEVO: Sacamos las 5 últimas órdenes para la Actividad Reciente
     ultimas_ordenes = ordenes_hoy[:5]
     actividad_reciente = []
     
     for o in ultimas_ordenes:
-        # Averiguamos de dónde vino (Mesa o Llevar)
         origen = f"Mesa {o.mesa.numero_o_nombre}" if o.mesa else (o.cliente_nombre or "Para Llevar")
-        
         actividad_reciente.append({
             'id': o.id,
             'origen': origen,
             'total': float(o.total),
-            'hora': o.creado_en.strftime("%H:%M") # Formato 14:30
+            'hora': o.creado_en.strftime("%H:%M") 
         })
     
     return Response({
         'ventas': ventas_totales,
         'ordenes': total_ordenes,
         'ticketPromedio': ticket_promedio,
-        'actividadReciente': actividad_reciente # Lo mandamos a React
+        'actividadReciente': actividad_reciente 
     })
-
 @api_view(['GET', 'PUT'])
 @permission_classes([AllowAny]) 
 def configuracion_negocio(request):
