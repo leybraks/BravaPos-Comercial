@@ -1,6 +1,10 @@
 from django.db import models
 from django.contrib.auth.models import User
-
+from django.contrib.auth.hashers import make_password, is_password_usable
+from django.core.exceptions import ValidationError
+class ActivoManager(models.Manager):
+    def get_queryset(self):
+        return super().get_queryset().filter(activo=True)
 class PlanSaaS(models.Model):
     nombre = models.CharField(max_length=50)
     precio_mensual = models.DecimalField(max_digits=8, decimal_places=2)
@@ -29,14 +33,15 @@ class Negocio(models.Model):
     def __str__(self):
         return self.nombre
 
-# ==========================================
-# ¡NUEVO! EL PUENTE PARA ESCALAR A MÚLTIPLES LOCALES
-# ==========================================
 class Sede(models.Model):
     negocio = models.ForeignKey(Negocio, on_delete=models.CASCADE, related_name='sedes')
     nombre = models.CharField(max_length=100) # Ej: "Local Ventanilla", "Sede Centro"
     direccion = models.CharField(max_length=200, null=True, blank=True)
-    
+    activo = models.BooleanField(default=True)
+    objects = ActivoManager()      
+    all_objects = models.Manager()
+    class Meta:
+        unique_together = ('negocio', 'nombre')
     def __str__(self):
         return f"{self.nombre} ({self.negocio.nombre})"
 
@@ -46,7 +51,11 @@ class Mesa(models.Model):
     numero_o_nombre = models.CharField(max_length=20)
     capacidad = models.IntegerField(default=2)
     mesa_principal = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='mesas_unidas')
-    
+    activo = models.BooleanField(default=True)
+    objects = ActivoManager()
+    all_objects = models.Manager()
+    class Meta:
+        unique_together = ('sede', 'numero_o_nombre')
     def __str__(self):
         return f"{self.numero_o_nombre} - {self.sede.nombre}"
 
@@ -55,29 +64,46 @@ class Producto(models.Model):
     negocio = models.ForeignKey(Negocio, on_delete=models.CASCADE)
     nombre = models.CharField(max_length=100)
     es_venta_rapida = models.BooleanField(default=False)
-    precio_base = models.DecimalField(max_digits=8, decimal_places=2, default=0.00)
+    precio_base = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     disponible = models.BooleanField(default=True)
     tiene_variaciones = models.BooleanField(default=False)
     requiere_seleccion = models.BooleanField(default=False)
+    activo = models.BooleanField(default=True)
+    objects = ActivoManager()
+    all_objects = models.Manager()
+    class Meta:
+        unique_together = ('negocio', 'nombre')
+        indexes = [
+            models.Index(fields=['negocio', 'disponible']), # Acelera la carga del menú en React
+        ]
     def __str__(self):
         return f"{self.nombre} (S/ {self.precio_base})"
 
 class VariacionProducto(models.Model):
     producto = models.ForeignKey(Producto, related_name='variaciones', on_delete=models.CASCADE)
     nombre = models.CharField(max_length=50) # Ej: "Personal", "Familiar", "1 Litro"
-    precio = models.DecimalField(max_digits=8, decimal_places=2)
+    precio = models.DecimalField(max_digits=10, decimal_places=2)
 
     def __str__(self):
         return f"{self.producto.nombre} - {self.nombre} (S/ {self.precio})"
 
 class Orden(models.Model):
-    ESTADOS = [
+    # 🍳 DIMENSIÓN 1: ¿En qué parte del restaurante está el plato?
+    ESTADOS_COCINA = [
         ('pendiente', 'Pendiente'),
         ('preparando', 'En Cocina'),
         ('listo', 'Listo para entregar'),
-        ('pagado', 'Pagado y Cerrado'),
+        ('completado', 'Entregado / Mesa Cerrada'), # 👈 Renombrado (antes 'pagado')
         ('cancelado', 'Cancelado')
     ]
+    
+    # 💰 DIMENSIÓN 2: ¿Qué pasó con la plata?
+    ESTADOS_PAGO = [
+        ('pendiente', 'Por Cobrar'),
+        ('pagado', 'Pagado Completamente'),
+        ('reembolsado', 'Reembolsado')
+    ]
+    
     TIPO_CHOICES = [
         ('salon', 'En Salón'),
         ('llevar', 'Para Llevar'),
@@ -87,90 +113,47 @@ class Orden(models.Model):
     sede = models.ForeignKey(Sede, on_delete=models.CASCADE)
     mesa = models.ForeignKey(Mesa, on_delete=models.SET_NULL, null=True, blank=True)
     tipo = models.CharField(max_length=20, choices=TIPO_CHOICES, default='salon')
-    estado = models.CharField(max_length=20, choices=ESTADOS, default='pendiente')
+    
+    estado = models.CharField(max_length=20, choices=ESTADOS_COCINA, default='pendiente')
+    estado_pago = models.CharField(max_length=20, choices=ESTADOS_PAGO, default='pendiente') # 👈 NUEVO
+    
     total = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     
-    # --- NUEVOS CAMPOS PARA DELIVERY / LLEVAR ---
     cliente_nombre = models.CharField(max_length=100, null=True, blank=True)
     cliente_telefono = models.CharField(max_length=20, null=True, blank=True)
-    pago_confirmado = models.BooleanField(default=False)
-    cancelado = models.BooleanField(default=False)
     motivo_cancelacion = models.CharField(max_length=255, null=True, blank=True)
     creado_en = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        indexes = [
+            models.Index(fields=['sede', 'estado']),
+            models.Index(fields=['creado_en']),
+            models.Index(fields=['sede', 'estado_pago']), # 👈 Índice para el dashboard de finanzas
+        ]
+    def clean(self):
+        super().clean() # Llama a las validaciones normales de Django
+        if self.estado_pago == 'pagado' and self.estado == 'cancelado':
+            raise ValidationError('Error lógico: Una orden cancelada no puede aparecer como pagada. Debe estar reembolsada o pendiente.')
+
+    def save(self, *args, **kwargs):
+        self.full_clean() # Fuerza a que se ejecute "clean()" antes de guardar
+        super().save(*args, **kwargs)
     def __str__(self):
-        # Si tiene mesa, muestra la mesa. Si no, muestra el nombre del cliente o el tipo.
         origen = f"Mesa {self.mesa.numero_o_nombre}" if self.mesa else (self.cliente_nombre or self.get_tipo_display())
-        return f"Orden #{self.id} - {origen} - {self.estado}"
+        return f"Orden #{self.id} - {origen} - Cocina: {self.estado} - Caja: {self.estado_pago}"
 
 class DetalleOrden(models.Model):
     orden = models.ForeignKey(Orden, related_name='detalles', on_delete=models.CASCADE)
     producto = models.ForeignKey(Producto, on_delete=models.PROTECT)
-    # variacion = models.ForeignKey('VariacionProducto', on_delete=models.PROTECT, null=True, blank=True)
     cantidad = models.IntegerField(default=1)
-    precio_unitario = models.DecimalField(max_digits=8, decimal_places=2, default=0.00)
+    # ✨ ÚNICO CAMBIO AQUÍ: max_digits de 8 a 10
+    precio_unitario = models.DecimalField(max_digits=10, decimal_places=2, default=0.00) 
     notas_y_modificadores = models.JSONField(default=dict, blank=True)
     notas_cocina = models.TextField(blank=True, null=True)
-    def __str__(self):
-        variacion_texto = f" ({self.variacion.nombre})" if self.variacion else ""
-        return f"{self.cantidad}x {self.producto.nombre}{variacion_texto}"
-
-class Pago(models.Model):
-    METODOS = [
-        ('efectivo', 'Efectivo'),
-        ('tarjeta', 'Tarjeta (Visa/MC)'),
-        ('yape_plin', 'Yape / Plin'),
-    ]
+    activo = models.BooleanField(default=True) 
     
-    orden = models.ForeignKey(Orden, on_delete=models.CASCADE, related_name='pagos')
-    metodo = models.CharField(max_length=20, choices=METODOS)
-    monto = models.DecimalField(max_digits=10, decimal_places=2)
-    fecha_pago = models.DateTimeField(auto_now_add=True)
-
     def __str__(self):
-        return f"S/ {self.monto} en {self.get_metodo_display()} (Orden #{self.orden.id})"
-    
-
-# Estos son globales para el negocio. Ej: "Sin cebolla", "Poco arroz", "Bien cocido".
-class ModificadorRapido(models.Model):
-    negocio = models.ForeignKey(Negocio, on_delete=models.CASCADE)
-    nombre = models.CharField(max_length=50)
-
-    def __str__(self):
-        return self.nombre
-
-
-# Agrupa las opciones. Ej: "Tamaño de la Pizza", "Cortes del Mixto", "Cremas extra"
-class GrupoVariacion(models.Model):
-    producto = models.ForeignKey(Producto, related_name='grupos_variacion', on_delete=models.CASCADE)
-    nombre = models.CharField(max_length=50) # Ej: "Elige tu Tamaño"
-    obligatorio = models.BooleanField(default=True) # Si es True, el mesero DEBE elegir algo
-    seleccion_multiple = models.BooleanField(default=False) # False para Tamaño (solo 1), True para Cremas (varias)
-
-    def __str__(self):
-        return f"{self.nombre} - {self.producto.nombre}"
-
-# Ej: "Familiar (+ S/35)", "Rachi (+ S/0)", "Extra Tocino (+ S/5)"
-class OpcionVariacion(models.Model):
-    grupo = models.ForeignKey(GrupoVariacion, related_name='opciones', on_delete=models.CASCADE)
-    nombre = models.CharField(max_length=50)
-    # Cuánto suma al precio_base del producto. Si la Pizza Hawaiana base cuesta 0, la opción Familiar suma 35.
-    precio_adicional = models.DecimalField(max_digits=8, decimal_places=2, default=0.00) 
-
-    def __str__(self):
-        return f"{self.nombre} (+S/ {self.precio_adicional})"
-    
-# models.py
-from django.db import models
-
-class Rol(models.Model):
-    nombre = models.CharField(max_length=50, unique=True)
-    # Aquí podrías agregar booleanos para permisos específicos si quieres algo muy granular
-    puede_cobrar = models.BooleanField(default=False)
-    puede_configurar = models.BooleanField(default=False)
-
-    def __str__(self):
-        return self.nombre
+        return f"{self.cantidad}x {self.producto.nombre}"
 
 class Empleado(models.Model):
     # Relaciones vitales para el multi-local
@@ -178,18 +161,24 @@ class Empleado(models.Model):
     sede = models.ForeignKey('Sede', on_delete=models.SET_NULL, null=True, blank=True, related_name='empleados')
     
     nombre = models.CharField(max_length=100)
-    pin = models.CharField(max_length=4) # Le quitamos el unique=True global
+    pin = models.CharField(max_length=128)
     rol = models.ForeignKey('Rol', on_delete=models.SET_NULL, null=True, related_name='empleados')
     activo = models.BooleanField(default=True)
     ultimo_ingreso = models.DateTimeField(null=True, blank=True)
+    objects = ActivoManager()
+    all_objects = models.Manager()
 
     class Meta:
-        # MAGIA: El PIN no puede repetirse, pero SOLO dentro del mismo negocio
-        unique_together = ('pin', 'negocio')
+        pass
+    
+    def save(self, *args, **kwargs):
+        # Si el PIN no empieza con la firma del hasher de Django, significa que es un PIN nuevo en texto plano. Lo encriptamos.
+        if not is_password_usable(self.pin):
+            self.pin = make_password(self.pin)
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.nombre} ({self.rol.nombre if self.rol else 'Sin Rol'})"
-
 
 class SesionCaja(models.Model):
     # Relacionamos con la sede para que el cierre sea por local
@@ -218,8 +207,89 @@ class SesionCaja(models.Model):
     
     # 3. La diferencia final (+ es sobrante, - es faltante)
     diferencia = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    class Meta:
+        # ✨ MAGIA DE NIVEL 10/10: Evita cajas dobles
+        constraints = [
+            models.UniqueConstraint(
+                fields=['sede'], 
+                condition=models.Q(estado='abierta'), 
+                name='unica_caja_abierta_por_sede'
+            )
+        ]
     def __str__(self):
         return f"Caja {self.estado} - {self.hora_apertura.strftime('%d/%m/%Y')}"
+
+class Pago(models.Model):
+    METODOS = [
+        ('efectivo', 'Efectivo'),
+        ('tarjeta', 'Tarjeta (Visa/MC)'),
+        ('yape_plin', 'Yape / Plin'),
+    ]
+    
+    orden = models.ForeignKey(Orden, on_delete=models.CASCADE, related_name='pagos')
+    metodo = models.CharField(max_length=20, choices=METODOS)
+    monto = models.DecimalField(max_digits=10, decimal_places=2)
+    sesion_caja = models.ForeignKey(SesionCaja, on_delete=models.PROTECT, null=True, related_name='pagos')
+    fecha_pago = models.DateTimeField(auto_now_add=True)
+    class Meta:
+        indexes = [
+            models.Index(fields=['sesion_caja', 'fecha_pago']),
+            models.Index(fields=['orden']),
+        ]
+    def __str__(self):
+        return f"S/ {self.monto} en {self.get_metodo_display()} (Orden #{self.orden.id})"
+    
+class ModificadorRapido(models.Model):
+    negocio = models.ForeignKey(Negocio, on_delete=models.CASCADE)
+    nombre = models.CharField(max_length=50)
+
+    def __str__(self):
+        return self.nombre
+
+class GrupoVariacion(models.Model):
+    producto = models.ForeignKey(Producto, related_name='grupos_variacion', on_delete=models.CASCADE)
+    nombre = models.CharField(max_length=50) # Ej: "Elige tu Tamaño"
+    obligatorio = models.BooleanField(default=True) # Si es True, el mesero DEBE elegir algo
+    seleccion_multiple = models.BooleanField(default=False) # False para Tamaño (solo 1), True para Cremas (varias)
+
+    def __str__(self):
+        return f"{self.nombre} - {self.producto.nombre}"
+
+class OpcionVariacion(models.Model):
+    grupo = models.ForeignKey(GrupoVariacion, related_name='opciones', on_delete=models.CASCADE)
+    nombre = models.CharField(max_length=50)
+    # Cuánto suma al precio_base del producto. Si la Pizza Hawaiana base cuesta 0, la opción Familiar suma 35.
+    precio_adicional = models.DecimalField(max_digits=10, decimal_places=2, default=0.00) 
+
+    def __str__(self):
+        return f"{self.nombre} (+S/ {self.precio_adicional})"
+
+class DetalleOrdenOpcion(models.Model):
+    detalle_orden = models.ForeignKey(DetalleOrden, on_delete=models.CASCADE, related_name='opciones_seleccionadas')
+    opcion_variacion = models.ForeignKey(OpcionVariacion, on_delete=models.PROTECT)
+    precio_adicional_aplicado = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+
+    def __str__(self):
+        return f"Opcion {self.opcion_variacion.nombre} en Detalle #{self.detalle_orden.id}"
+
+class Rol(models.Model):
+    nombre = models.CharField(max_length=50, unique=True)
+    # Aquí podrías agregar booleanos para permisos específicos si quieres algo muy granular
+    puede_cobrar = models.BooleanField(default=False)
+    puede_configurar = models.BooleanField(default=False)
+
+    def __str__(self):
+        return self.nombre
+
+class Suscripcion(models.Model):
+    negocio = models.OneToOneField(Negocio, on_delete=models.CASCADE, related_name='suscripcion')
+    plan = models.ForeignKey(PlanSaaS, on_delete=models.PROTECT)
+    fecha_inicio = models.DateTimeField(auto_now_add=True)
+    fecha_fin = models.DateTimeField()
+    activa = models.BooleanField(default=True)
+
+    def __str__(self):
+        return f"{self.negocio.nombre} - {self.plan.nombre} (Activa: {self.activa})"
 
 
 
