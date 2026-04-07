@@ -408,21 +408,3 @@ def configuracion_negocio(request):
     except Negocio.DoesNotExist:
         return Response({'error': 'Negocio no encontrado o inactivo'}, status=status.HTTP_404_NOT_FOUND)
 
-@api_view(['POST'])
-@permission_classes([AllowAny])
-def login_tablet(request):
-    username = request.data.get('username')
-    password = request.data.get('password')
-    user = authenticate(username=username, password=password)
-    if user:
-        token, _ = Token.objects.get_or_create(user=user)
-        # Si relacionaste el User con un Negocio (por ejemplo, user.negocio_id)
-        # Debes devolver también el negocio_id y la lista de sedes (o al menos la primera)
-        # Como tu frontend luego pide /sedes/, puedes devolver solo el token y negocio_id
-        negocio_id = user.negocio.id if hasattr(user, 'negocio') else None
-        return Response({
-            'token': token.key,
-            'negocio_id': negocio_id,
-            # No devuelves sede_id aquí porque el dueño elegirá después
-        })
-    return Response({'non_field_errors': ['Credenciales incorrectas']}, status=status.HTTP_400_BAD_REQUEST)
