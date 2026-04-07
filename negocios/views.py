@@ -241,54 +241,58 @@ class SesionCajaViewSet(viewsets.ModelViewSet):
         empleado_id = request.data.get('empleado_id')
         
         if not sede_id:
-             return Response({'error': 'Se requiere sede_id'}, status=400)
+             return Response({'error': 'Se requiere sede_id'}, status=status.HTTP_400_BAD_REQUEST)
 
-        sesion = SesionCaja.objects.filter(sede_id=sede_id, estado='abierta').first()
-        if not sesion:
-            return Response({'error': 'No hay caja abierta en esta sede'}, status=400)
+        # ✨ MAGIA NIVEL DIOS: Transacción + Bloqueo de fila. 
+        # Si dos cajeros le dan click a "Cerrar" a la vez, Django pone al segundo en fila de espera.
+        with transaction.atomic():
+            sesion = SesionCaja.objects.select_for_update().filter(sede_id=sede_id, estado='abierta').first()
+            if not sesion:
+                return Response({'error': 'No hay caja abierta en esta sede o ya fue cerrada.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        pagos_turno = Pago.objects.filter(sesion_caja=sesion)
-        
-        total_efectivo = pagos_turno.filter(metodo='efectivo').aggregate(Sum('monto'))['monto__sum'] or 0
-        total_yape = pagos_turno.filter(metodo='yape_plin').aggregate(Sum('monto'))['monto__sum'] or 0
-        total_tarjeta = pagos_turno.filter(metodo='tarjeta').aggregate(Sum('monto'))['monto__sum'] or 0
-        total_digital = total_yape + total_tarjeta
+            pagos_turno = Pago.objects.filter(sesion_caja=sesion)
+            
+            # ✨ MATEMÁTICA PURA: Usamos Decimal estricto para evitar errores de redondeo de Python
+            total_efectivo = pagos_turno.filter(metodo='efectivo').aggregate(Sum('monto'))['monto__sum'] or Decimal('0.00')
+            total_yape = pagos_turno.filter(metodo='yape_plin').aggregate(Sum('monto'))['monto__sum'] or Decimal('0.00')
+            total_tarjeta = pagos_turno.filter(metodo='tarjeta').aggregate(Sum('monto'))['monto__sum'] or Decimal('0.00')
+            total_digital = total_yape + total_tarjeta
 
-        conteo_efectivo = float(request.data.get('conteo_efectivo', 0))
-        conteo_yape = float(request.data.get('conteo_yape', 0))
-        conteo_tarjeta = float(request.data.get('conteo_tarjeta', 0))
-        
-        esperado_efectivo = float(sesion.fondo_inicial) + float(total_efectivo)
-        
-        diferencia_efectivo = conteo_efectivo - esperado_efectivo
-        diferencia_yape = conteo_yape - float(total_yape)
-        diferencia_tarjeta = conteo_tarjeta - float(total_tarjeta)
+            # Convertimos lo que mandó React a Decimal seguro
+            conteo_efectivo = Decimal(str(request.data.get('conteo_efectivo', '0.00')))
+            conteo_yape = Decimal(str(request.data.get('conteo_yape', '0.00')))
+            conteo_tarjeta = Decimal(str(request.data.get('conteo_tarjeta', '0.00')))
+            
+            esperado_efectivo = Decimal(str(sesion.fondo_inicial)) + total_efectivo
+            
+            diferencia_efectivo = conteo_efectivo - esperado_efectivo
+            diferencia_yape = conteo_yape - total_yape
+            diferencia_tarjeta = conteo_tarjeta - total_tarjeta
 
-        sesion.empleado_cierra_id = empleado_id
-        sesion.hora_cierre = timezone.now()
-        
-        sesion.ventas_efectivo = total_efectivo
-        sesion.ventas_digitales = total_digital
-        sesion.esperado_efectivo = esperado_efectivo
-        sesion.esperado_digital = total_digital
-        
-        sesion.declarado_efectivo = conteo_efectivo
-        sesion.declarado_yape = conteo_yape
-        sesion.declarado_tarjeta = conteo_tarjeta
-        
-        # Guardamos la diferencia de efectivo principal (o suma de todas, según prefieras)
-        sesion.diferencia = diferencia_efectivo 
-        sesion.estado = 'cerrada'
-        sesion.save()
+            sesion.empleado_cierra_id = empleado_id
+            sesion.hora_cierre = timezone.now()
+            
+            sesion.ventas_efectivo = total_efectivo
+            sesion.ventas_digitales = total_digital
+            sesion.esperado_efectivo = esperado_efectivo
+            sesion.esperado_digital = total_digital
+            
+            sesion.declarado_efectivo = conteo_efectivo
+            sesion.declarado_yape = conteo_yape
+            sesion.declarado_tarjeta = conteo_tarjeta
+            
+            sesion.diferencia = diferencia_efectivo 
+            sesion.estado = 'cerrada'
+            sesion.save()
 
         return Response({
             'mensaje': 'Caja cerrada correctamente', 
-            'diferencia': diferencia_efectivo,
-            'diferencia_yape': diferencia_yape,
-            'diferencia_tarjeta': diferencia_tarjeta,
+            'diferencia': float(diferencia_efectivo), # Lo mandamos como float solo para que React lo pinte fácil
+            'diferencia_yape': float(diferencia_yape),
+            'diferencia_tarjeta': float(diferencia_tarjeta),
             'resumen': {
-                'esperado_efectivo': esperado_efectivo,
-                'declarado_efectivo': conteo_efectivo
+                'esperado_efectivo': float(esperado_efectivo),
+                'declarado_efectivo': float(conteo_efectivo)
             }
         })
 
