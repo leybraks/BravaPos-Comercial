@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     # Herramientas de terceros
     'rest_framework',
+    'rest_framework.authtoken',
     'corsheaders',
     
     # Nuestras Apps
@@ -170,6 +171,13 @@ USE_TZ = True
 
 USE_TZ = False # 👈 ¡Esto es clave apagarlo!
 
-
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.TokenAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated', # 👈 Candado global
+    ]
+}
 
 

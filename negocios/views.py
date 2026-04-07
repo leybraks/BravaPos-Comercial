@@ -4,8 +4,11 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework import viewsets
 from django.utils import timezone
+from django.db import models
+from django.contrib.auth import authenticate
 from django.db import transaction
 from decimal import Decimal
+
 from django.db.models import Sum
 from django.contrib.auth.hashers import check_password
 from rest_framework.permissions import AllowAny
@@ -15,7 +18,7 @@ from .models import Negocio, Sede, Mesa, Producto, Orden, DetalleOrden, Pago, Mo
 from .serializers import (
     NegocioSerializer, SedeSerializer, MesaSerializer,
     ProductoSerializer, ModificadorRapidoSerializer, GrupoVariacionSerializer, OpcionVariacionSerializer,
-    OrdenSerializer, DetalleOrdenSerializer,OrdenCocinaSerializer, PagoSerializer, RolSerializer, EmpleadoSerializer, SesionCajaSerializer
+    OrdenSerializer, DetalleOrdenSerializer, PagoSerializer, RolSerializer, EmpleadoSerializer, SesionCajaSerializer
 )
 
 class NegocioViewSet(viewsets.ModelViewSet):
@@ -27,17 +30,50 @@ class SedeViewSet(viewsets.ModelViewSet):
     serializer_class = SedeSerializer
 
 class MesaViewSet(viewsets.ModelViewSet):
-    queryset = Mesa.objects.all()
     serializer_class = MesaSerializer
 
+    def get_queryset(self):
+        queryset = Mesa.objects.filter(activo=True)
+        
+        # Si React manda "?sede_id=2", solo devolvemos las mesas de ese local
+        sede_id = self.request.query_params.get('sede_id')
+        if sede_id:
+            queryset = queryset.filter(sede_id=sede_id)
+            
+        return queryset
+
 class ProductoViewSet(viewsets.ModelViewSet):
-    queryset = Producto.objects.all()
     serializer_class = ProductoSerializer
 
-class OrdenViewSet(viewsets.ModelViewSet):
-    queryset = Orden.objects.prefetch_related('detalles__producto', 'detalles__opciones_seleccionadas').all()
-    serializer_class = OrdenSerializer
+    def get_queryset(self):
+        queryset = Producto.objects.filter(activo=True) 
+        
+        negocio_id = self.request.query_params.get('negocio_id')
+        if negocio_id:
+            queryset = queryset.filter(negocio_id=negocio_id)
+            
+        return queryset
 
+class OrdenViewSet(viewsets.ModelViewSet):
+    serializer_class = OrdenSerializer
+    def get_queryset(self):
+        # 🛡️ Seguridad y Velocidad: Precargamos las relaciones
+        queryset = Orden.objects.prefetch_related('detalles__producto', 'detalles__opciones_seleccionadas').all()
+        
+        # El POS solo debe cargar las órdenes activas de SU sede
+        sede_id = self.request.query_params.get('sede_id')
+        if sede_id:
+            # Traemos las pendientes, cocinando, y las pagadas/completadas DE HOY (para que no colapse la app con historial viejo)
+            hoy = timezone.now().date()
+            queryset = queryset.filter(
+                sede_id=sede_id
+            ).exclude(
+                estado='cancelado' # Quitamos las canceladas de la vista principal
+            ).filter(
+                models.Q(estado_pago='pendiente') | models.Q(creado_en__date=hoy)
+            ).order_by('-creado_en')
+            
+        return queryset
     def perform_create(self, serializer):
         # ✨ TRANSACCIÓN ATÓMICA: Si algo falla, nada se guarda
         with transaction.atomic():
@@ -132,8 +168,8 @@ class OrdenViewSet(viewsets.ModelViewSet):
             {
                 "type": "orden_nueva", 
                 "orden": {
-                    "id": f"{orden.id}-{int(time.time())}", 
-                    "real_id": orden.id, 
+                    "id": orden.id, # 👈 ID real
+                    "es_actualizacion": True, # 👈 Le avisamos a React
                     "mesa": f"{orden.mesa.numero_o_nombre} (AGREGADO)" if orden.mesa else "LLEVAR (AGREGADO)",
                     "detalles": nuevos_detalles_json
                 }
@@ -167,9 +203,20 @@ class RolViewSet(viewsets.ModelViewSet):
     serializer_class = RolSerializer
 
 class EmpleadoViewSet(viewsets.ModelViewSet):
-    queryset = Empleado.objects.all()
     serializer_class = EmpleadoSerializer
-
+    def get_queryset(self):
+        queryset = Empleado.objects.filter(activo=True)
+        
+        # Filtramos los empleados por Sede o por Negocio
+        sede_id = self.request.query_params.get('sede_id')
+        negocio_id = self.request.query_params.get('negocio_id')
+        
+        if sede_id:
+            queryset = queryset.filter(sede_id=sede_id)
+        elif negocio_id:
+            queryset = queryset.filter(negocio_id=negocio_id)
+            
+        return queryset
     @action(detail=False, methods=['post'], permission_classes=[AllowAny])
     def validar_pin(self, request):
         pin_ingresado = request.data.get('pin')
@@ -339,27 +386,43 @@ def metricas_dashboard(request):
         'ticketPromedio': ticket_promedio,
         'actividadReciente': actividad_reciente 
     })
-@api_view(['GET', 'PUT'])
-@permission_classes([AllowAny]) 
+@api_view(['GET'])
+@permission_classes([AllowAny])
 def configuracion_negocio(request):
-    # Por ahora asumimos que es el negocio 1 (el único en el sistema)
-    negocio = Negocio.objects.first()
+    negocio_id = request.query_params.get('negocio_id')
     
-    if not negocio:
-        return Response({'error': 'No hay negocio creado'}, status=404)
+    if not negocio_id:
+        return Response({'error': 'Debe enviar el parametro negocio_id'}, status=status.HTTP_400_BAD_REQUEST)
 
-    if request.method == 'GET':
+    try:
+        negocio = Negocio.objects.get(id=negocio_id, activo=True)
+        # OJO: Cuando uses el modelo Suscripcion, aquí revisarías si su plan está activo
         return Response({
             'nombre': negocio.nombre,
-            'mod_cocina_activo': negocio.mod_cocina_activo,
-            'mod_delivery_activo': negocio.mod_delivery_activo,
-            # Aquí podrías agregar campos extra a tu modelo luego, como 'numero_yape'
+            'modulos': {
+                'cocina': negocio.mod_cocina_activo,
+                'inventario': negocio.mod_inventario_activo,
+                'delivery': negocio.mod_delivery_activo,
+            }
         })
-        
-    elif request.method == 'PUT':
-        negocio.mod_cocina_activo = request.data.get('modCocina', negocio.mod_cocina_activo)
-        negocio.mod_delivery_activo = request.data.get('modDelivery', negocio.mod_delivery_activo)
-        # Igual, aquí actualizarías 'numero_yape' si lo agregas al modelo
-        negocio.save()
-        
-        return Response({'mensaje': 'Configuración actualizada'})
+    except Negocio.DoesNotExist:
+        return Response({'error': 'Negocio no encontrado o inactivo'}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def login_tablet(request):
+    username = request.data.get('username')
+    password = request.data.get('password')
+    user = authenticate(username=username, password=password)
+    if user:
+        token, _ = Token.objects.get_or_create(user=user)
+        # Si relacionaste el User con un Negocio (por ejemplo, user.negocio_id)
+        # Debes devolver también el negocio_id y la lista de sedes (o al menos la primera)
+        # Como tu frontend luego pide /sedes/, puedes devolver solo el token y negocio_id
+        negocio_id = user.negocio.id if hasattr(user, 'negocio') else None
+        return Response({
+            'token': token.key,
+            'negocio_id': negocio_id,
+            # No devuelves sede_id aquí porque el dueño elegirá después
+        })
+    return Response({'non_field_errors': ['Credenciales incorrectas']}, status=status.HTTP_400_BAD_REQUEST)
