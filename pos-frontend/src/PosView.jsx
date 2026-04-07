@@ -9,6 +9,11 @@ export default function PosView({ mesaId, onVolver }) {
   const [categoriasExpandidas, setCategoriasExpandidas] = useState(false);
   const [modalCobroAbierto, setModalCobroAbierto] = useState(false);
   
+  const [formLlevar, setFormLlevar] = useState({
+    nombre: '',
+    telefono: ''
+  });
+  const telefonoLlevar = formLlevar.telefono;
   const [modalModsAbierto, setModalModsAbierto] = useState(false);
   const [productoParaModificar, setProductoParaModificar] = useState(null);
 
@@ -135,7 +140,8 @@ export default function PosView({ mesaId, onVolver }) {
           agregarProducto(itemCompleto); // Acción normal
       }
   };
-
+// Agrega esto junto a tus otros estados
+  
   const esParaLlevar = (typeof mesaId === 'object' && mesaId?.id === 'llevar') || mesaId === 'llevar';
   const nombreLlevar = typeof mesaId === 'object' ? mesaId.cliente : 'Cliente (🛍️ Llevar)';
 

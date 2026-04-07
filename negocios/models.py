@@ -23,7 +23,9 @@ class Negocio(models.Model):
     mod_cocina_activo = models.BooleanField(default=False)
     mod_inventario_activo = models.BooleanField(default=False)
     mod_analiticas_activo = models.BooleanField(default=False)
-
+    numero_yape = models.CharField(max_length=15, blank=True, null=True)
+    mod_delivery_activo = models.BooleanField(default=False)
+    
     def __str__(self):
         return self.nombre
 

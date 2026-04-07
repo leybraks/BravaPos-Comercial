@@ -1,5 +1,5 @@
 import React, { useState,useEffect } from 'react';
-import { getMesas, getOrdenes,validarPinEmpleado, actualizarMesa,actualizarOrden, crearPago } from './api/api';
+import { getMesas,crearOrden, getOrdenes,validarPinEmpleado, actualizarMesa,actualizarOrden, crearPago } from './api/api';
 import ModalCobro from './ModalCobro';
 import ModalCierreCaja from './ModalCierreCaja';
 import  usePosStore  from './store/usePosStore';
@@ -550,31 +550,45 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
         })) : []} 
         onCobroExitoso={async (pagosRegistrados) => {
           try {
-            // 1. Guardamos cada pago (Efectivo, Yape, etc.) en Django
-            for (const pago of pagosRegistrados) {
-              await crearPago({
-                orden: ordenACobrar.id,
-                monto: pago.monto,
-                metodo: pago.metodo
+            let idDeLaOrden = ordenACobrar.id;
+
+            if (idDeLaOrden === 'venta_rapida') {
+              const resNuevaOrden = await crearOrden({
+                tipo: 'llevar',
+                estado: 'listo',
+                pago_confirmado: true,
+                sede: ordenACobrar.sede || 1, // 👈 Le decimos en qué sede es (Sede 1 por defecto)
+                detalles: ordenACobrar.detalles || [] // 👈 Le pasamos los productos que seleccionó el cajero
+              });
+              // Ahora idDeLaOrden ya no es "venta_rapida", es un número de verdad (ej: 28)
+              idDeLaOrden = resNuevaOrden.data.id; 
+            } else {
+              // 2. Si no era venta rápida, simplemente actualizamos la orden que ya existía
+              await actualizarOrden(idDeLaOrden, { 
+                pago_confirmado: true,
+                estado: ordenACobrar.estado === 'listo' ? 'listo' : 'preparando'
               });
             }
 
-            // 2. Avisamos a Django que esta orden ya está pagada (pago_confirmado)
-            await actualizarOrden(ordenACobrar.id, { 
-              pago_confirmado: true,
-              // Si quieres que pase a 'pagado' de una vez o siga en 'listo'
-              estado: ordenACobrar.estado === 'listo' ? 'listo' : 'preparando'
-            });
+            // 3. Guardamos los pagos usando el ID real numérico
+            for (const pago of pagosRegistrados) {
+              await crearPago({
+                orden: idDeLaOrden,
+                monto: pago.monto,
+                metodo: pago.metodo // 🔙 Regresamos a tu nombre original
+              });
+            }
             
             setOrdenACobrar(null); // Cerramos el modal
-            setTriggerRecarga(prev => !prev); // Refrescamos la lista automáticamente
+            setTriggerRecarga(prev => !prev); // Refrescamos
             alert("¡Cobro realizado con éxito! 💵✨");
             
           } catch (error) {
-            console.error("Error al procesar el cobro de delivery:", error);
-            alert("Hubo un error al guardar el pago.");
+            console.error("Error al procesar el cobro:", error);
+            console.error("DETALLE EXACTO DE DJANGO:", error.response?.data); 
+            alert("Hubo un error al guardar el pago. Revisa la consola.");
           }
-        }} 
+        }}
       />
       <DrawerVentaRapida 
         isOpen={drawerVentaRapidaAbierto}

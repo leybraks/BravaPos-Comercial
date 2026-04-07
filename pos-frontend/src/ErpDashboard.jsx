@@ -1,6 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { obtenerMetricasDashboard } from './api/api'; // Ajusta la ruta si tu api.js está en otra carpeta
-import { getEmpleados, getRoles, getSedes, crearEmpleado } from './api/api';
+import { 
+  obtenerMetricasDashboard, 
+  getEmpleados, 
+  getRoles, 
+  getSedes, 
+  crearEmpleado,
+  getNegocioConfig,
+  updateNegocioConfig,
+  getProductos,
+  crearProducto,
+  actualizarProducto
+} from './api/api';
 export default function ErpDashboard({ onVolverAlPos }) {
   const [vistaActiva, setVistaActiva] = useState('dashboard');
   const [sedeFiltro, setSedeFiltro] = useState('Todas');
@@ -14,7 +24,10 @@ export default function ErpDashboard({ onVolverAlPos }) {
     modInventario: false
   });
   const [guardandoConfig, setGuardandoConfig] = useState(false);
-
+  const [productosReales, setProductosReales] = useState([]);
+  const [categoriaSeleccionada, setCategoriaSeleccionada] = useState('Todos');
+  const [modalPlato, setModalPlato] = useState(false);
+  const [formPlato, setFormPlato] = useState({ id: null, nombre: '', precio_base: '', disponible: true });  
   // --- ESTADOS PARA EL MÓDULO DE PERSONAL ---
   const [empleadosReales, setEmpleadosReales] = useState([]);
   const [rolesReales, setRolesReales] = useState([]);
@@ -115,7 +128,59 @@ export default function ErpDashboard({ onVolverAlPos }) {
       cargarConfig();
     }
   }, [vistaActiva]);
+  // 🍔 EFECTO: SOLO PARA EL MENÚ
+  useEffect(() => {
+    if (vistaActiva === 'menu') {
+      const cargarMenu = async () => {
+        try {
+          const res = await getProductos();
+          setProductosReales(res.data);
+        } catch (error) {
+          console.error("Error cargando menú:", error);
+        }
+      };
+      cargarMenu();
+    }
+  }, [vistaActiva]);
 
+  // Funciones para guardar y editar
+  const manejarGuardarPlato = async () => {
+    if (!formPlato.nombre || !formPlato.precio_base) return alert("Nombre y precio son obligatorios.");
+    
+    try {
+      if (formPlato.id) {
+        // Editar existente
+        await actualizarProducto(formPlato.id, formPlato);
+      } else {
+        // Crear nuevo (Asumimos negocio 1 por defecto por tu modelo)
+        await crearProducto({ ...formPlato, negocio: 1 }); 
+      }
+      
+      setModalPlato(false);
+      setFormPlato({ id: null, nombre: '', precio_base: '', disponible: true });
+      
+      // Recargar lista
+      const res = await getProductos();
+      setProductosReales(res.data);
+    } catch (error) {
+      console.error("Error al guardar plato:", error);
+    }
+  };
+
+  const toggleDisponibilidad = async (plato) => {
+    try {
+      await actualizarProducto(plato.id, { disponible: !plato.disponible });
+      // Actualizar el estado localmente para que sea instantáneo en pantalla
+      setProductosReales(prev => prev.map(p => p.id === plato.id ? { ...p, disponible: !p.disponible } : p));
+    } catch (error) {
+      console.error("Error cambiando disponibilidad:", error);
+    }
+  };
+
+  const abrirModalEditar = (plato) => {
+    setFormPlato({ id: plato.id, nombre: plato.nombre, precio_base: plato.precio_base, disponible: plato.disponible });
+    setModalPlato(true);
+  };
   const manejarCrearEmpleado = async () => {
     if (!formEmpleado.nombre || formEmpleado.pin.length !== 4) {
       alert("Por favor ingresa un nombre y un PIN de 4 dígitos.");
@@ -406,62 +471,65 @@ export default function ErpDashboard({ onVolverAlPos }) {
                   <h3 className="text-2xl font-black text-white">Editor de Carta Digital</h3>
                   <p className="text-neutral-500 text-sm mt-1">Crea tus categorías, platos y ajusta los precios en tiempo real.</p>
                 </div>
-                <button className="w-full md:w-auto bg-[#ff5a1f] text-white px-8 py-4 rounded-xl font-black shadow-[0_0_20px_rgba(255,90,31,0.2)] active:scale-95 transition-all flex justify-center items-center gap-2">
+                <button 
+                  onClick={() => { setFormPlato({ id: null, nombre: '', precio_base: '', disponible: true }); setModalPlato(true); }}
+                  className="w-full md:w-auto bg-[#ff5a1f] text-white px-8 py-4 rounded-xl font-black shadow-[0_0_20px_rgba(255,90,31,0.2)] active:scale-95 transition-all flex justify-center items-center gap-2"
+                >
                   <span className="text-xl">🍔</span> NUEVO PLATO
                 </button>
               </div>
 
               <div className="flex flex-col lg:flex-row gap-6">
                 
-                {/* Columna Izquierda: Categorías */}
+                {/* Columna Izquierda: Categorías (Fijas por ahora o dinámicas si extraes) */}
                 <div className="lg:w-1/4 space-y-2">
-                  <h4 className="text-neutral-500 text-[10px] font-bold uppercase tracking-widest mb-4 px-2">Categorías del Menú</h4>
-                  {[
-                    { n: '🔥 Promociones', a: false },
-                    { n: '🍔 Hamburguesas', a: true },
-                    { n: '🍗 Brasas y Pollos', a: false },
-                    { n: '🥤 Bebidas', a: false },
-                    { n: '🍰 Postres', a: false }
-                  ].map((cat, i) => (
-                    <button key={i} className={`w-full text-left px-5 py-4 rounded-2xl font-bold transition-all flex justify-between items-center group
-                      ${cat.a ? 'bg-[#ff5a1f] text-white shadow-md' : 'bg-[#1a1a1a] text-neutral-400 hover:bg-[#222] border border-[#333]'}`}>
-                      {cat.n}
-                      <span className="opacity-0 group-hover:opacity-100 transition-opacity text-sm">⋮</span>
+                  <h4 className="text-neutral-500 text-[10px] font-bold uppercase tracking-widest mb-4 px-2">Categorías</h4>
+                  {['Todos', 'General'].map((cat, i) => (
+                    <button 
+                      key={i} 
+                      onClick={() => setCategoriaSeleccionada(cat)}
+                      className={`w-full text-left px-5 py-4 rounded-2xl font-bold transition-all flex justify-between items-center group
+                      ${categoriaSeleccionada === cat ? 'bg-[#ff5a1f] text-white shadow-md' : 'bg-[#1a1a1a] text-neutral-400 hover:bg-[#222] border border-[#333]'}`}
+                    >
+                      {cat}
                     </button>
                   ))}
-                  <button className="w-full text-center px-4 py-4 border-2 border-dashed border-[#333] rounded-2xl text-neutral-500 font-bold hover:border-[#ff5a1f] hover:text-[#ff5a1f] transition-all mt-4">
-                    + Añadir Categoría
-                  </button>
                 </div>
 
-                {/* Columna Derecha: Cuadrícula de Platos */}
+                {/* Columna Derecha: Cuadrícula de Platos Reales */}
                 <div className="lg:w-3/4">
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                     {[
-                       { n: 'Burger Clásica', p: '15.00', st: true, img: '🍔', desc: 'Carne de res 150g, queso, lechuga y tomate.' },
-                       { n: 'Burger Royal', p: '18.50', st: true, img: '🍔', desc: 'Huevo frito, tocino ahumado, queso y salsas.' },
-                       { n: 'Burger Extrema Doble', p: '24.00', st: false, img: '🍔', desc: 'Doble carne, aros de cebolla y queso cheddar.' },
-                       { n: 'Salchipapa Simple', p: '12.00', st: true, img: '🍟', desc: 'Papas nativas con hot dog frankfurt.' },
-                     ].map((plato, i) => (
-                       <div key={i} className="bg-[#111] border border-[#222] rounded-3xl p-5 group hover:border-[#ff5a1f]/50 transition-colors flex flex-col relative overflow-hidden">
+                     {productosReales.length === 0 && <p className="text-neutral-500">No hay platos registrados.</p>}
+                     
+                     {productosReales.map((plato) => (
+                       <div key={plato.id} className={`bg-[#111] border border-[#222] rounded-3xl p-5 group hover:border-[#ff5a1f]/50 transition-colors flex flex-col relative overflow-hidden ${!plato.disponible ? 'opacity-60 grayscale' : ''}`}>
                          
                          {/* Indicador de Stock */}
-                         <div className="absolute top-4 right-4 flex items-center gap-2 bg-[#1a1a1a] px-3 py-1.5 rounded-full border border-[#333]">
-                           <span className={`w-2 h-2 rounded-full ${plato.st ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500'}`}></span>
-                           <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">{plato.st ? 'Disponible' : 'Agotado'}</span>
-                         </div>
+                         <button 
+                           onClick={() => toggleDisponibilidad(plato)}
+                           className="absolute top-4 right-4 flex items-center gap-2 bg-[#1a1a1a] px-3 py-1.5 rounded-full border border-[#333] hover:scale-105 transition-transform z-10"
+                           title="Clic para cambiar disponibilidad"
+                         >
+                           <span className={`w-2 h-2 rounded-full ${plato.disponible ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500'}`}></span>
+                           <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">{plato.disponible ? 'Disponible' : 'Agotado'}</span>
+                         </button>
 
                          <div className="w-full h-32 bg-gradient-to-br from-[#1a1a1a] to-[#111] border border-[#222] rounded-2xl flex items-center justify-center text-6xl mb-4 group-hover:scale-105 transition-transform shadow-inner">
-                           {plato.img}
+                           🍽️
                          </div>
                          
-                         <h5 className="text-white font-black text-xl leading-tight mb-1">{plato.n}</h5>
-                         <p className="text-neutral-500 text-xs mb-4 line-clamp-2">{plato.desc}</p>
+                         <h5 className="text-white font-black text-xl leading-tight mb-1">{plato.nombre}</h5>
+                         <p className="text-neutral-500 text-xs mb-4 line-clamp-2">Plato del menú</p>
                          
                          <div className="mt-auto flex items-center justify-between">
-                            <p className="text-[#ff5a1f] font-black text-2xl">S/ {plato.p}</p>
+                            <p className="text-[#ff5a1f] font-black text-2xl">S/ {parseFloat(plato.precio_base).toFixed(2)}</p>
                             <div className="flex gap-2">
-                              <button className="w-10 h-10 bg-[#1a1a1a] hover:bg-[#222] text-white flex items-center justify-center rounded-xl transition-colors border border-[#333]">✏️</button>
+                              <button 
+                                onClick={() => abrirModalEditar(plato)}
+                                className="w-10 h-10 bg-[#1a1a1a] hover:bg-[#222] text-white flex items-center justify-center rounded-xl transition-colors border border-[#333]"
+                              >
+                                ✏️
+                              </button>
                             </div>
                          </div>
                        </div>
@@ -731,6 +799,47 @@ export default function ErpDashboard({ onVolverAlPos }) {
                 className="w-full bg-[#ff5a1f] text-white py-4 rounded-xl font-black mt-4 shadow-lg active:scale-95 transition-all disabled:opacity-50"
               >
                 CREAR ACCESO
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* MODAL PARA AGREGAR/EDITAR PLATO */}
+      {modalPlato && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-[#121212] border border-[#333] rounded-3xl w-full max-w-md overflow-hidden animate-fadeIn">
+            <div className="p-6 border-b border-[#222] bg-[#1a1a1a] flex justify-between items-center">
+              <h3 className="text-xl font-black text-white">{formPlato.id ? 'Editar Plato' : 'Nuevo Plato'}</h3>
+              <button onClick={() => setModalPlato(false)} className="text-neutral-500 font-bold">✕</button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest mb-2 block">Nombre del Plato</label>
+                <input 
+                  type="text" 
+                  value={formPlato.nombre}
+                  onChange={(e) => setFormPlato({...formPlato, nombre: e.target.value})}
+                  className="w-full bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3 text-white focus:border-[#ff5a1f] outline-none" 
+                  placeholder="Ej. Hamburguesa Clásica" 
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest mb-2 block">Precio Base (S/)</label>
+                <input 
+                  type="number" 
+                  step="0.10"
+                  value={formPlato.precio_base}
+                  onChange={(e) => setFormPlato({...formPlato, precio_base: e.target.value})}
+                  className="w-full bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3 text-white focus:border-[#ff5a1f] outline-none" 
+                  placeholder="0.00" 
+                />
+              </div>
+              <button 
+                onClick={manejarGuardarPlato}
+                disabled={!formPlato.nombre || !formPlato.precio_base}
+                className="w-full bg-[#ff5a1f] text-white py-4 rounded-xl font-black mt-4 shadow-lg active:scale-95 transition-all disabled:opacity-50"
+              >
+                GUARDAR PLATO
               </button>
             </div>
           </div>

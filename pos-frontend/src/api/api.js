@@ -52,6 +52,8 @@ export const abrirCajaBD = (payload) => axios.post(`${API_URL}/sesiones_caja/abr
 export const agregarProductosAOrden = (idOrden, payload) => api.post(`${API_URL}/ordenes/${idOrden}/agregar_productos/`, payload);
 // Agrega esto junto a tus otras funciones:
 // Llamada para traer los números del ERP
+export const crearProducto = (data) => api.post('productos/', data);
+export const actualizarProducto = (id, data) => api.put(`productos/${id}/`, data);
 export const getNegocioConfig = () => api.get('negocio/configuracion/');
 export const updateNegocioConfig = (data) => api.put('negocio/configuracion/', data);
 export const getEmpleados = () => api.get('empleados/');

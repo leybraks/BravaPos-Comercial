@@ -255,8 +255,7 @@ class SesionCajaViewSet(viewsets.ModelViewSet):
 def metricas_dashboard(request):
     hoy = timezone.now().date()
     
-    # Obtenemos las órdenes pagadas de hoy, ordenadas de la más nueva a la más vieja
-    ordenes_hoy = Orden.objects.filter(creado_en__date=hoy, estado='pagado').order_by('-creado_en')
+    ordenes_hoy = Orden.objects.filter(creado_en__date=hoy, pago_confirmado=True).order_by('-creado_en')
     
     total_ordenes = ordenes_hoy.count()
     ventas_totales = float(ordenes_hoy.aggregate(Sum('total'))['total__sum'] or 0.00)
