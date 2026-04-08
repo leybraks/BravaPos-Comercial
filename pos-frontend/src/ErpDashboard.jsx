@@ -11,12 +11,15 @@ import {
   crearProducto,
   actualizarProducto
 } from './api/api';
+
 export default function ErpDashboard({ onVolverAlPos }) {
   const [vistaActiva, setVistaActiva] = useState('dashboard');
   const [sedeFiltro, setSedeFiltro] = useState('Todas');
+  const [categoriaSeleccionada, setCategoriaSeleccionada] = useState('Todos');
+  const [sedeFiltroId, setSedeFiltroId] = useState(null); // ✨ Nuevo: ID real de la sede
   const [menuAbierto, setMenuAbierto] = useState(false);
   const [modalEmpleado, setModalEmpleado] = useState(false);
-  // Estados simulados para Configuración
+
   const [config, setConfig] = useState({
     numeroYape: '',
     modCocina: false,
@@ -25,10 +28,9 @@ export default function ErpDashboard({ onVolverAlPos }) {
   });
   const [guardandoConfig, setGuardandoConfig] = useState(false);
   const [productosReales, setProductosReales] = useState([]);
-  const [categoriaSeleccionada, setCategoriaSeleccionada] = useState('Todos');
   const [modalPlato, setModalPlato] = useState(false);
   const [formPlato, setFormPlato] = useState({ id: null, nombre: '', precio_base: '', disponible: true });  
-  // --- ESTADOS PARA EL MÓDULO DE PERSONAL ---
+
   const [empleadosReales, setEmpleadosReales] = useState([]);
   const [rolesReales, setRolesReales] = useState([]);
   const [sedesReales, setSedesReales] = useState([]);
@@ -36,63 +38,49 @@ export default function ErpDashboard({ onVolverAlPos }) {
   const [formEmpleado, setFormEmpleado] = useState({
     nombre: '',
     pin: '',
-    rol: '', // Guardará el ID del rol
-    sede: '' // Guardará el ID de la sede
-  });
-  const sedes = ['Todas', 'Local Principal', 'Sede Surco'];
-  // Ventas simuladas en vivo
-  const [metricas, setMetricas] = useState({
-    'Todas': { ventas: 0, ordenes: 0, ticketPromedio: 0 },
-    'Local Principal': { ventas: 0, ordenes: 0, ticketPromedio: 0 },
-    'Sede Surco': { ventas: 0, ordenes: 0, ticketPromedio: 0 },
+    rol: '', 
+    sede: '' 
   });
 
-  const currentMetricas = metricas[sedeFiltro];
-  
+  const [metricas, setMetricas] = useState({
+    ventas: 0, 
+    ordenes: 0, 
+    ticketPromedio: 0,
+    actividadReciente: []
+  });
+
   // ==========================================
-  // 📊 EFECTO 1: SOLO PARA EL DASHBOARD
+  // 📊 EFECTO 1: MÉTRICAS DINÁMICAS
   // ==========================================
   useEffect(() => {
     if (vistaActiva === 'dashboard') {
       const cargarDatos = async () => {
         try {
-          const res = await obtenerMetricasDashboard();
-          const datosReales = res.data;
-          
-          setMetricas(prev => ({
-            ...prev,
-            'Todas': {
-              ventas: datosReales.ventas,
-              ordenes: datosReales.ordenes,
-              ticketPromedio: datosReales.ticketPromedio,
-              actividadReciente: datosReales.actividadReciente
-            }
-          }));
+          // ✨ Enviamos el sede_id seleccionado (o null si es "Todas")
+          const res = await obtenerMetricasDashboard({ sede_id: sedeFiltroId });
+          setMetricas(res.data);
         } catch (error) {
           console.error("Error al cargar métricas:", error);
         }
       };
-
       cargarDatos();
-      
-      const intervalo = setInterval(() => {
-        cargarDatos();
-      }, 10000);
-
+      const intervalo = setInterval(cargarDatos, 10000);
       return () => clearInterval(intervalo);
     }
-  }, [vistaActiva]);
-
+  }, [vistaActiva, sedeFiltroId]); // ✨ Recarga al cambiar de sede
 
   // ==========================================
-  // 👥 EFECTO 2: SOLO PARA EL PERSONAL
+  // 👥 EFECTO 2: GESTIÓN DE PERSONAL
   // ==========================================
   useEffect(() => {
     if (vistaActiva === 'personal') {
       const cargarDatosPersonal = async () => {
         try {
+          // ✨ Filtramos empleados por la sede seleccionada en el ERP
           const [resEmpleados, resRoles, resSedes] = await Promise.all([
-            getEmpleados(), getRoles(), getSedes()
+            getEmpleados({ sede_id: sedeFiltroId }), 
+            getRoles(), 
+            getSedes()
           ]);
           setEmpleadosReales(resEmpleados.data);
           setRolesReales(resRoles.data);
@@ -100,40 +88,22 @@ export default function ErpDashboard({ onVolverAlPos }) {
           
           if (resRoles.data.length > 0) setFormEmpleado(prev => ({ ...prev, rol: resRoles.data[0].id }));
           if (resSedes.data.length > 0) setFormEmpleado(prev => ({ ...prev, sede: resSedes.data[0].id }));
-          
         } catch (error) {
           console.error("Error cargando personal:", error);
         }
       };
-
       cargarDatosPersonal();
     }
-  }, [vistaActiva]);
+  }, [vistaActiva, sedeFiltroId]);
 
-  useEffect(() => {
-    if (vistaActiva === 'config') {
-      const cargarConfig = async () => {
-        try {
-          const res = await getNegocioConfig();
-          setConfig(prev => ({
-            ...prev,
-            modCocina: res.data.mod_cocina_activo,
-            modDelivery: res.data.mod_delivery_activo,
-            // numeroYape: res.data.numero_yape || '' // Descomenta esto si agregas el campo a Django
-          }));
-        } catch (error) {
-          console.error("Error cargando configuración:", error);
-        }
-      };
-      cargarConfig();
-    }
-  }, [vistaActiva]);
-  // 🍔 EFECTO: SOLO PARA EL MENÚ
+  // ==========================================
+  // 🍔 EFECTO 3: EDITOR DE MENÚ
+  // ==========================================
   useEffect(() => {
     if (vistaActiva === 'menu') {
       const cargarMenu = async () => {
         try {
-          const res = await getProductos();
+          const res = await getProductos({ sede_id: sedeFiltroId });
           setProductosReales(res.data);
         } catch (error) {
           console.error("Error cargando menú:", error);
@@ -141,97 +111,31 @@ export default function ErpDashboard({ onVolverAlPos }) {
       };
       cargarMenu();
     }
-  }, [vistaActiva]);
+  }, [vistaActiva, sedeFiltroId]);
 
-  // Funciones para guardar y editar
-  const manejarGuardarPlato = async () => {
-    if (!formPlato.nombre || !formPlato.precio_base) return alert("Nombre y precio son obligatorios.");
-    
-    try {
-      if (formPlato.id) {
-        // Editar existente
-        await actualizarProducto(formPlato.id, formPlato);
-      } else {
-        // Crear nuevo (Asumimos negocio 1 por defecto por tu modelo)
-        await crearProducto({ ...formPlato, negocio: 1 }); 
-      }
-      
-      setModalPlato(false);
-      setFormPlato({ id: null, nombre: '', precio_base: '', disponible: true });
-      
-      // Recargar lista
-      const res = await getProductos();
-      setProductosReales(res.data);
-    } catch (error) {
-      console.error("Error al guardar plato:", error);
+  // Manejador de cambio de sede ✨
+  const cambiarSedeFiltro = (sede) => {
+    if (sede === 'Todas') {
+      setSedeFiltro('Todas');
+      setSedeFiltroId(null);
+    } else {
+      setSedeFiltro(sede.nombre);
+      setSedeFiltroId(sede.id);
     }
   };
 
-  const toggleDisponibilidad = async (plato) => {
-    try {
-      await actualizarProducto(plato.id, { disponible: !plato.disponible });
-      // Actualizar el estado localmente para que sea instantáneo en pantalla
-      setProductosReales(prev => prev.map(p => p.id === plato.id ? { ...p, disponible: !p.disponible } : p));
-    } catch (error) {
-      console.error("Error cambiando disponibilidad:", error);
-    }
-  };
-
-  const abrirModalEditar = (plato) => {
-    setFormPlato({ id: plato.id, nombre: plato.nombre, precio_base: plato.precio_base, disponible: plato.disponible });
-    setModalPlato(true);
-  };
-  const manejarCrearEmpleado = async () => {
-    if (!formEmpleado.nombre || formEmpleado.pin.length !== 4) {
-      alert("Por favor ingresa un nombre y un PIN de 4 dígitos.");
-      return;
-    }
-    try {
-      // Le mandamos los datos a Django (por ahora negocio va en null o 1 según tu lógica)
-      await crearEmpleado({ ...formEmpleado, activo: true });
-      
-      // Cerramos modal, limpiamos form y recargamos la lista
-      setModalEmpleado(false);
-      setFormEmpleado({ ...formEmpleado, nombre: '', pin: '' });
-      
-      const resEmpleados = await getEmpleados();
-      setEmpleadosReales(resEmpleados.data);
-      alert("¡Empleado creado con éxito! 🎉");
-    } catch (error) {
-      console.error("Error creando empleado:", error);
-      alert("Hubo un error al crear el acceso.");
-    }
-  };
-  const manejarGuardarConfig = async () => {
-    setGuardandoConfig(true);
-    try {
-      await updateNegocioConfig({
-        modCocina: config.modCocina,
-        modDelivery: config.modDelivery,
-        // numeroYape: config.numeroYape // Descomenta si agregas el campo a Django
-      });
-      alert("✅ ¡Configuración guardada con éxito!");
-    } catch (error) {
-      console.error("Error guardando:", error);
-      alert("❌ Hubo un error al guardar los cambios.");
-    } finally {
-      setGuardandoConfig(false);
-    }
-  };
-  // Componente de Menú Lateral (Sidebar)
   const Sidebar = () => (
     <div className={`fixed inset-y-0 left-0 w-64 bg-[#111] border-r border-[#222] transform ${menuAbierto ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 transition-transform duration-300 z-50 flex flex-col`}>
       <div className="p-6">
         <h1 className="text-xl font-black text-white">CAÑA <span className="text-[#ff5a1f]">BRAVA</span></h1>
         <p className="text-xs text-neutral-500 tracking-widest uppercase mt-1">ERP Cloud</p>
       </div>
-
       <nav className="flex-1 px-4 space-y-2 overflow-y-auto">
         {[
           { id: 'dashboard', icono: '📊', nombre: 'Ventas en Vivo' },
           { id: 'personal', icono: '👥', nombre: 'Personal y Roles' },
-          { id: 'crm', icono: '💬', nombre: 'Marketing & CRM' }, // <-- NUEVO
-          { id: 'inventario', icono: '📦', nombre: 'Inventario (Stock)' }, // <-- NUEVO
+          { id: 'crm', icono: '💬', nombre: 'Marketing & CRM' },
+          { id: 'inventario', icono: '📦', nombre: 'Inventario (Stock)' },
           { id: 'menu', icono: '🍔', nombre: 'Editor de Menú' },
           { id: 'config', icono: '⚙️', nombre: 'Configuraciones' },
         ].map(item => (
@@ -246,132 +150,146 @@ export default function ErpDashboard({ onVolverAlPos }) {
           </button>
         ))}
       </nav>
-
       <div className="p-4 border-t border-[#222]">
-        <button onClick={onVolverAlPos} className="w-full bg-[#222] text-white py-3 rounded-xl font-bold hover:bg-[#333] transition-colors">
-          🖥️ Ir al POS
-        </button>
+        <button onClick={onVolverAlPos} className="w-full bg-[#222] text-white py-3 rounded-xl font-bold hover:bg-[#333] transition-colors">🖥️ Ir al POS</button>
       </div>
     </div>
   );
+  // ==========================================
+  // ⚙️ FUNCIONES DE CONTROL (RESTAURADAS)
+  // ==========================================
 
+  // 1. Guardar Configuración General
+  const manejarGuardarConfig = async () => {
+    setGuardandoConfig(true);
+    try {
+      await updateNegocioConfig({
+        modCocina: config.modCocina,
+        modDelivery: config.modDelivery,
+        // numeroYape: config.numeroYape 
+      });
+      alert("✅ ¡Configuración guardada con éxito!");
+    } catch (error) {
+      console.error("Error guardando config:", error);
+      alert("❌ Hubo un error al guardar los cambios.");
+    } finally {
+      setGuardandoConfig(false);
+    }
+  };
+
+  // 2. Crear Nuevo Empleado
+  const manejarCrearEmpleado = async () => {
+    if (!formEmpleado.nombre || formEmpleado.pin.length !== 4) {
+      alert("Por favor ingresa un nombre y un PIN de 4 dígitos.");
+      return;
+    }
+    try {
+      await crearEmpleado({ ...formEmpleado, activo: true });
+      setModalEmpleado(false);
+      setFormEmpleado({ ...formEmpleado, nombre: '', pin: '' });
+      
+      const resEmpleados = await getEmpleados({ sede_id: sedeFiltroId });
+      setEmpleadosReales(resEmpleados.data);
+      alert("¡Empleado creado con éxito! 🎉");
+    } catch (error) {
+      console.error("Error creando empleado:", error);
+      alert("Hubo un error al crear el acceso.");
+    }
+  };
+
+  // 3. Guardar/Editar Plato del Menú
+  const manejarGuardarPlato = async () => {
+    if (!formPlato.nombre || !formPlato.precio_base) return alert("Nombre y precio son obligatorios.");
+    try {
+      if (formPlato.id) {
+        await actualizarProducto(formPlato.id, formPlato);
+      } else {
+        const negocioId = localStorage.getItem('negocio_id');
+        await crearProducto({ ...formPlato, negocio: negocioId }); 
+      }
+      setModalPlato(false);
+      setFormPlato({ id: null, nombre: '', precio_base: '', disponible: true });
+      
+      const res = await getProductos({ sede_id: sedeFiltroId });
+      setProductosReales(res.data);
+    } catch (error) {
+      console.error("Error al guardar plato:", error);
+    }
+  };
+
+  // 4. Cambiar disponibilidad (Agotado/Disponible)
+  const toggleDisponibilidad = async (plato) => {
+    try {
+      await actualizarProducto(plato.id, { disponible: !plato.disponible });
+      setProductosReales(prev => prev.map(p => p.id === plato.id ? { ...p, disponible: !p.disponible } : p));
+    } catch (error) {
+      console.error("Error cambiando disponibilidad:", error);
+    }
+  };
+
+  // 5. Abrir Modal para editar plato
+  const abrirModalEditar = (plato) => {
+    setFormPlato({ id: plato.id, nombre: plato.nombre, precio_base: plato.precio_base, disponible: plato.disponible });
+    setModalPlato(true);
+  };
   return (
     <div className="bg-[#0a0a0a] min-h-screen font-sans text-neutral-100 flex">
-      
       <Sidebar />
-
-      {/* Overlay para móvil cuando el menú está abierto */}
-      {menuAbierto && <div className="fixed inset-0 bg-black/60 z-40 md:hidden" onClick={() => setMenuAbierto(false)}></div>}
-
-      {/* ÁREA PRINCIPAL */}
-      {/* ÁREA PRINCIPAL */}
       <div className="flex-1 md:ml-64 flex flex-col min-h-screen min-w-0">
-        
-        {/* HEADER */}
-        {/* HEADER COMPLETO Y ELEGANTE */}
         <header className="bg-[#111] border-b border-[#222] p-4 flex justify-between items-center sticky top-0 z-30">
           <div className="flex items-center gap-4">
-            <button onClick={() => setMenuAbierto(true)} className="md:hidden bg-[#222] p-2 rounded-lg text-white">
-              ☰
-            </button>
-            <h2 className="text-xl font-black capitalize tracking-tight text-white">
-              {vistaActiva === 'dashboard' ? 'Ventas en Vivo' : 
-               vistaActiva === 'personal' ? 'Gestión de Personal' : 
-               vistaActiva === 'crm' ? 'Clientes y Marketing' : 
-               vistaActiva === 'inventario' ? 'Control de Almacén' : 
-               vistaActiva === 'config' ? 'Configuraciones' : 
-               vistaActiva === 'menu' ? 'Editor de Menú' : vistaActiva}
-            </h2>
-          </div>
-
-          <div className="flex items-center gap-3">
-             <div className="hidden sm:flex items-center gap-2 bg-[#1a1a1a] px-3 py-1.5 rounded-full border border-[#333]">
-                <span className="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse"></span>
-                <span className="text-xs font-bold text-neutral-400">ONLINE</span>
-             </div>
-             <div className="w-10 h-10 bg-[#ff5a1f] rounded-full flex items-center justify-center font-bold text-white border-2 border-[#222] shadow-[0_0_15px_rgba(255,90,31,0.2)] cursor-pointer hover:scale-105 transition-transform">
-               CB
-             </div>
+            <button onClick={() => setMenuAbierto(true)} className="md:hidden bg-[#222] p-2 rounded-lg text-white">☰</button>
+            <h2 className="text-xl font-black capitalize tracking-tight text-white">{vistaActiva}</h2>
           </div>
         </header>
 
-        {/* CONTENIDO DINÁMICO */}
         <main className="p-4 md:p-8 flex-1 overflow-y-auto overflow-x-hidden min-w-0 w-full">
-          
-          {/* ======================= VISTA: DASHBOARD EN VIVO ======================= */}
           {vistaActiva === 'dashboard' && (
             <div className="animate-fadeIn space-y-6">
-              
-              {/* Filtro Multi-Sede Elegante */}
+              {/* Filtro Multi-Sede Dinámico ✨ */}
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[#111] p-2 rounded-2xl border border-[#222]">
                 <div className="flex w-full sm:w-auto bg-[#1a1a1a] rounded-xl p-1 overflow-x-auto">
-                  {sedes.map(sede => (
+                  <button 
+                    onClick={() => cambiarSedeFiltro('Todas')}
+                    className={`px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${sedeFiltro === 'Todas' ? 'bg-[#ff5a1f] text-white' : 'text-neutral-500'}`}
+                  >Todas</button>
+                  {sedesReales.map(s => (
                     <button 
-                      key={sede} onClick={() => setSedeFiltro(sede)}
-                      className={`flex-1 sm:flex-none px-6 py-2.5 rounded-lg text-sm font-bold whitespace-nowrap transition-all
-                        ${sedeFiltro === sede ? 'bg-[#ff5a1f] text-white shadow-md' : 'text-neutral-500 hover:text-white'}`}
-                    >
-                      {sede}
-                    </button>
+                      key={s.id} onClick={() => cambiarSedeFiltro(s)}
+                      className={`px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${sedeFiltro === s.nombre ? 'bg-[#ff5a1f] text-white' : 'text-neutral-500'}`}
+                    >{s.nombre}</button>
                   ))}
-                </div>
-                <div className="px-4 text-neutral-400 text-sm font-semibold flex items-center gap-2">
-                  <span>📅</span> Hoy: 02 Abr 2026
                 </div>
               </div>
 
-              {/* Tarjetas de Métricas Optimizadas */}
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                  
-                  {/* 1. Ingresos Totales: Ocupa 2 columnas en móvil (toda la fila) y 1 en desktop */}
-                  <div className="col-span-2 md:col-span-1 bg-[#121212] p-6 rounded-3xl border border-[#222] relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-24 h-24 bg-green-500/10 rounded-bl-full"></div>
-                    <p className="text-neutral-500 font-bold uppercase tracking-widest text-[10px] mb-2">Ingresos Totales</p>
-                    <h3 className="text-3xl md:text-4xl font-black text-white">S/ {currentMetricas.ventas.toFixed(2)}</h3>
-                    <p className="text-green-400 text-xs font-bold mt-2 flex items-center gap-1">↑ 12% vs ayer</p>
-                  </div>
-
-                  {/* 2. Órdenes Pagadas: Ocupa 1 columna */}
-                  <div className="col-span-1 bg-[#121212] p-5 md:p-6 rounded-3xl border border-[#222]">
-                    <p className="text-neutral-500 font-bold uppercase tracking-widest text-[10px] mb-2">Órdenes</p>
-                    <h3 className="text-2xl md:text-4xl font-black text-white">{currentMetricas.ordenes}</h3>
-                    <p className="text-neutral-400 text-[10px] font-bold mt-2 truncate">En {sedeFiltro}</p>
-                  </div>
-
-                  {/* 3. Ticket Promedio: Ocupa 1 columna */}
-                  <div className="col-span-1 bg-[#121212] p-5 md:p-6 rounded-3xl border border-[#222]">
-                    <p className="text-neutral-500 font-bold uppercase tracking-widest text-[10px] mb-2">Ticket Prom.</p>
-                    <h3 className="text-2xl md:text-4xl font-black text-white">S/ {currentMetricas.ticketPromedio.toFixed(2)}</h3>
-                    <p className="text-neutral-400 text-[10px] font-bold mt-2">Promedio hoy</p>
-                  </div>
-
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                <div className="col-span-2 md:col-span-1 bg-[#121212] p-6 rounded-3xl border border-[#222]">
+                  <p className="text-neutral-500 font-bold uppercase tracking-widest text-[10px] mb-2">Ingresos Totales</p>
+                  <h3 className="text-3xl md:text-4xl font-black text-white">S/ {metricas.ventas.toFixed(2)}</h3>
                 </div>
+                <div className="col-span-1 bg-[#121212] p-5 md:p-6 rounded-3xl border border-[#222]">
+                  <p className="text-neutral-500 font-bold uppercase tracking-widest text-[10px] mb-2">Órdenes</p>
+                  <h3 className="text-2xl md:text-4xl font-black text-white">{metricas.ordenes}</h3>
+                </div>
+                <div className="col-span-1 bg-[#121212] p-5 md:p-6 rounded-3xl border border-[#222]">
+                  <p className="text-neutral-500 font-bold uppercase tracking-widest text-[10px] mb-2">Ticket Promedio</p>
+                  <h3 className="text-2xl md:text-4xl font-black text-white">S/ {metricas.ticketPromedio.toFixed(2)}</h3>
+                </div>
+              </div>
 
-              {/* Gráfico de Ventas Simuladas (UI) */}
               <div className="bg-[#121212] border border-[#222] rounded-3xl p-6">
-                 <h3 className="text-white font-bold text-lg mb-6 flex items-center gap-2">
-                   <span className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse"></span>
-                   Actividad Reciente
-                 </h3>
-                 {/* ✨ MAGIA AQUÍ: max-h-[260px] define la altura para ~3 items y overflow-y-auto habilita el scroll */}
-                 <div className="space-y-4 max-h-[260px] overflow-y-auto pr-2">
-                    
-                    {!currentMetricas.actividadReciente || currentMetricas.actividadReciente.length === 0 ? (
-                        <p className="text-neutral-500 text-sm text-center py-4">Aún no hay ventas el día de hoy.</p>
+                 <h3 className="text-white font-bold text-lg mb-6 flex items-center gap-2">Actividad Reciente</h3>
+                 <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
+                    {metricas.actividadReciente.length === 0 ? (
+                        <p className="text-neutral-500 text-sm text-center py-4">Sin ventas el día de hoy.</p>
                     ) : (
-                        currentMetricas.actividadReciente.map(orden => (
-                          <div key={orden.id} className="flex justify-between items-center bg-[#1a1a1a] p-4 rounded-xl border border-[#2a2a2a] shrink-0">
-                            <div className="flex items-center gap-4">
-                              <div className="w-10 h-10 bg-[#ff5a1f]/20 text-[#ff5a1f] rounded-full flex items-center justify-center font-bold">✓</div>
-                              <div>
+                        metricas.actividadReciente.map(orden => (
+                          <div key={orden.id} className="flex justify-between items-center bg-[#1a1a1a] p-4 rounded-xl border border-[#2a2a2a]">
+                            <div>
                                 <p className="text-white font-bold">Orden #{orden.id}</p>
-                                <p className="text-neutral-500 text-xs">{orden.origen} • Hoy a las {orden.hora}</p>
-                              </div>
+                                <p className="text-neutral-500 text-xs">{orden.origen} • {orden.hora}</p>
                             </div>
-                            <div className="text-right">
-                               <p className="text-white font-black">S/ {orden.total.toFixed(2)}</p>
-                               <p className="text-neutral-500 text-[10px] uppercase font-bold">Pagado</p>
-                            </div>
+                            <p className="text-white font-black text-right">S/ {orden.total.toFixed(2)}</p>
                           </div>
                         ))
                     )}

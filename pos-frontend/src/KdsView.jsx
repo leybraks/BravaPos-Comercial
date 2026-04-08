@@ -2,27 +2,25 @@ import React, { useState, useEffect, useRef } from 'react';
 import { actualizarOrden, getOrdenes } from './api/api';
 
 export default function KdsView({ onVolver }) {
-  // Estados Pro originales[cite: 3]
   const [estacionActiva, setEstacionActiva] = useState('TODO');
   const [estacionesExpandidas, setEstacionesExpandidas] = useState(false);
   const [verConsolidado, setVerConsolidado] = useState(false);
   const [historial, setHistorial] = useState([]); 
   const estaciones = ['TODO', 'COCINA', 'BAR', 'PARRILLA'];
 
-  // ¡ARRANCAMOS VACÍOS! Ya no hay datos simulados[cite: 3]
   const [ordenes, setOrdenes] = useState([]);
-  
-  // Referencia para no perder la conexión del WebSocket
   const ws = useRef(null);
 
-  // 1. LA MAGIA: CONEXIÓN WEBSOCKET
+  // ✨ EXTRAEMOS LA SEDE ACTIVA DE LA MEMORIA ✨
+  const sedeActualId = localStorage.getItem('sede_id');
+
+  // 1. LA MAGIA: CONEXIÓN WEBSOCKET MULTI-SEDE
   useEffect(() => {
-    // Nos conectamos al túnel que creamos en Django
-    ws.current = new WebSocket('ws://127.0.0.1:8000/ws/cocina/');
+    // Nos conectamos al túnel específico de ESTA sede
+    ws.current = new WebSocket(`ws://127.0.0.1:8000/ws/cocina/${sedeActualId}/`);
 
-    ws.current.onopen = () => console.log("🔥 KDS Conectado a la Cocina en Tiempo Real");
+    ws.current.onopen = () => console.log(`🔥 KDS Conectado a la Cocina (Sede ${sedeActualId}) en Tiempo Real`);
 
-    // Cuando Django "escupe" una orden, React la atrapa aquí
     ws.current.onmessage = (event) => {
       const data = JSON.parse(event.data);
       
@@ -38,7 +36,6 @@ export default function KdsView({ onVolver }) {
             cant: d.cantidad,
             nombre: d.producto_nombre,
             listo: false,
-            // ✨ CORRECCIÓN AQUÍ: Usamos el texto plano, no el JSON
             notas: d.notas_cocina 
           }))
         };
@@ -51,13 +48,14 @@ export default function KdsView({ onVolver }) {
     return () => {
       if (ws.current) ws.current.close();
     };
-  }, []);
+  }, [sedeActualId]); // Re-conecta si por alguna razón cambia la sede
 
-  // --- NUEVO: MEMORIA A LARGO PLAZO (Carga inicial) ---
+  // --- NUEVO: MEMORIA A LARGO PLAZO FILTRADA POR SEDE ---
   useEffect(() => {
     async function recuperarMemoria() {
       try {
-        const respuesta = await getOrdenes();
+        // ✨ PEDIMOS SOLO LAS ÓRDENES DE ESTA SEDE ✨
+        const respuesta = await getOrdenes({ sede_id: sedeActualId });
         
         const pendientes = respuesta.data.filter(o => o.estado === 'preparando');
 
@@ -75,7 +73,6 @@ export default function KdsView({ onVolver }) {
               cant: d.cantidad,
               nombre: d.producto_nombre || d.nombre, 
               listo: false,
-              // ✨ CORRECCIÓN AQUÍ TAMBIÉN: Usamos el texto plano
               notas: d.notas_cocina 
             }))
           };
@@ -89,9 +86,9 @@ export default function KdsView({ onVolver }) {
     }
 
     recuperarMemoria();
-  }, []);
+  }, [sedeActualId]);
 
-  // 2. Simula el reloj (Tu lógica original intacta)[cite: 3]
+  // 2. Simula el reloj
   useEffect(() => {
     const intervalo = setInterval(() => {
       setOrdenes(prev => prev.map(o => ({ ...o, minutos: o.minutos + 1 })));
@@ -99,7 +96,6 @@ export default function KdsView({ onVolver }) {
     return () => clearInterval(intervalo);
   }, []);
 
-  // Funciones de tachar y despachar originales[cite: 3]
   const tacharItem = (ordenId, itemId) => {
     setOrdenes(prev => prev.map(o => {
       if (o.id === ordenId) {
@@ -145,7 +141,6 @@ export default function KdsView({ onVolver }) {
 
   return (
     <div className="bg-[#0a0a0a] min-h-screen font-sans text-white flex flex-col">
-      {/* ================= HEADER ORIGINAL INTACTO ================= */}
       <header className="bg-[#111] border-b border-[#222] p-4 flex flex-col gap-4 shadow-md sticky top-0 z-20">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div className="flex items-center justify-between w-full md:w-auto gap-4">
@@ -199,7 +194,6 @@ export default function KdsView({ onVolver }) {
         </div>
       </header>
 
-      {/* ================= ÁREA PRINCIPAL ORIGINAL INTACTA ================= */}
       <div className="p-4 flex-1 overflow-y-auto">
         {verConsolidado ? (
           <div className="w-full max-w-2xl mx-auto bg-[#111] rounded-3xl p-6 md:p-8 border border-[#222] animate-fadeIn">
@@ -268,7 +262,6 @@ export default function KdsView({ onVolver }) {
                           <p className={`font-bold text-[15px] sm:text-[17px] leading-tight ${item.listo ? 'line-through text-neutral-500' : 'text-neutral-100'}`}>
                             {item.nombre}
                           </p>
-                          {/* Y aquí la UI dibujará el texto sin crashear */}
                           {item.notas && !item.listo && (
                             <p className="text-yellow-400 text-xs mt-1 font-semibold flex gap-1 items-center">
                               <span className="text-[10px]">⚠️</span> {item.notas}

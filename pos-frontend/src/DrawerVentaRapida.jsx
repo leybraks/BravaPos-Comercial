@@ -7,9 +7,7 @@ const formatearSoles = (monto) => {
   return `S/ ${numero.toFixed(2)}`;
 };
 
-// Extractor de precio adaptado a tu modelo de Django (precio_base)
 const obtenerPrecio = (p) => {
-  // Ahora busca primero "precio_base", luego prueba las otras opciones por si acaso
   const precio = p.precio_base !== undefined ? p.precio_base : p.precio;
   return parseFloat(precio) || 0;
 };
@@ -17,6 +15,9 @@ const obtenerPrecio = (p) => {
 export default function DrawerVentaRapida({ isOpen, onClose, onProcederPago }) {
   const [productosRapidos, setProductosRapidos] = useState([]);
   const [carrito, setCarrito] = useState([]);
+
+  // ✨ EXTRAEMOS LA SEDE PARA FILTRAR EL MENÚ ✨
+  const sedeActualId = localStorage.getItem('sede_id');
 
   useEffect(() => {
     if (isOpen) {
@@ -26,7 +27,8 @@ export default function DrawerVentaRapida({ isOpen, onClose, onProcederPago }) {
 
   const cargarProductos = async () => {
     try {
-      const res = await getProductos();
+      // ✨ ACTUALIZACIÓN: Pedimos productos filtrados por sede ✨
+      const res = await getProductos({ sede_id: sedeActualId });
       const filtrados = res.data.filter(p => p.es_venta_rapida === true);
       setProductosRapidos(filtrados);
     } catch (error) {
@@ -44,14 +46,14 @@ export default function DrawerVentaRapida({ isOpen, onClose, onProcederPago }) {
     });
   };
 
-  // --- NUEVA FUNCIÓN: QUITAR DEL CARRITO ---
   const restarDelCarrito = (id) => {
     setCarrito(prev => {
       const existe = prev.find(item => item.id === id);
+      if (!existe) return prev;
       if (existe.cantidad === 1) {
-        return prev.filter(item => item.id !== id); // Si hay 1, lo borra entero
+        return prev.filter(item => item.id !== id);
       } else {
-        return prev.map(item => item.id === id ? { ...item, cantidad: item.cantidad - 1 } : item); // Si hay más, resta 1
+        return prev.map(item => item.id === id ? { ...item, cantidad: item.cantidad - 1 } : item);
       }
     });
   };
@@ -70,7 +72,7 @@ export default function DrawerVentaRapida({ isOpen, onClose, onProcederPago }) {
             <span className="text-3xl">⚡</span>
             <div>
                 <h2 className="text-xl md:text-2xl font-black text-[#ff5a1f] uppercase tracking-tighter leading-none">Venta Directa</h2>
-                <p className="text-neutral-500 font-bold text-[10px] md:text-xs uppercase tracking-widest mt-1">Productos de Despacho Inmediato</p>
+                <p className="text-neutral-500 font-bold text-[10px] md:text-xs uppercase tracking-widest mt-1">Sede: {localStorage.getItem('sede_nombre') || 'Local'}</p>
             </div>
           </div>
           <button onClick={onClose} className="w-12 h-12 bg-[#222] hover:bg-red-500/20 hover:text-red-500 rounded-2xl flex justify-center items-center font-black text-xl transition-all border border-[#333] active:scale-95">✕</button>
@@ -79,12 +81,11 @@ export default function DrawerVentaRapida({ isOpen, onClose, onProcederPago }) {
         {/* CUERPO */}
         <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
           
-          {/* SECCIÓN MENÚ DIRECTO */}
           <div className="flex-1 flex flex-col p-4 md:p-6 overflow-hidden border-b lg:border-b-0 lg:border-r border-[#222] bg-[#050505]">
             <div className="flex-1 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4 content-start pr-2">
               {productosRapidos.length === 0 && (
                 <div className="col-span-full text-center py-20">
-                  <p className="text-neutral-500 font-bold mb-2">No hay productos marcados.</p>
+                  <p className="text-neutral-500 font-bold mb-2">No hay productos marcados para esta sede.</p>
                 </div>
               )}
               {productosRapidos.map(p => (
@@ -107,7 +108,6 @@ export default function DrawerVentaRapida({ isOpen, onClose, onProcederPago }) {
             </div>
           </div>
 
-          {/* SECCIÓN CARRITO CON CONTROLES */}
           <div className="h-[45vh] lg:h-auto lg:w-[350px] xl:w-[420px] bg-[#0a0a0a] flex flex-col shrink-0">
             <h3 className="p-3 md:p-5 font-black text-neutral-500 border-b border-[#222] text-xs uppercase tracking-widest bg-[#111]">Ticket Actual</h3>
             
@@ -119,7 +119,6 @@ export default function DrawerVentaRapida({ isOpen, onClose, onProcederPago }) {
                 </div>
               )}
               {carrito.map(item => (
-                // DISEÑO RENOVADO DEL ITEM CON BOTONES DE + Y -
                 <div key={item.id} className="flex flex-col bg-[#151515] p-3 rounded-xl border border-[#222]">
                   <div className="flex justify-between items-start mb-3">
                     <span className="font-bold text-neutral-200 leading-tight pr-2">{item.nombre}</span>
@@ -131,12 +130,10 @@ export default function DrawerVentaRapida({ isOpen, onClose, onProcederPago }) {
                   <div className="flex justify-between items-center">
                     <span className="text-neutral-600 text-xs font-mono">{formatearSoles(item.precio)} c/u</span>
                     
-                    {/* CONTROLES DE CANTIDAD */}
                     <div className="flex items-center gap-2 bg-[#0a0a0a] rounded-lg p-1 border border-[#2a2a2a]">
                       <button 
                         onClick={() => restarDelCarrito(item.id)} 
                         className="w-8 h-8 flex justify-center items-center text-neutral-400 hover:text-red-500 hover:bg-red-500/10 rounded-md transition-colors"
-                        title="Quitar uno"
                       >
                         <span className="text-lg font-black leading-none pb-1">-</span>
                       </button>
@@ -148,7 +145,6 @@ export default function DrawerVentaRapida({ isOpen, onClose, onProcederPago }) {
                       <button 
                         onClick={() => agregarAlCarrito(item)} 
                         className="w-8 h-8 flex justify-center items-center text-neutral-400 hover:text-green-500 hover:bg-green-500/10 rounded-md transition-colors"
-                        title="Añadir uno"
                       >
                         <span className="text-lg font-black leading-none pb-1">+</span>
                       </button>

@@ -1,59 +1,53 @@
 import React, { useState } from 'react';
 import MesasView from './MesasView';
-import VinculacionDispositivo from './VinculacionDispositivo';
 import KdsView from './KdsView';
 import ErpDashboard from './ErpDashboard';
 import LoginView from './LoginView';
 import PosView from './PosView';
 
 export default function App() {
-  const estaVinculadoInicialmente = !!localStorage.getItem('access_token');
-  const [vista, setVista] = useState(estaVinculadoInicialmente ? 'login' : 'vinculacion');
+  // ✨ LoginView ahora es un "Súper Componente" que sabe si la tablet
+  // está configurada o no. Así que siempre arrancamos en 'login'.
+  const [vista, setVista] = useState('login');
   
   // Guardamos qué mesa tocó el cajero para pasársela al POS
   const [mesaActual, setMesaActual] = useState(null);
   
-  // ✨ NUEVO: Guardamos quién entró para saber qué botones mostrarle
+  // Guardamos quién entró para saber qué botones mostrarle
   const [rolUsuario, setRolUsuario] = useState(null);
-
-  const manejarVinculacionExitosa = () => setVista('login');
 
   return (
     <div className="bg-[#121212] min-h-screen text-neutral-100 font-sans flex flex-col relative pb-28 overflow-hidden">
       
-      {/* 1. VINCULACIÓN */}
-      {vista === 'vinculacion' && <VinculacionDispositivo onVinculado={manejarVinculacionExitosa} />}
-      
-      {/* 2. LOGIN (PIN) */}
+      {/* 1. LOGIN / VINCULACIÓN (El Guardián Multi-Sede) */}
       {vista === 'login' && (
         <LoginView 
           onAccesoConcedido={(rol) => {
             setRolUsuario(rol); // Guardamos su rol
             
-            if (rol === 'Cocinero') {
-              setVista('cocina'); // La cocina va directo al KDS
+            // Verificamos ambas formas en las que pudiste haber escrito el rol en Django
+            if (rol === 'Cocinero' || rol === 'Cocina') {
+              setVista('cocina'); // La cocina va directo a sus comandas (KDS)
             } else {
-              setVista('mesas'); // Admin, Cajero y Mesero van a ver las mesas
+              setVista('mesas'); // Admin, Cajero y Meseros van al salón
             }
           }} 
         />
       )}
 
-      {/* 3. SALÓN (MESAS) */}
+      {/* 2. SALÓN (MESAS) */}
       {vista === 'mesas' && (
-        <>
-          <MesasView 
-            rolUsuario={rolUsuario} // Le pasamos el rol a la vista de mesas
-            onIrAErp={() => setVista('erp')} // Le pasamos el poder de ir al ERP
-            onSeleccionarMesa={(idMesa) => {
-              setMesaActual(idMesa);
-              setVista('menu'); 
-            }} 
-          />
-        </>
+        <MesasView 
+          rolUsuario={rolUsuario} 
+          onIrAErp={() => setVista('erp')} 
+          onSeleccionarMesa={(idMesa) => {
+            setMesaActual(idMesa);
+            setVista('menu'); 
+          }} 
+        />
       )}
 
-      {/* 4. POS (CAJA / MENÚ) */}
+      {/* 3. POS (CAJA / MENÚ) */}
       {vista === 'menu' && (
         <PosView 
           mesaId={mesaActual} 
@@ -61,11 +55,15 @@ export default function App() {
         />
       )}
 
-      {/* 5. KDS (COCINA) */}
-      {vista === 'cocina' && <KdsView onVolver={() => setVista('login')} />} {/* Que vuelva al login si sale */}
+      {/* 4. KDS (PANTALLA DE COCINA) */}
+      {vista === 'cocina' && (
+         <KdsView onVolver={() => setVista('login')} /> 
+      )}
 
-      {/* 6. ERP (ADMINISTRADOR) */}
-      {vista === 'erp' && <ErpDashboard onVolverAlPos={() => setVista('mesas')} />}
+      {/* 5. ERP (PANEL DE ADMINISTRADOR) */}
+      {vista === 'erp' && (
+         <ErpDashboard onVolverAlPos={() => setVista('mesas')} />
+      )}
       
     </div>
   );

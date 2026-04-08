@@ -181,3 +181,19 @@ REST_FRAMEWORK = {
 }
 
 
+CORS_ALLOW_ALL_ORIGINS = True 
+
+# 👇 ESTA ES LA LÍNEA MÁGICA QUE ARREGLA TU ERROR 👇
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+    'x-empleado-id',  # ¡AQUÍ ESTÁ NUESTRO HEADER DE AUDITORÍA!
+]
+

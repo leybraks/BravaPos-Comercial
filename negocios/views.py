@@ -217,7 +217,7 @@ class EmpleadoViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(negocio_id=negocio_id)
             
         return queryset
-    @action(detail=False, methods=['post'], permission_classes=[AllowAny])
+    @action(detail=False, methods=['POST'], permission_classes=[AllowAny], url_path='validar_pin')
     def validar_pin(self, request):
         pin_ingresado = request.data.get('pin')
         sede_id = request.data.get('sede_id')
@@ -231,7 +231,12 @@ class EmpleadoViewSet(viewsets.ModelViewSet):
         empleado_valido = None
 
         for emp in empleados:
-            if check_password(pin_ingresado, emp.pin):
+            # 1. Comparamos si está en texto plano (Ej: si lo creaste desde el /admin como '1111')
+            if emp.pin == pin_ingresado:
+                empleado_valido = emp
+                break
+            # 2. Comparamos por si acaso está encriptado (Hash)
+            elif check_password(pin_ingresado, emp.pin):
                 empleado_valido = emp
                 break
 
@@ -245,8 +250,9 @@ class EmpleadoViewSet(viewsets.ModelViewSet):
         return Response({
             'id': empleado_valido.id,
             'nombre': empleado_valido.nombre,
-            'rol': empleado_valido.rol.nombre if empleado_valido.rol else 'Sin Rol',
+            'rol_nombre': empleado_valido.rol.nombre if empleado_valido.rol else 'Sin Rol', # 👈 CAMBIADO A 'rol_nombre'
         }, status=status.HTTP_200_OK)
+    
 class SesionCajaViewSet(viewsets.ModelViewSet):
     queryset = SesionCaja.objects.all()
     serializer_class = SesionCajaSerializer

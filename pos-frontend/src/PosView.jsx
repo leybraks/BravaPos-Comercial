@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import usePosStore from './store/usePosStore';
 import ModalCobro from './ModalCobro';
 import ModalModificadores from './ModalModificadores';
-import { getProductos, crearOrden,actualizarOrden, getOrdenes, crearPago, agregarProductosAOrden } from './api/api';
+import { getProductos, crearOrden, actualizarOrden, getOrdenes, crearPago, agregarProductosAOrden } from './api/api';
 
 export default function PosView({ mesaId, onVolver }) {
   const [categoriaActiva, setCategoriaActiva] = useState('Todos');
@@ -28,12 +28,15 @@ export default function PosView({ mesaId, onVolver }) {
 
   const { 
     carrito, agregarProducto, restarProducto, eliminarProducto, 
-    obtenerTotalItems, restarDesdeGrid,obtenerTotalDinero, vaciarCarrito, actualizarItemCompleto, sumarUnidad
+    obtenerTotalItems, restarDesdeGrid, obtenerTotalDinero, vaciarCarrito, actualizarItemCompleto, sumarUnidad
   } = usePosStore();
 
   const formatearSoles = (monto) => `S/ ${parseFloat(monto || 0).toFixed(2)}`;
 
-  const vaciarStore = vaciarCarrito; // Alias para useCallback
+  const vaciarStore = vaciarCarrito; 
+
+  // ✨ AQUÍ OBTENEMOS LA SEDE DE LA MEMORIA ✨
+  const sedeActualId = localStorage.getItem('sede_id');
 
   const cargarData = useCallback(async () => {
       try {
@@ -47,10 +50,12 @@ export default function PosView({ mesaId, onVolver }) {
         }));
         setProductosBase(dataFormateada);
 
-        const responseOrdenes = await getOrdenes();
+        // ✨ LE DECIMOS A DJANGO QUE SOLO NOS DÉ LAS ÓRDENES DE ESTA SEDE ✨
+        const responseOrdenes = await getOrdenes({ sede_id: sedeActualId });
         const ordenViva = responseOrdenes.data.find(o => 
           o.mesa === mesaId && o.estado !== 'pagado'
         );
+        
         if (ordenViva) {
             setOrdenActiva(ordenViva);
         } else {
@@ -62,7 +67,7 @@ export default function PosView({ mesaId, onVolver }) {
         console.error(error);
         setCargando(false);
       }
-  }, [mesaId, vaciarStore]);
+  }, [mesaId, vaciarStore, sedeActualId]);
 
   useEffect(() => {
     cargarData();
@@ -72,7 +77,6 @@ export default function PosView({ mesaId, onVolver }) {
     ? productosBase 
     : productosBase.filter(p => p.categoria == categoriaActiva);
   
-  // Lista única de categorías reales basadas en los productos
   const categoriasReales = ['Todos', ...new Set(productosBase.map(p => p.categoria))];
 
   const totalMesa = (ordenActiva ? parseFloat(ordenActiva.total) : 0) + obtenerTotalDinero();
@@ -93,7 +97,7 @@ export default function PosView({ mesaId, onVolver }) {
         await agregarProductosAOrden(ordenActiva.id, { detalles: detallesNuevos });
       } else {
         const payloadOrden = {
-          sede: 1, 
+          sede: sedeActualId, // ✨ AHORA LA ORDEN SE CREA EN LA SEDE CORRECTA ✨
           mesa: esParaLlevar ? null : mesaId, 
           tipo: esParaLlevar ? 'llevar' : 'salon',
           estado: 'preparando',
@@ -121,26 +125,24 @@ export default function PosView({ mesaId, onVolver }) {
   };
 
   const abrirModalParaNuevo = (producto) => {
-    setProductoParaModificar(producto); // Es el producto base de Django
+    setProductoParaModificar(producto); 
     setModalModsAbierto(true);
   };
 
   const abrirModalParaEditar = (itemCarrito) => {
-    setProductoParaModificar(itemCarrito); // Pasamos el item con cart_id y selecciones
+    setProductoParaModificar(itemCarrito); 
     setModalModsAbierto(true);
   };
 
   const manejarAgregarAlCarritoDesdeModal = (itemCompleto) => {
-      // Si el itemCompleto ya tiene un cart_id existente en el carrito, es una edición, sino es nuevo.
       const existeItem = carrito.find(i => i.cart_id === itemCompleto.cart_id);
       
       if (existeItem) {
-          actualizarItemCompleto(itemCompleto); // Nueva acción en el store
+          actualizarItemCompleto(itemCompleto); 
       } else {
-          agregarProducto(itemCompleto); // Acción normal
+          agregarProducto(itemCompleto); 
       }
   };
-// Agrega esto junto a tus otros estados
   
   const esParaLlevar = (typeof mesaId === 'object' && mesaId?.id === 'llevar') || mesaId === 'llevar';
   const nombreLlevar = typeof mesaId === 'object' ? mesaId.cliente : 'Cliente (🛍️ Llevar)';
@@ -182,12 +184,11 @@ export default function PosView({ mesaId, onVolver }) {
       {/* ==================== CUADRÍCULA DE PRODUCTOS ACTUALIZADA ==================== */}
       <div className="p-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 relative z-0 pb-32">
         {productosFiltrados.map((prod) => {
-          // Buscamos cantidad total seleccionada de este producto (sumando variantes)
           const totalCantidadProd = carrito
               .filter(item => item.id === prod.id)
               .reduce((acc, curr) => acc + curr.cantidad, 0);
           const tieneVariantes = carrito.some(item => item.id === prod.id && item.cart_id !== `base_${prod.id}`);
-          // Diseño para producto complejo (Ej: Pizza / Matriz Base)
+          
           if (prod.requiere_seleccion) {
               return (
                 <button key={prod.id} onClick={() => abrirModalParaNuevo(prod)} className="bg-[#111] border border-[#222] p-4 rounded-3xl shadow-lg active:scale-95 transition-all flex flex-col justify-between h-40 text-left hover:border-[#444] group">
@@ -205,7 +206,6 @@ export default function PosView({ mesaId, onVolver }) {
               );
           }
 
-          // Diseño para producto normal con controles de cantidad y modificar
           const precioAMostrar = parseFloat(prod.precio_base || prod.precio);
           
           return (
@@ -221,15 +221,13 @@ export default function PosView({ mesaId, onVolver }) {
                 <p className="font-mono text-sm text-[#ff5a1f] font-bold mt-1.5">{formatearSoles(precioAMostrar)}</p>
               </div>
               
-              {/* Parte Inferior: Botones (Se queda anclado abajo) */}
               <div className="flex flex-col gap-2 pt-2 border-t border-[#1a1a1a] shrink-0">
                   
-                  {/* ✨ MAGIA CONDICIONAL: Solo aparece si hay más de 0 en el carrito */}
                   {totalCantidadProd > 0 && (
                     <div className='flex items-center justify-between gap-1'>
                       <button 
                           onClick={(e) => { 
-                            e.stopPropagation(); // ✨ EVITA que el clic pase al fondo y sume otro plato
+                            e.stopPropagation(); 
                             restarDesdeGrid(prod.id);
                           }}
                           className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center font-black text-lg transition-all border bg-red-500/10 text-red-500 border-red-500/20 hover:bg-red-500 hover:text-white"
@@ -244,7 +242,7 @@ export default function PosView({ mesaId, onVolver }) {
                       
                       <button 
                           onClick={(e) => { 
-                            e.stopPropagation(); // ✨ EVITA doble clic
+                            e.stopPropagation(); 
                             agregarProducto(prod); 
                           }} 
                           className='w-9 h-9 sm:w-10 sm:h-10 bg-green-500/10 text-green-500 border border-green-500/20 hover:bg-green-500 hover:text-white rounded-xl flex items-center justify-center font-black text-lg transition-all'
@@ -252,11 +250,10 @@ export default function PosView({ mesaId, onVolver }) {
                     </div>
                   )}
                   
-                  {/* Botón de Variantes / Notas */}
                   {prod.tiene_variaciones ? (
                     <button 
                       onClick={(e) => {
-                        e.stopPropagation(); // ✨ EVITA sumar 1 al carrito cuando solo quieren abrir el modal
+                        e.stopPropagation(); 
                         abrirModalParaNuevo(prod);
                       }}
                       className="w-full text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-[#ff5a1f] bg-[#ff5a1f]/10 py-2.5 rounded-lg border border-[#ff5a1f]/30 hover:bg-[#ff5a1f] hover:text-white transition-colors"
@@ -266,7 +263,7 @@ export default function PosView({ mesaId, onVolver }) {
                   ) : (
                     <button 
                       onClick={(e) => {
-                        e.stopPropagation(); // ✨ EVITA sumar 1 al carrito
+                        e.stopPropagation(); 
                         abrirModalParaNuevo(prod);
                       }}
                       className="w-full text-[9px] sm:text-[10px] font-bold uppercase tracking-widest text-neutral-500 bg-[#1a1a1a] py-2 rounded-lg border border-[#2a2a2a] hover:border-[#444] hover:text-white transition-colors"
@@ -281,7 +278,7 @@ export default function PosView({ mesaId, onVolver }) {
         })}
       </div>
 
-      {/* BARRA FLOTANTE FOOTER - Igualmente premium */}
+      {/* BARRA FLOTANTE FOOTER */}
       <div className="fixed bottom-0 left-0 w-full bg-[#0a0a0a]/90 backdrop-blur-md p-4 border-t border-[#222] z-20 shadow-[-10px_0_30px_rgba(0,0,0,0.5)]">
         <div className="flex gap-3 h-16">
           <button 
@@ -346,7 +343,6 @@ export default function PosView({ mesaId, onVolver }) {
                     <div>
                       <span className="font-bold text-white text-[15px]">{item.nombre}</span>
                       
-                      {/* ✨ Usamos el triple check para asegurar que encuentre la nota donde esté */}
                       {(item.notas_cocina || item.notas_y_modificadores || item.notas) && (
                         <span className="block text-[11px] text-[#ff5a1f] mt-1 font-mono leading-tight">
                           ↳ {item.notas_cocina || item.notas_y_modificadores || item.notas}
@@ -364,19 +360,18 @@ export default function PosView({ mesaId, onVolver }) {
             </div>
           )}
 
-          {/* ==================== CARRITO ACTUALIZADO CON BOTÓN EDITAR ==================== */}
           {carrito.length > 0 && (
             <div>
               <p className="text-[#ff5a1f] font-bold uppercase tracking-widest text-[10px] mb-2 pl-1">Por Enviar a Cocina (Editables)</p>
               <div className="space-y-2.5">
                 {carrito.map(item => {
-                    const precioAMostrar = item.precio_unitario_calculado || item.precio_base || item.precio || 0;                    return (
+                    const precioAMostrar = item.precio_unitario_calculado || item.precio_base || item.precio || 0;                    
+                    return (
                     <div key={item.cart_id || item.id} className="bg-[#161616] border border-[#2a2a2a] rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
                       <div className="flex justify-between items-start">
                           <div>
                             <span className="font-bold text-neutral-400 text-[15px]">✓ {item.producto_nombre || item.nombre}</span>
                             
-                            {/* ✨ Aquí también el triple check por seguridad */}
                             {(item.notas_cocina || item.notas_y_modificadores || item.notas) && (
                               <span className="block text-[11px] text-[#ff5a1f] mt-1 italic font-mono">
                                 ↳ {item.notas_cocina || item.notas_y_modificadores || item.notas}
@@ -393,7 +388,6 @@ export default function PosView({ mesaId, onVolver }) {
                           </div>
                       </div>
                       
-                      {/* BOTÓN MODIFICAR / EDITAR EL ITEM YA EN EL CARRITO */}
                       <div className="flex justify-start pt-1 border-t border-[#222]">
                           <button 
                             onClick={() => {
@@ -433,7 +427,6 @@ export default function PosView({ mesaId, onVolver }) {
         </div>
       </div>
 
-      {/* ==================== ANIMACIÓN DE ÉXITO ==================== */}
       {mostrarExito && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
           <div className="bg-[#1a1a1a] border border-[#333] p-10 rounded-3xl flex flex-col items-center shadow-2xl scale-in-center border border-[#ff5a1f]/30">
@@ -452,7 +445,6 @@ export default function PosView({ mesaId, onVolver }) {
             carrito={ordenActiva ? ordenActiva.detalles : []} 
             onCobroExitoso={async (datosPago) => {
               try {
-                // 1. Guardamos el pago en la base de datos
                 let metodoParaDjango = datosPago[0].metodo;
                 if (metodoParaDjango === 'yape') {
                     metodoParaDjango = 'yape_plin';
@@ -463,22 +455,14 @@ export default function PosView({ mesaId, onVolver }) {
                    monto: datosPago[0].monto
                 });
                 
-                // 2. ✨ ¡LO QUE FALTABA! Decirle a Django que cierre la mesa ✨
                 await actualizarOrden(ordenActiva.id, { 
                   estado: 'pagado', 
                   pago_confirmado: true 
                 });
 
-                // 3. Cerramos el modal de cobro
                 setModalCobroAbierto(false);
-                
-                // 4. Limpiamos la memoria
                 vaciarStore();
-                
-                // 5. Escondemos el panel del carrito
                 setCarritoAbierto(false);
-                
-                // 6. Regresamos a la vista de mesas (¡Ahora sí la verá libre!)
                 onVolver();
                 
               } catch (error) {
@@ -488,7 +472,7 @@ export default function PosView({ mesaId, onVolver }) {
             }}
           />
       )}
-      {/* ✨ EL BLOQUEO: Si el polling detecta que la caja se cerró, cubre toda la pantalla */}
+      
       {estadoCaja === 'cerrado' && (
         <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center">
           <div className="bg-[#111] p-10 rounded-3xl border border-red-500/20 shadow-2xl max-w-sm animate-slideUp">
@@ -497,10 +481,8 @@ export default function PosView({ mesaId, onVolver }) {
             <p className="text-neutral-400 mt-3 text-sm font-bold leading-relaxed">
               El administrador ha finalizado el turno. No se pueden procesar más pedidos.
             </p>
-            
-            {/* Botón para regresar al panel o reabrir (si es admin) */}
             <button 
-              onClick={onVolver} // Tu función para regresar al menú principal
+              onClick={onVolver} 
               className="mt-8 w-full bg-[#ff5a1f] text-white py-4 rounded-xl font-black uppercase text-xs tracking-widest shadow-lg hover:bg-[#e04a15] active:scale-95 transition-all"
             >
               Volver al Inicio
@@ -508,7 +490,7 @@ export default function PosView({ mesaId, onVolver }) {
           </div>
         </div>
       )}
-      {/* ==================== EL NUEVO MODAL DE MODIFICADORES ==================== */}
+      
       <ModalModificadores 
         isOpen={modalModsAbierto}
         onClose={() => setModalModsAbierto(false)}
