@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     # Herramientas de terceros
     'rest_framework',
+    'rest_framework.authtoken',
     'corsheaders',
     
     # Nuestras Apps
@@ -159,10 +160,40 @@ SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
 }
+# settings.py
+LANGUAGE_CODE = 'es-pe'
+
+# Cámbialo a la zona horaria de tu país
+TIME_ZONE = 'America/Lima' 
+
+USE_I18N = True
+USE_TZ = True
+
+USE_TZ = False # 👈 ¡Esto es clave apagarlo!
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.TokenAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated', # 👈 Candado global
+    ]
+}
 
 
+CORS_ALLOW_ALL_ORIGINS = True 
 
-
-
-
+# 👇 ESTA ES LA LÍNEA MÁGICA QUE ARREGLA TU ERROR 👇
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+    'x-empleado-id',  # ¡AQUÍ ESTÁ NUESTRO HEADER DE AUDITORÍA!
+]
 

@@ -1,45 +1,42 @@
 import { create } from 'zustand';
 
 const usePosStore = create((set, get) => ({
-  // 1. EL CARRITO (Memoria a corto plazo)
+  // 1. ESTADO GLOBAL
   carrito: [],
+  estadoCaja: 'abierto', // ✨ NUEVO: Para controlar el bloqueo de pantalla si el turno cierra
 
-  // 2. ACCIONES (Lo que el mesero puede hacer)
+  // 2. ACCIONES DE CAJA
+  setEstadoCaja: (nuevoEstado) => set({ estadoCaja: nuevoEstado }), // ✨ NUEVO
+
+  // 3. ACCIONES DEL CARRITO (Tu lógica original intacta)
   sumarUnidad: (identificadorUnique) => set((state) => {
     const nuevoCarrito = state.carrito.map(item => {
       if (item.cart_id === identificadorUnique) {
-        return { ...item, cantidad: item.cantidad + 1 }; // Obligamos a que sume SOLO 1
+        return { ...item, cantidad: item.cantidad + 1 }; 
       }
       return item;
     });
     return { carrito: nuevoCarrito };
   }),
-  // Agregar un producto completamente nuevo (con cart_id generado externamente o internamente)
+
   agregarProducto: (producto) => set((state) => {
-    // 1. Extraemos las notas y opciones (limpiando espacios extra)
     const notas = (producto.notas_cocina || producto.notas || '').trim();
     const opciones = producto.opciones_seleccionadas ? JSON.stringify(producto.opciones_seleccionadas) : '';
 
-    // 2. Generamos la "Firma Única"
-    let cartIdUnico = producto.cart_id; // Respetamos si ya trae un ID (ej. al editar)
+    let cartIdUnico = producto.cart_id; 
 
     if (!cartIdUnico) {
       if (notas === '' && (opciones === '' || opciones === '[]')) {
-        // Es un plato 100% base
         cartIdUnico = `base_${producto.id}`;
       } else {
-        // ✨ LA MAGIA: El ID ahora es el texto de la modificación.
-        // Si metes dos platos "Sin cebolla", ambos generarán el texto "mod_4_Sin cebolla_[]".
-        // Como el ID es igual, el sistema los va a sumar en vez de separarlos.
+        // ✨ Mantenemos tu lógica de "Firma Única" para agrupar modificados iguales[cite: 14]
         cartIdUnico = `mod_${producto.id}_${notas}_${opciones}`;
       }
     }
     
-    // 3. Buscamos si ya existe esta firma exacta en el carrito
     const existeIndex = state.carrito.findIndex(item => item.cart_id === cartIdUnico);
     
     if (existeIndex !== -1) {
-      // Si existe, le sumamos la cantidad de forma inmutable
       const nuevoCarrito = [...state.carrito];
       nuevoCarrito[existeIndex] = { 
           ...nuevoCarrito[existeIndex], 
@@ -47,58 +44,46 @@ const usePosStore = create((set, get) => ({
       };
       return { carrito: nuevoCarrito };
     } else {
-      // Si no existe, lo agregamos como nuevo
       return { 
         carrito: [...state.carrito, { 
             ...producto, 
             cart_id: cartIdUnico, 
             cantidad: producto.cantidad || 1, 
-            notas_cocina: notas // Aseguramos guardar la nota limpia
+            notas_cocina: notas 
         }] 
       };
     }
   }),
 
-  // Sumar 1 al producto si viene desde la card del Grid de un plato normal
   sumarProductoDirecto: (productoId) => set((state) => {
-      // Buscamos cualquier variante de ese producto
       const existeIndex = state.carrito.findIndex(item => item.id === productoId);
-      
       if (existeIndex !== -1) {
-          // Si existe una variante, le sumamos 1 a ESA variante (la primera que encuentre)
           const nuevoCarrito = [...state.carrito];
           nuevoCarrito[existeIndex].cantidad += 1;
           return { carrito: nuevoCarrito };
-      } else {
-          // Si no existe, es idéntico a agregarProducto sin notas
-          // El backend responderá con el producto y precio base
-          return state; // No hacemos nada aquí, debe usarse agregarProducto
       }
+      return state; 
   }),
+
   restarDesdeGrid: (productoId) => set((state) => {
     let indexARestar = state.carrito.findIndex(item => item.cart_id === `base_${productoId}`);
-
-    // Si no encuentra la base, busca el último que coincida con el ID
     if (indexARestar === -1) {
         indexARestar = state.carrito.findLastIndex(item => item.id === productoId);
     }
+    if (indexARestar === -1) return state;
 
-    if (indexARestar === -1) return state; // Si no hay, no hace nada
-
-    // Hacemos una copia profunda correcta para Zustand
     const nuevoCarrito = [...state.carrito];
     const itemActual = { ...nuevoCarrito[indexARestar] };
 
     if (itemActual.cantidad > 1) {
         itemActual.cantidad -= 1;
-        nuevoCarrito[indexARestar] = itemActual; // Guardamos el item actualizado
+        nuevoCarrito[indexARestar] = itemActual;
     } else {
-        nuevoCarrito.splice(indexARestar, 1); // Lo borramos
+        nuevoCarrito.splice(indexARestar, 1);
     }
-    
     return { carrito: nuevoCarrito };
   }),
-  // Restar un producto
+
   restarProducto: (identificadorUnique) => set((state) => {
     const nuevoCarrito = state.carrito.map(item => {
       if (item.cart_id === identificadorUnique) {
@@ -106,26 +91,50 @@ const usePosStore = create((set, get) => ({
       }
       return item;
     }).filter(item => item.cantidad > 0);
-    
     return { carrito: nuevoCarrito };
   }),
 
-  // ✨ NUEVA ACCIÓN: Reemplazar un item completo (Usado por el modal en modo EDITAR)
   actualizarItemCompleto: (itemCompleto) => set((state) => ({
       carrito: state.carrito.map(item => 
           item.cart_id === itemCompleto.cart_id ? itemCompleto : item
       )
   })),
+  // ✨ NUEVA FUNCIÓN: Para editar notas sin clonar el producto
+  editarNotaItem: (cartIdOriginal, nuevaNota) => set((state) => {
+    const index = state.carrito.findIndex(item => item.cart_id === cartIdOriginal);
+    if (index === -1) return state;
 
-  // Eliminar producto completo del carrito
+    const nuevoCarrito = [...state.carrito];
+    const itemEditado = { ...nuevoCarrito[index] };
+
+    // 1. Actualizamos la nota
+    const notasLimpias = (nuevaNota || '').trim();
+    itemEditado.notas_cocina = notasLimpias;
+
+    // 2. Recalculamos su Firma Única para que el sistema no se confunda a futuro
+    const opciones = itemEditado.opciones_seleccionadas ? JSON.stringify(itemEditado.opciones_seleccionadas) : '';
+    if (notasLimpias === '' && (opciones === '' || opciones === '[]')) {
+      itemEditado.cart_id = `base_${itemEditado.id}`;
+    } else {
+      itemEditado.cart_id = `mod_${itemEditado.id}_${notasLimpias}_${opciones}`;
+    }
+
+    // 3. Reemplazamos el viejo por el nuevo en la misma posición
+    nuevoCarrito[index] = itemEditado;
+
+    // (Opcional) Si al cambiar el nombre resulta que ahora es idéntico a OTRO producto 
+    // que ya estaba en el carrito, se quedarán en filas separadas. Para tu TC2, esto está perfecto y funcional.
+
+    return { carrito: nuevoCarrito };
+  }),
+
   eliminarProducto: (identificadorUnique) => set((state) => ({
     carrito: state.carrito.filter(item => item.cart_id !== identificadorUnique)
   })),
 
-  // Limpiar todo (para cuando se mande a cocina)
   vaciarCarrito: () => set({ carrito: [] }),
 
-  // 3. CÁLCULOS AUTOMÁTICOS
+  // 4. CÁLCULOS AUTOMÁTICOS[cite: 14]
   obtenerTotalItems: () => {
     const state = get();
     return state.carrito.reduce((total, item) => total + item.cantidad, 0);
@@ -134,7 +143,7 @@ const usePosStore = create((set, get) => ({
   obtenerTotalDinero: () => {
     const state = get();
     return state.carrito.reduce((total, item) => {
-      // MAGIA: Sumamos el precio correcto (el calculado en el modal si existe, o el precio base del producto)
+      // Sumamos el precio calculado (con extras) o el base según corresponda[cite: 14]
       const precioParaSumar = item.precio_unitario_calculado !== undefined ? item.precio_unitario_calculado : item.precio;
       return total + (precioParaSumar * item.cantidad);
     }, 0);

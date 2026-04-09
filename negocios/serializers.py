@@ -1,7 +1,8 @@
 from rest_framework import serializers
 from .models import (
     Negocio, Sede, Mesa, Producto, Orden, DetalleOrden, Pago,
-    ModificadorRapido, GrupoVariacion, OpcionVariacion, Rol, Empleado, SesionCaja
+    ModificadorRapido, GrupoVariacion, OpcionVariacion, Rol, Empleado, SesionCaja,
+    DetalleOrdenOpcion # ✨ IMPORTACIÓN AÑADIDA
 )
 
 class NegocioSerializer(serializers.ModelSerializer):
@@ -15,7 +16,6 @@ class SedeSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class MesaSerializer(serializers.ModelSerializer):
-    # Traemos el nombre de la sede como lectura para que el Frontend lo muestre fácil
     sede_nombre = serializers.ReadOnlyField(source='sede.nombre')
     
     class Meta:
@@ -23,7 +23,7 @@ class MesaSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 # ==========================================
-# NUEVOS SERIALIZADORES: MODIFICADORES Y VARIACIONES
+# SERIALIZADORES: MODIFICADORES Y VARIACIONES
 # ==========================================
 class ModificadorRapidoSerializer(serializers.ModelSerializer):
     class Meta:
@@ -36,7 +36,6 @@ class OpcionVariacionSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class GrupoVariacionSerializer(serializers.ModelSerializer):
-    # Anidamos las opciones para que vengan dentro del grupo automáticamente
     opciones = OpcionVariacionSerializer(many=True, read_only=True)
 
     class Meta:
@@ -44,10 +43,9 @@ class GrupoVariacionSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 # ==========================================
-# PRODUCTO (Ahora con los grupos incluidos)
+# PRODUCTO
 # ==========================================
 class ProductoSerializer(serializers.ModelSerializer):
-    # React recibirá el producto y la lista completa de sus variantes en 1 solo viaje
     grupos_variacion = GrupoVariacionSerializer(many=True, read_only=True)
 
     class Meta:
@@ -55,45 +53,43 @@ class ProductoSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 # ==========================================
-# ORDEN Y DETALLE (Con la magia del JSON)
+# ORDEN Y DETALLES (Arquitectura 10/10)
 # ==========================================
+
+# ✨ NUEVO: Para que la cocina sepa qué opciones eligió el cliente
+class DetalleOrdenOpcionSerializer(serializers.ModelSerializer):
+    opcion_nombre = serializers.ReadOnlyField(source='opcion_variacion.nombre')
+
+    class Meta:
+        model = DetalleOrdenOpcion
+        fields = ['id', 'opcion_nombre', 'precio_adicional_aplicado']
+
 class DetalleOrdenSerializer(serializers.ModelSerializer):
     producto_nombre = serializers.ReadOnlyField(source='producto.nombre')
-    # Eliminamos 'variacion_nombre' porque ahora todo vive en el campo JSON 'notas_y_modificadores'
+    # ✨ NUEVO: Anidamos las opciones para que viajen junto con el plato
+    opciones_seleccionadas = DetalleOrdenOpcionSerializer(many=True, read_only=True)
 
     class Meta:
         model = DetalleOrden
-        fields = '__all__'
+        fields = ['id', 'orden', 'producto', 'producto_nombre', 'cantidad', 
+                  'precio_unitario', 'notas_y_modificadores', 'notas_cocina', 
+                  'opciones_seleccionadas']
         read_only_fields = ['orden']
 
 class OrdenSerializer(serializers.ModelSerializer):
-    detalles = DetalleOrdenSerializer(many=True)
+    # ✨ CRUCIAL: Añadimos read_only=True. 
+    # Esto le dice a DRF: "Muestra los detalles al leer, pero cuando guardemos, yo lo haré manual en views.py"
+    detalles = DetalleOrdenSerializer(many=True, read_only=True)
     mesa_nombre = serializers.ReadOnlyField(source='mesa.numero_o_nombre')
 
     class Meta:
         model = Orden
-        fields = '__all__'
-
-    # ==========================================
-    # LA MAGIA DE LA VELOCIDAD: BULK CREATE[cite: 1]
-    # (¡Funciona perfecto con el nuevo JSONField!)
-    # ==========================================
-    def create(self, validated_data):
-        detalles_data = validated_data.pop('detalles')
+        fields = ['id', 'sede', 'mesa', 'mesa_nombre', 'tipo', 'estado', 
+                  'estado_pago', 'total', 'cliente_nombre', 'cliente_telefono', 
+                  'motivo_cancelacion', 'creado_en', 'detalles']
         
-        # 1. Creamos la Orden (1 solo viaje a la BD)[cite: 1]
-        orden = Orden.objects.create(**validated_data)
-        
-        # 2. Preparamos todos los platillos en la memoria RAM[cite: 1]
-        detalles_a_crear = [
-            DetalleOrden(orden=orden, **detalle_data) 
-            for detalle_data in detalles_data
-        ]
-        
-        # 3. Guardamos los platillos de golpe (1 solo viaje a la BD)[cite: 1]
-        DetalleOrden.objects.bulk_create(detalles_a_crear)
-            
-        return orden
+    # 🧹 ELIMINADO: Quitamos el def create() con bulk_create. 
+    # Ahora la magia segura y atómica ocurre 100% en tu views.py
 
 class PagoSerializer(serializers.ModelSerializer):
     class Meta:
@@ -110,14 +106,10 @@ class EmpleadoSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Empleado
-        fields = ['id', 'nombre', 'pin', 'rol', 'rol_nombre', 'activo', 'ultimo_ingreso']
-
+        # Ya no mostramos el PIN (hash) en las respuestas de la API por seguridad pura 🔒
+        fields = ['id', 'nombre', 'rol', 'rol_nombre', 'activo', 'ultimo_ingreso']
 
 class SesionCajaSerializer(serializers.ModelSerializer):
     class Meta:
         model = SesionCaja
         fields = '__all__'
-
-
-
-

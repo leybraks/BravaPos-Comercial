@@ -1,10 +1,10 @@
-import React, { useState,useEffect } from 'react';
-import { getMesas, getOrdenes,validarPinEmpleado, actualizarMesa,actualizarOrden, crearPago } from './api/api';
+import React, { useState, useEffect } from 'react';
+import { getMesas, crearOrden, getOrdenes, validarPinEmpleado, actualizarMesa, actualizarOrden, crearPago } from './api/api';
 import ModalCobro from './ModalCobro';
 import ModalCierreCaja from './ModalCierreCaja';
-import  usePosStore  from './store/usePosStore';
+import usePosStore from './store/usePosStore';
+import DrawerVentaRapida from './DrawerVentaRapida';
 
-import DrawerVentaRapida from './DrawerVentaRapida'; // Asegúrate que la ruta sea correcta
 function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
   console.log("DEBUG - Rol recibido en MesasView:", rolUsuario);
   const [ordenesLlevar, setOrdenesLlevar] = useState([]);
@@ -12,10 +12,11 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
   const [modoUnir, setModoUnir] = useState(false);
   const [mesaPrincipal, setMesaPrincipal] = useState(null);
   const [triggerRecarga, setTriggerRecarga] = useState(false);
-  // NUEVO ESTADO: Controla el modal de datos del cliente para Delivery
+  
   const [modalClienteAbierto, setModalClienteAbierto] = useState(false);
   const [nombreCliente, setNombreCliente] = useState('');
   const [telefonoCliente, setTelefonoCliente] = useState('');
+  
   const { estadoCaja } = usePosStore();
   const [mesas, setMesas] = useState([]);
   const [modalCierreAbierto, setModalCierreAbierto] = useState(false);
@@ -23,31 +24,37 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
   const [carritoVentaRapida, setCarritoVentaRapida] = useState([]); 
   const [totalVentaRapida, setTotalVentaRapida] = useState(0);
   const [ordenACobrar, setOrdenACobrar] = useState(null);
+
+  // EXTRAEMOS LA SEDE ACTUAL DE LA TABLET
+  const sedeActualId = localStorage.getItem('sede_id');
+
   useEffect(() => {
     async function cargarSalón() {
       try {
-        // 1. Traemos todas las mesas de la Sede
-        const resMesas = await getMesas();
-        // 2. Traemos todas las órdenes de la Sede
-        const resOrdenes = await getOrdenes();
-
-        // Filtramos solo las órdenes que aún no están pagadas (vivas)
-        const ordenesVivas = resOrdenes.data.filter(o => o.estado !== 'pagado');
+        // ✨ ACTUALIZACIÓN: Le pedimos a Django SOLO las mesas y órdenes de esta sede
+        const resMesas = await getMesas({ sede_id: sedeActualId });
+        const resOrdenes = await getOrdenes({ sede_id: sedeActualId });
+        console.log("🔍 DATOS EXACTOS DE DJANGO:", resOrdenes.data);
+        const ordenesVivas = resOrdenes.data.filter(o => 
+          o.estado !== 'completado' && 
+          o.estado !== 'cancelado' &&
+          o.estado_pago !== 'pagado'
+        );
         const ordenesDeliveryReales = resOrdenes.data
-                  .filter(o => o.tipo === 'llevar' && o.estado !== 'pagado') 
-                  .reverse() // Para que las más nuevas salgan arriba
-                  .slice(0, 10);
-                setOrdenesLlevar(ordenesDeliveryReales);
+          .filter(o => o.tipo === 'llevar' && o.estado !== 'completado' && o.estado !== 'cancelado') 
+          .reverse() 
+          .slice(0, 10);
+        
+        setOrdenesLlevar(ordenesDeliveryReales);
+        
         const mesasReales = resMesas.data.map(mesaDB => {
-          // Buscamos si la mesa (o su mesa principal) tiene una orden viva
           const ordenDeEstaMesa = ordenesVivas.find(o => 
             o.mesa !== null && (o.mesa === mesaDB.id || o.mesa === mesaDB.mesa_principal)
           );
 
-          // Definimos el estado exacto para tu lógica visual
           let estadoFinal = 'libre';
           if (mesaDB.mesa_principal) {
-             estadoFinal = 'unida'; // <--- ¡ESTO HARÁ QUE SE FUSIONE VISUALMENTE!
+             estadoFinal = 'unida'; 
           } else if (ordenDeEstaMesa) {
              estadoFinal = 'ocupada';
           }
@@ -70,10 +77,8 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
     }
 
     cargarSalón();
+  }, [triggerRecarga, sedeActualId]);
 
-    // Opcional: Podrías poner un setInterval aquí para que recargue cada 10 seg
-    // si quieres que otra tablet se entere de los cambios.
-  }, [triggerRecarga]);
   const mesasAgrupadas = mesas.filter(m => m.estado !== 'unida').map(mesaPadre => {
     const hijas = mesas.filter(m => m.unida_a === mesaPadre.id);
     return {
@@ -83,16 +88,12 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
       capacidadTotal: mesaPadre.capacidad + hijas.reduce((sum, h) => sum + h.capacidad, 0)
     };
   });
+
   const manejarCancelacion = async (id) => {
     const motivo = window.prompt("¿Por qué se cancela el pedido? (Ej: Cliente se fue, Error de digitación)");
-    
     if (motivo) {
       try {
-        await actualizarOrden(id, { 
-          estado: 'cancelado', 
-          cancelado: true, 
-          motivo_cancelacion: motivo 
-        });
+        await actualizarOrden(id, { estado: 'cancelado', cancelado: true, motivo_cancelacion: motivo });
         setTriggerRecarga(prev => !prev);
         alert("Pedido cancelado y registrado.");
       } catch (error) {
@@ -100,25 +101,18 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
       }
     }
   };
+
   const manejarClickMesa = async (mesa) => {
     if (modoUnir) {
       if (!mesaPrincipal) {
-        // Primer clic: Seleccionamos la mesa "Padre"
         setMesaPrincipal(mesa.id);
       } else {
-        // Segundo clic: Seleccionamos la mesa "Hija" que se va a fusionar
         if (mesa.id !== mesaPrincipal) {
           try {
-            // 1. Disparamos a la API: "Oye Django, la mesa actual ahora es hija de mesaPrincipal"
             await actualizarMesa(mesa.id, { mesa_principal: mesaPrincipal });
-            
-            // 2. Limpiamos la interfaz
             setModoUnir(false);
             setMesaPrincipal(null);
-            
-            // 3. Activamos el interruptor para que la pantalla se actualice sola
             setTriggerRecarga(!triggerRecarga); 
-            
           } catch (error) {
             console.error("Error al unir las mesas:", error);
             alert("No se pudo unir las mesas en la base de datos.");
@@ -129,22 +123,15 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
       onSeleccionarMesa(mesa.id);
     }
   };
+
   const separarMesas = async (idPadre) => {
-    // 1. Una pequeña confirmación por si el dedo resbala
     if (!window.confirm("¿Desvincular este grupo de mesas?")) return;
-
     try {
-      // 2. Buscamos todas las mesas en tu estado que sean hijas de este padre
       const mesasHijas = mesas.filter(m => m.unida_a === idPadre);
-
-      // 3. Le decimos a Django que cada una de esas hijas ahora es libre e independiente (null)
       for (const hija of mesasHijas) {
         await actualizarMesa(hija.id, { mesa_principal: null });
       }
-
-      // 4. Activamos el interruptor para que React redibuje el mapa al instante
       setTriggerRecarga(prev => !prev);
-      
     } catch (error) {
       console.error("Error al separar mesas:", error);
       alert("La base de datos se resistió a separarlas.");
@@ -157,33 +144,22 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
       return;
     }
     setModalClienteAbierto(false);
-    
-    // ¡Enviamos un objeto con todos los datos a la vista principal!
-    onSeleccionarMesa({ 
-      id: 'llevar', 
-      cliente: nombreCliente, 
-      telefono: telefonoCliente 
-    });
-    
-    // Limpiamos
+    onSeleccionarMesa({ id: 'llevar', cliente: nombreCliente, telefono: telefonoCliente });
     setNombreCliente('');
     setTelefonoCliente('');
   };
-  // --- FUNCIÓN PARA ENTREGAR Y ARCHIVAR EL PEDIDO ---
+
   const entregarOrdenLlevar = async (id) => {
     try {
-      // Como ya está pagado, lo pasamos al estado final para que desaparezca de la lista
       await actualizarOrden(id, { estado: 'pagado' }); 
-      
-      // Activamos el interruptor para que la lista se limpie sola al instante
       setTriggerRecarga(prev => !prev); 
-      
       alert("¡Pedido entregado con éxito! 🛵✅");
     } catch (error) {
       console.error("Error al entregar la orden:", error);
       alert("Hubo un error al intentar entregar el pedido.");
     }
   };
+
   return (
     <div className="bg-[#121212] min-h-screen flex flex-col font-sans text-neutral-100 pb-10">
       
@@ -203,13 +179,8 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
             </div>
           </div>
           
-          {/* CONTENEDOR PRINCIPAL: Inteligente según el Rol */}
           <div className="flex flex-col items-end gap-2">
-            
-            {/* === FILA 1: OPERATIVA (Mesero ve 3, Cajero ve 4, Admin ve 3) === */}
             <div className="flex items-center gap-2">
-              
-              {/* 1. BOTÓN UNIR MESAS */}
               {vistaLocal === 'salon' && (
                 <button 
                   onClick={() => { setModoUnir(!modoUnir); setMesaPrincipal(null); }}
@@ -221,7 +192,6 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
                 </button>
               )}
 
-              {/* 2. EL BOTÓN MÁGICO (Alternador Salón <-> Llevar) */}
               <button 
                 onClick={() => {
                   if (vistaLocal === 'salon') {
@@ -250,7 +220,6 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
                 )}
               </button>
 
-              {/* 3. BOTÓN VENTA RÁPIDA */}
               <button 
                 onClick={() => setDrawerVentaRapidaAbierto(true)}
                 className="w-11 h-11 rounded-xl flex items-center justify-center border border-[#ff5a1f]/30 bg-[#ff5a1f]/10 text-[#ff5a1f] hover:bg-[#ff5a1f] hover:text-white transition-all active:scale-95 shrink-0"
@@ -259,7 +228,6 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
                 <span className="text-lg">⚡</span>
               </button>
 
-              {/* 4. BOTÓN CERRAR CAJA (⚠️ SOLO CAJEROS EN LA PRIMERA FILA) */}
               {rolUsuario?.toLowerCase() === 'cajero' && (
                 <button 
                   onClick={async () => {
@@ -282,11 +250,8 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
               )}
             </div>
 
-            {/* === FILA 2: ADMINISTRATIVA (⚠️ SOLO ADMINS) === */}
             {(rolUsuario?.toLowerCase() === 'administrador' || rolUsuario?.toLowerCase() === 'admin') && (
               <div className="flex items-center gap-2">
-                
-                {/* 5. BOTÓN ERP */}
                 <button 
                   onClick={onIrAErp}
                   className="w-11 h-11 rounded-xl flex items-center justify-center border border-blue-500/30 bg-blue-500/10 text-blue-500 hover:bg-blue-500 hover:text-white transition-all active:scale-95 shadow-[0_0_10px_rgba(59,130,246,0.1)] shrink-0"
@@ -295,7 +260,6 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
                   <span className="text-lg">⚙️</span>
                 </button>
 
-                {/* 6. BOTÓN CERRAR CAJA (El Admin lo ve aquí abajo) */}
                 <button 
                   onClick={async () => {
                     const pinIngresado = window.prompt("Ingrese PIN de Administrador para cerrar caja:");
@@ -314,18 +278,14 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
                 >
                   <span className="text-lg">🔒</span>
                 </button>
-
               </div>
             )}
-
           </div>
         </div>
       </header>
 
-      {/* ================= CONTENIDO: SALÓN ================= */}
       {vistaLocal === 'salon' && (
         <div className="p-5 flex-1">
-          {/* ... (Código de cuadrícula de mesas idéntico) ... */}
           {modoUnir && (
             <div className="bg-[#ff5a1f]/10 border border-[#ff5a1f]/30 text-[#ff5a1f] p-4 rounded-2xl mb-6 text-sm flex items-center gap-3 animate-pulse">
               <span className="text-xl">🔗</span>
@@ -352,32 +312,24 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
 
               return (
                 <button key={mesa.id} onClick={() => manejarClickMesa(mesa)} className={`border-[1.5px] rounded-3xl p-4 flex flex-col transition-all active:scale-95 text-left h-44 relative ${cardStyle} ${mesa.esGigante ? 'col-span-2' : ''}`}>
-                  
-                  {/* --- CABECERA DE LA TARJETA (AQUÍ ENTRA EL BOTÓN) --- */}
                   <div className="flex justify-between items-start w-full mb-2">
                     <div className="flex gap-2">
                       <span className={`text-[10px] font-black px-2.5 py-1.5 rounded-lg uppercase tracking-widest ${badgeStyle}`}>
                         {mesa.esGigante ? 'GRUPO' : mesa.estado}
                       </span>
                       
-                      {/* BOTÓN DE SEPARAR */}
                       {mesa.esGigante && !modoUnir && (
                         <button 
-                          onClick={(e) => {
-                            e.stopPropagation(); 
-                            separarMesas(mesa.id);
-                          }}
+                          onClick={(e) => { e.stopPropagation(); separarMesas(mesa.id); }}
                           className="text-[10px] font-black px-2 py-1.5 rounded-lg bg-red-500/20 text-red-500 border border-red-500/30 hover:bg-red-500 hover:text-white transition-colors z-20"
                         >
                           SEPARAR ✂️
                         </button>
                       )}
                     </div>
-
                     {esOcupada && !modoUnir && <span className="text-[#ff5a1f] opacity-50 text-sm">🍴</span>}
                   </div>
                   
-                  {/* --- RESTO DE LA TARJETA (IGUAL) --- */}
                   <div className="flex-1 flex items-center justify-center w-full">
                     <h3 className={`font-black tracking-tight ${mesa.esGigante ? 'text-4xl' : 'text-3xl'} ${titleStyle}`}>
                       {mesa.esGigante ? mesa.mesasInvolucradas.join(' + ') : `Mesa ${mesa.numero}`}
@@ -396,11 +348,8 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
         </div>
       )}
 
-      {/* ================= CONTENIDO: PARA LLEVAR ================= */}
       {vistaLocal === 'llevar' && (
         <div className="p-5 flex-1 flex flex-col animate-fadeIn">
-          
-          {/* BOTÓN PARA ABRIR EL MODAL DE NUEVA ORDEN */}
           <button 
             onClick={() => setModalClienteAbierto(true)} 
             className="w-full bg-[#ff5a1f] hover:bg-[#e04a15] text-white font-bold py-5 rounded-3xl shadow-[0_4px_20px_rgba(255,90,31,0.3)] mb-8 flex justify-center items-center gap-3 text-lg transition-all active:scale-95"
@@ -422,7 +371,7 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
 
             {ordenesLlevar.map(orden => {
               const estaListo = orden.estado === 'listo';
-              const estaPagado = orden.pago_confirmado; // Usamos el nuevo campo de Django
+              const estaPagado = orden.pago_confirmado; 
               
               return (
                 <div key={orden.id} className="bg-[#1a1a1a] border border-[#2a2a2a] p-5 rounded-3xl flex justify-between items-center relative overflow-hidden transition-all hover:bg-[#222]">
@@ -431,11 +380,9 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <h3 className="text-white font-bold text-lg">Orden #{orden.id}</h3>
-                      {/* Badge de Pago */}
                       <span className={`text-[9px] font-black px-2 py-0.5 rounded-md ${estaPagado ? 'bg-blue-500/20 text-blue-400' : 'bg-red-500/20 text-red-400'}`}>
                         {estaPagado ? 'PAGADO' : 'FALTA PAGAR'}
                       </span>
-                      {/* Badge de Cocina */}
                       <span className={`text-[9px] font-black px-2 py-0.5 rounded-md ${estaListo ? 'bg-green-500/20 text-green-400' : 'bg-[#ff5a1f]/20 text-[#ff5a1f]'}`}>
                         {estaListo ? 'LISTO' : 'EN COCINA'}
                       </span>
@@ -444,7 +391,6 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
                   </div>
 
                   <div className="flex items-center gap-2">
-                    {/* BOTÓN 1: CANCELAR (Siempre visible mientras no esté pagado/cerrado) */}
                     {!estaPagado && (
                       <button 
                         onClick={() => manejarCancelacion(orden.id)}
@@ -455,16 +401,14 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
                       </button>
                     )}
 
-                    {/* BOTÓN 2: COBRAR (Si no está pagado) */}
                     {!estaPagado ? (
                       <button 
-                        onClick={() => setOrdenACobrar(orden)} // <--- ¡AQUÍ ESTÁ EL CAMBIO!
+                        onClick={() => setOrdenACobrar(orden)}
                         className="bg-[#ff5a1f] hover:bg-[#e04a15] text-white px-4 py-2 rounded-2xl font-bold text-sm"
                       >
                         COBRAR
                       </button>
                     ) : (
-                      /* BOTÓN 3: ENTREGAR (Si ya está pagado Y listo) */
                       estaListo && (
                         <button 
                           onClick={() => entregarOrdenLlevar(orden.id)}
@@ -485,11 +429,9 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
         </div>
       )}
 
-      {/* ================= MODAL: DATOS DEL CLIENTE (DELIVERY) ================= */}
       {modalClienteAbierto && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end md:items-center justify-center p-4 animate-fadeIn">
           <div className="bg-[#1a1a1a] border border-[#333] rounded-3xl w-full max-w-md overflow-hidden shadow-2xl">
-            
             <div className="p-6 border-b border-[#2a2a2a] flex justify-between items-center">
               <div>
                 <h2 className="text-xl font-black text-white">Datos del Cliente</h2>
@@ -497,7 +439,6 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
               </div>
               <button onClick={() => setModalClienteAbierto(false)} className="w-8 h-8 bg-[#222] rounded-full flex items-center justify-center text-neutral-400 hover:text-white font-bold">X</button>
             </div>
-
             <div className="p-6 space-y-5">
               <div>
                 <label className="text-neutral-400 text-xs font-bold uppercase tracking-wider mb-2 flex items-center gap-2">
@@ -511,7 +452,6 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
                   className="w-full bg-[#121212] border border-[#333] rounded-xl px-4 py-4 text-white focus:outline-none focus:border-[#ff5a1f] transition-colors shadow-inner" 
                 />
               </div>
-
               <div>
                 <label className="text-neutral-400 text-xs font-bold uppercase tracking-wider mb-2 flex items-center gap-2">
                   <span>📱</span> WhatsApp (Opcional)
@@ -527,7 +467,6 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
                   Ingresa el número para enviarle un SMS automático cuando su pedido esté listo para recoger.
                 </p>
               </div>
-
               <button 
                 onClick={iniciarOrdenDelivery} 
                 className="w-full bg-[#ff5a1f] hover:bg-[#e04a15] text-white font-black py-4 rounded-xl mt-2 active:scale-95 transition-all shadow-[0_4px_15px_rgba(255,90,31,0.3)]"
@@ -538,11 +477,11 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
           </div>
         </div>
       )}
+
       <ModalCobro 
-        isOpen={!!ordenACobrar} // Se abre si ordenACobrar tiene algo
+        isOpen={!!ordenACobrar} 
         onClose={() => setOrdenACobrar(null)} 
         total={ordenACobrar ? parseFloat(ordenACobrar.total) : 0} 
-        // Convertimos los detalles de la orden al formato que espera tu carrito del modal
         carrito={ordenACobrar ? ordenACobrar.detalles.map(d => ({
           id: d.producto, 
           nombre: d.nombre, 
@@ -550,51 +489,69 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
         })) : []} 
         onCobroExitoso={async (pagosRegistrados) => {
           try {
-            // 1. Guardamos cada pago (Efectivo, Yape, etc.) en Django
-            for (const pago of pagosRegistrados) {
-              await crearPago({
-                orden: ordenACobrar.id,
-                monto: pago.monto,
-                metodo: pago.metodo
+            let idDeLaOrden = ordenACobrar.id;
+
+            if (idDeLaOrden === 'venta_rapida') {
+              const resNuevaOrden = await crearOrden({
+                tipo: 'llevar',
+                estado: 'completado', // ✨ La venta rápida nace y muere completada
+                estado_pago: 'pagado', // ✨ El campo correcto para tu BD
+                sede: sedeActualId, 
+                detalles: ordenACobrar.detalles || [] 
+              });
+              idDeLaOrden = resNuevaOrden.data.id; 
+            } else {
+              await actualizarOrden(idDeLaOrden, { 
+                estado_pago: 'pagado', // ✨ Registra el pago en Django
+                estado: 'completado'   // ✨ Esto libera la mesa automáticamente
               });
             }
 
-            // 2. Avisamos a Django que esta orden ya está pagada (pago_confirmado)
-            await actualizarOrden(ordenACobrar.id, { 
-              pago_confirmado: true,
-              // Si quieres que pase a 'pagado' de una vez o siga en 'listo'
-              estado: ordenACobrar.estado === 'listo' ? 'listo' : 'preparando'
-            });
+            for (const pago of pagosRegistrados) {
+              await crearPago({
+                orden: idDeLaOrden,
+                monto: pago.monto,
+                metodo: pago.metodo 
+              });
+            }
             
-            setOrdenACobrar(null); // Cerramos el modal
-            setTriggerRecarga(prev => !prev); // Refrescamos la lista automáticamente
+            setOrdenACobrar(null); 
+            setTriggerRecarga(prev => !prev); 
             alert("¡Cobro realizado con éxito! 💵✨");
             
           } catch (error) {
-            console.error("Error al procesar el cobro de delivery:", error);
-            alert("Hubo un error al guardar el pago.");
+            console.error("Error al procesar el cobro:", error);
+            alert("Hubo un error al guardar el pago. Revisa la consola.");
           }
-        }} 
+        }}
       />
+
       <DrawerVentaRapida 
         isOpen={drawerVentaRapidaAbierto}
         onClose={() => setDrawerVentaRapidaAbierto(false)}
         onProcederPago={(carrito, total) => {
-          // Cuando le dan a "Cobrar" en el cajón, guardamos el carrito y abrimos TU modal de cobro
           setCarritoVentaRapida(carrito);
           setTotalVentaRapida(total);
-          // Usamos el mismo modal de cobro que ya tienes, engañándolo para que cobre esta venta libre
-          setOrdenACobrar({ id: 'venta_rapida', total: total, detalles: carrito.map(c => ({ producto: c.id, nombre: c.nombre, precio_unitario: c.precio })) });
-          setDrawerVentaRapidaAbierto(false); // Cerramos el cajón y abrimos el modal
+          setOrdenACobrar({ 
+            id: 'venta_rapida', 
+            total: total, 
+            // ✨ AQUÍ ESTÁ EL ARREGLO: Agregamos cantidad: c.cantidad ✨
+            detalles: carrito.map(c => ({ 
+                producto: c.id, 
+                nombre: c.nombre, 
+                precio_unitario: c.precio,
+                cantidad: c.cantidad 
+            })) 
+          });
+          setDrawerVentaRapidaAbierto(false); 
         }}
       />
+
       <ModalCierreCaja 
         isOpen={modalCierreAbierto}
         onClose={() => setModalCierreAbierto(false)}
         onCierreExitoso={(resumen) => {
           setModalCierreAbierto(false);
-          
-          // ✨ AHORA SÍ USAMOS EL RESUMEN
           const diferencia = resumen?.diferencia || 0;
           let mensaje = "";
 
@@ -607,7 +564,7 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
           }
 
           alert(`${mensaje}\n\nCerrando sesión del sistema...`);
-          window.location.reload(); // Mandamos al login
+          window.location.reload(); 
         }}
       />
     </div>

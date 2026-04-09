@@ -1,48 +1,141 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { 
+  obtenerMetricasDashboard, 
+  getEmpleados, 
+  getRoles, 
+  getSedes, 
+  crearEmpleado,
+  getNegocioConfig,
+  updateNegocioConfig,
+  getProductos,
+  crearProducto,
+  actualizarProducto
+} from './api/api';
 
 export default function ErpDashboard({ onVolverAlPos }) {
   const [vistaActiva, setVistaActiva] = useState('dashboard');
   const [sedeFiltro, setSedeFiltro] = useState('Todas');
+  const [categoriaSeleccionada, setCategoriaSeleccionada] = useState('Todos');
+  const [sedeFiltroId, setSedeFiltroId] = useState(null); // ✨ Nuevo: ID real de la sede
   const [menuAbierto, setMenuAbierto] = useState(false);
   const [modalEmpleado, setModalEmpleado] = useState(false);
-  // Estados simulados para Configuración
+
   const [config, setConfig] = useState({
-    numeroYape: '999 888 777',
-    modCocina: true,
+    numeroYape: '',
+    modCocina: false,
     modDelivery: false,
     modInventario: false
   });
-  const [empleados, setEmpleados] = useState([
-    { id: 1, nombre: 'Admin Master', rol: 'Administrador', pin: '1234', sede: 'Todas', estado: 'Activo' },
-    { id: 2, nombre: 'Carlos Mesero', rol: 'Mesero', pin: '4321', sede: 'Local Principal', estado: 'Activo' },
-    { id: 3, nombre: 'Ana Cajera', rol: 'Cajero', pin: '0000', sede: 'Sede Surco', estado: 'Activo' },
-    { id: 4, nombre: 'Roberto Chef', rol: 'Cocinero', pin: '8888', sede: 'Local Principal', estado: 'Activo' },
-  ]);
-  const sedes = ['Todas', 'Local Principal', 'Sede Surco'];
-  const rolesDisponibles = ['Administrador', 'Cajero', 'Mesero', 'Cocinero'];
-  // Ventas simuladas en vivo
-  const metricas = {
-    'Todas': { ventas: 1450.50, ordenes: 42, ticketPromedio: 34.50 },
-    'Local Principal': { ventas: 950.00, ordenes: 25, ticketPromedio: 38.00 },
-    'Sede Surco': { ventas: 500.50, ordenes: 17, ticketPromedio: 29.40 },
+  const [guardandoConfig, setGuardandoConfig] = useState(false);
+  const [productosReales, setProductosReales] = useState([]);
+  const [modalPlato, setModalPlato] = useState(false);
+  const [formPlato, setFormPlato] = useState({ id: null, nombre: '', precio_base: '', disponible: true });  
+
+  const [empleadosReales, setEmpleadosReales] = useState([]);
+  const [rolesReales, setRolesReales] = useState([]);
+  const [sedesReales, setSedesReales] = useState([]);
+  
+  const [formEmpleado, setFormEmpleado] = useState({
+    nombre: '',
+    pin: '',
+    rol: '', 
+    sede: '' 
+  });
+
+  const [metricas, setMetricas] = useState({
+    ventas: 0, 
+    ordenes: 0, 
+    ticketPromedio: 0,
+    actividadReciente: []
+  });
+
+  // ==========================================
+  // 📊 EFECTO 1: MÉTRICAS DINÁMICAS
+  // ==========================================
+  useEffect(() => {
+    if (vistaActiva === 'dashboard') {
+      const cargarDatos = async () => {
+        try {
+          // ✨ Enviamos el sede_id seleccionado (o null si es "Todas")
+          const res = await obtenerMetricasDashboard({ sede_id: sedeFiltroId });
+          setMetricas(res.data);
+        } catch (error) {
+          console.error("Error al cargar métricas:", error);
+        }
+      };
+      cargarDatos();
+      const intervalo = setInterval(cargarDatos, 10000);
+      return () => clearInterval(intervalo);
+    }
+  }, [vistaActiva, sedeFiltroId]); // ✨ Recarga al cambiar de sede
+
+  // ==========================================
+  // 👥 EFECTO 2: GESTIÓN DE PERSONAL
+  // ==========================================
+  useEffect(() => {
+    if (vistaActiva === 'personal') {
+      const cargarDatosPersonal = async () => {
+        try {
+          // ✨ Filtramos empleados por la sede seleccionada en el ERP
+          const [resEmpleados, resRoles, resSedes] = await Promise.all([
+            getEmpleados({ sede_id: sedeFiltroId }), 
+            getRoles(), 
+            getSedes()
+          ]);
+          setEmpleadosReales(resEmpleados.data);
+          setRolesReales(resRoles.data);
+          setSedesReales(resSedes.data);
+          
+          if (resRoles.data.length > 0) setFormEmpleado(prev => ({ ...prev, rol: resRoles.data[0].id }));
+          if (resSedes.data.length > 0) setFormEmpleado(prev => ({ ...prev, sede: resSedes.data[0].id }));
+        } catch (error) {
+          console.error("Error cargando personal:", error);
+        }
+      };
+      cargarDatosPersonal();
+    }
+  }, [vistaActiva, sedeFiltroId]);
+
+  // ==========================================
+  // 🍔 EFECTO 3: EDITOR DE MENÚ
+  // ==========================================
+  useEffect(() => {
+    if (vistaActiva === 'menu') {
+      const cargarMenu = async () => {
+        try {
+          const res = await getProductos({ sede_id: sedeFiltroId });
+          setProductosReales(res.data);
+        } catch (error) {
+          console.error("Error cargando menú:", error);
+        }
+      };
+      cargarMenu();
+    }
+  }, [vistaActiva, sedeFiltroId]);
+
+  // Manejador de cambio de sede ✨
+  const cambiarSedeFiltro = (sede) => {
+    if (sede === 'Todas') {
+      setSedeFiltro('Todas');
+      setSedeFiltroId(null);
+    } else {
+      setSedeFiltro(sede.nombre);
+      setSedeFiltroId(sede.id);
+    }
   };
 
-  const currentMetricas = metricas[sedeFiltro];
-
-  // Componente de Menú Lateral (Sidebar)
   const Sidebar = () => (
     <div className={`fixed inset-y-0 left-0 w-64 bg-[#111] border-r border-[#222] transform ${menuAbierto ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 transition-transform duration-300 z-50 flex flex-col`}>
       <div className="p-6">
         <h1 className="text-xl font-black text-white">CAÑA <span className="text-[#ff5a1f]">BRAVA</span></h1>
         <p className="text-xs text-neutral-500 tracking-widest uppercase mt-1">ERP Cloud</p>
       </div>
-
       <nav className="flex-1 px-4 space-y-2 overflow-y-auto">
         {[
           { id: 'dashboard', icono: '📊', nombre: 'Ventas en Vivo' },
           { id: 'personal', icono: '👥', nombre: 'Personal y Roles' },
-          { id: 'crm', icono: '💬', nombre: 'Marketing & CRM' }, // <-- NUEVO
-          { id: 'inventario', icono: '📦', nombre: 'Inventario (Stock)' }, // <-- NUEVO
+          { id: 'crm', icono: '💬', nombre: 'Marketing & CRM' },
+          { id: 'inventario', icono: '📦', nombre: 'Inventario (Stock)' },
           { id: 'menu', icono: '🍔', nombre: 'Editor de Menú' },
           { id: 'config', icono: '⚙️', nombre: 'Configuraciones' },
         ].map(item => (
@@ -57,121 +150,149 @@ export default function ErpDashboard({ onVolverAlPos }) {
           </button>
         ))}
       </nav>
-
       <div className="p-4 border-t border-[#222]">
-        <button onClick={onVolverAlPos} className="w-full bg-[#222] text-white py-3 rounded-xl font-bold hover:bg-[#333] transition-colors">
-          🖥️ Ir al POS
-        </button>
+        <button onClick={onVolverAlPos} className="w-full bg-[#222] text-white py-3 rounded-xl font-bold hover:bg-[#333] transition-colors">🖥️ Ir al POS</button>
       </div>
     </div>
   );
+  // ==========================================
+  // ⚙️ FUNCIONES DE CONTROL (RESTAURADAS)
+  // ==========================================
 
+  // 1. Guardar Configuración General
+  const manejarGuardarConfig = async () => {
+    setGuardandoConfig(true);
+    try {
+      await updateNegocioConfig({
+        modCocina: config.modCocina,
+        modDelivery: config.modDelivery,
+        // numeroYape: config.numeroYape 
+      });
+      alert("✅ ¡Configuración guardada con éxito!");
+    } catch (error) {
+      console.error("Error guardando config:", error);
+      alert("❌ Hubo un error al guardar los cambios.");
+    } finally {
+      setGuardandoConfig(false);
+    }
+  };
+
+  // 2. Crear Nuevo Empleado
+  const manejarCrearEmpleado = async () => {
+    if (!formEmpleado.nombre || formEmpleado.pin.length !== 4) {
+      alert("Por favor ingresa un nombre y un PIN de 4 dígitos.");
+      return;
+    }
+    try {
+      await crearEmpleado({ ...formEmpleado, activo: true });
+      setModalEmpleado(false);
+      setFormEmpleado({ ...formEmpleado, nombre: '', pin: '' });
+      
+      const resEmpleados = await getEmpleados({ sede_id: sedeFiltroId });
+      setEmpleadosReales(resEmpleados.data);
+      alert("¡Empleado creado con éxito! 🎉");
+    } catch (error) {
+      console.error("Error creando empleado:", error);
+      alert("Hubo un error al crear el acceso.");
+    }
+  };
+
+  // 3. Guardar/Editar Plato del Menú
+  const manejarGuardarPlato = async () => {
+    if (!formPlato.nombre || !formPlato.precio_base) return alert("Nombre y precio son obligatorios.");
+    try {
+      if (formPlato.id) {
+        await actualizarProducto(formPlato.id, formPlato);
+      } else {
+        const negocioId = localStorage.getItem('negocio_id');
+        await crearProducto({ ...formPlato, negocio: negocioId }); 
+      }
+      setModalPlato(false);
+      setFormPlato({ id: null, nombre: '', precio_base: '', disponible: true });
+      
+      const res = await getProductos({ sede_id: sedeFiltroId });
+      setProductosReales(res.data);
+    } catch (error) {
+      console.error("Error al guardar plato:", error);
+    }
+  };
+
+  // 4. Cambiar disponibilidad (Agotado/Disponible)
+  const toggleDisponibilidad = async (plato) => {
+    try {
+      await actualizarProducto(plato.id, { disponible: !plato.disponible });
+      setProductosReales(prev => prev.map(p => p.id === plato.id ? { ...p, disponible: !p.disponible } : p));
+    } catch (error) {
+      console.error("Error cambiando disponibilidad:", error);
+    }
+  };
+
+  // 5. Abrir Modal para editar plato
+  const abrirModalEditar = (plato) => {
+    setFormPlato({ id: plato.id, nombre: plato.nombre, precio_base: plato.precio_base, disponible: plato.disponible });
+    setModalPlato(true);
+  };
   return (
     <div className="bg-[#0a0a0a] min-h-screen font-sans text-neutral-100 flex">
-      
       <Sidebar />
-
-      {/* Overlay para móvil cuando el menú está abierto */}
-      {menuAbierto && <div className="fixed inset-0 bg-black/60 z-40 md:hidden" onClick={() => setMenuAbierto(false)}></div>}
-
-      {/* ÁREA PRINCIPAL */}
-      {/* ÁREA PRINCIPAL */}
       <div className="flex-1 md:ml-64 flex flex-col min-h-screen min-w-0">
-        
-        {/* HEADER */}
-        {/* HEADER COMPLETO Y ELEGANTE */}
         <header className="bg-[#111] border-b border-[#222] p-4 flex justify-between items-center sticky top-0 z-30">
           <div className="flex items-center gap-4">
-            <button onClick={() => setMenuAbierto(true)} className="md:hidden bg-[#222] p-2 rounded-lg text-white">
-              ☰
-            </button>
-            <h2 className="text-xl font-black capitalize tracking-tight text-white">
-              {vistaActiva === 'dashboard' ? 'Ventas en Vivo' : 
-               vistaActiva === 'personal' ? 'Gestión de Personal' : 
-               vistaActiva === 'crm' ? 'Clientes y Marketing' : 
-               vistaActiva === 'inventario' ? 'Control de Almacén' : 
-               vistaActiva === 'config' ? 'Configuraciones' : 
-               vistaActiva === 'menu' ? 'Editor de Menú' : vistaActiva}
-            </h2>
-          </div>
-
-          <div className="flex items-center gap-3">
-             <div className="hidden sm:flex items-center gap-2 bg-[#1a1a1a] px-3 py-1.5 rounded-full border border-[#333]">
-                <span className="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse"></span>
-                <span className="text-xs font-bold text-neutral-400">ONLINE</span>
-             </div>
-             <div className="w-10 h-10 bg-[#ff5a1f] rounded-full flex items-center justify-center font-bold text-white border-2 border-[#222] shadow-[0_0_15px_rgba(255,90,31,0.2)] cursor-pointer hover:scale-105 transition-transform">
-               CB
-             </div>
+            <button onClick={() => setMenuAbierto(true)} className="md:hidden bg-[#222] p-2 rounded-lg text-white">☰</button>
+            <h2 className="text-xl font-black capitalize tracking-tight text-white">{vistaActiva}</h2>
           </div>
         </header>
 
-        {/* CONTENIDO DINÁMICO */}
         <main className="p-4 md:p-8 flex-1 overflow-y-auto overflow-x-hidden min-w-0 w-full">
-          
-          {/* ======================= VISTA: DASHBOARD EN VIVO ======================= */}
           {vistaActiva === 'dashboard' && (
             <div className="animate-fadeIn space-y-6">
-              
-              {/* Filtro Multi-Sede Elegante */}
+              {/* Filtro Multi-Sede Dinámico ✨ */}
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[#111] p-2 rounded-2xl border border-[#222]">
                 <div className="flex w-full sm:w-auto bg-[#1a1a1a] rounded-xl p-1 overflow-x-auto">
-                  {sedes.map(sede => (
+                  <button 
+                    onClick={() => cambiarSedeFiltro('Todas')}
+                    className={`px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${sedeFiltro === 'Todas' ? 'bg-[#ff5a1f] text-white' : 'text-neutral-500'}`}
+                  >Todas</button>
+                  {sedesReales.map(s => (
                     <button 
-                      key={sede} onClick={() => setSedeFiltro(sede)}
-                      className={`flex-1 sm:flex-none px-6 py-2.5 rounded-lg text-sm font-bold whitespace-nowrap transition-all
-                        ${sedeFiltro === sede ? 'bg-[#ff5a1f] text-white shadow-md' : 'text-neutral-500 hover:text-white'}`}
-                    >
-                      {sede}
-                    </button>
+                      key={s.id} onClick={() => cambiarSedeFiltro(s)}
+                      className={`px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${sedeFiltro === s.nombre ? 'bg-[#ff5a1f] text-white' : 'text-neutral-500'}`}
+                    >{s.nombre}</button>
                   ))}
                 </div>
-                <div className="px-4 text-neutral-400 text-sm font-semibold flex items-center gap-2">
-                  <span>📅</span> Hoy: 02 Abr 2026
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                <div className="col-span-2 md:col-span-1 bg-[#121212] p-6 rounded-3xl border border-[#222]">
+                  <p className="text-neutral-500 font-bold uppercase tracking-widest text-[10px] mb-2">Ingresos Totales</p>
+                  <h3 className="text-3xl md:text-4xl font-black text-white">S/ {metricas.ventas.toFixed(2)}</h3>
+                </div>
+                <div className="col-span-1 bg-[#121212] p-5 md:p-6 rounded-3xl border border-[#222]">
+                  <p className="text-neutral-500 font-bold uppercase tracking-widest text-[10px] mb-2">Órdenes</p>
+                  <h3 className="text-2xl md:text-4xl font-black text-white">{metricas.ordenes}</h3>
+                </div>
+                <div className="col-span-1 bg-[#121212] p-5 md:p-6 rounded-3xl border border-[#222]">
+                  <p className="text-neutral-500 font-bold uppercase tracking-widest text-[10px] mb-2">Ticket Promedio</p>
+                  <h3 className="text-2xl md:text-4xl font-black text-white">S/ {metricas.ticketPromedio.toFixed(2)}</h3>
                 </div>
               </div>
 
-              {/* Tarjetas de Métricas */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-[#121212] p-6 rounded-3xl border border-[#222] relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-24 h-24 bg-green-500/10 rounded-bl-full"></div>
-                  <p className="text-neutral-500 font-bold uppercase tracking-widest text-xs mb-2">Ingresos Totales</p>
-                  <h3 className="text-4xl font-black text-white">S/ {currentMetricas.ventas.toFixed(2)}</h3>
-                  <p className="text-green-400 text-sm font-bold mt-2 flex items-center gap-1">↑ 12% vs ayer</p>
-                </div>
-                <div className="bg-[#121212] p-6 rounded-3xl border border-[#222]">
-                  <p className="text-neutral-500 font-bold uppercase tracking-widest text-xs mb-2">Órdenes Pagadas</p>
-                  <h3 className="text-4xl font-black text-white">{currentMetricas.ordenes}</h3>
-                  <p className="text-neutral-400 text-sm font-bold mt-2">En {sedeFiltro}</p>
-                </div>
-                <div className="bg-[#121212] p-6 rounded-3xl border border-[#222]">
-                  <p className="text-neutral-500 font-bold uppercase tracking-widest text-xs mb-2">Ticket Promedio</p>
-                  <h3 className="text-4xl font-black text-white">S/ {currentMetricas.ticketPromedio.toFixed(2)}</h3>
-                </div>
-              </div>
-
-              {/* Gráfico de Ventas Simuladas (UI) */}
               <div className="bg-[#121212] border border-[#222] rounded-3xl p-6">
-                 <h3 className="text-white font-bold text-lg mb-6 flex items-center gap-2">
-                   <span className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse"></span>
-                   Actividad Reciente
-                 </h3>
-                 <div className="space-y-4">
-                    {[1, 2, 3].map(i => (
-                      <div key={i} className="flex justify-between items-center bg-[#1a1a1a] p-4 rounded-xl border border-[#2a2a2a]">
-                        <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 bg-[#ff5a1f]/20 text-[#ff5a1f] rounded-full flex items-center justify-center font-bold">✓</div>
-                          <div>
-                            <p className="text-white font-bold">Orden #104{i}</p>
-                            <p className="text-neutral-500 text-xs">Mesa {i + 1} • {sedeFiltro === 'Todas' ? (i%2===0?'Sede Surco':'Local Principal') : sedeFiltro}</p>
+                 <h3 className="text-white font-bold text-lg mb-6 flex items-center gap-2">Actividad Reciente</h3>
+                 <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
+                    {metricas.actividadReciente.length === 0 ? (
+                        <p className="text-neutral-500 text-sm text-center py-4">Sin ventas el día de hoy.</p>
+                    ) : (
+                        metricas.actividadReciente.map(orden => (
+                          <div key={orden.id} className="flex justify-between items-center bg-[#1a1a1a] p-4 rounded-xl border border-[#2a2a2a]">
+                            <div>
+                                <p className="text-white font-bold">Orden #{orden.id}</p>
+                                <p className="text-neutral-500 text-xs">{orden.origen} • {orden.hora}</p>
+                            </div>
+                            <p className="text-white font-black text-right">S/ {orden.total.toFixed(2)}</p>
                           </div>
-                        </div>
-                        <div className="text-right">
-                           <p className="text-white font-black">S/ {(15.5 * i).toFixed(2)}</p>
-                           <p className="text-neutral-500 text-[10px] uppercase font-bold">Pagado</p>
-                        </div>
-                      </div>
-                    ))}
+                        ))
+                    )}
                  </div>
               </div>
             </div>
@@ -247,8 +368,12 @@ export default function ErpDashboard({ onVolverAlPos }) {
 
               {/* Botón Guardar */}
               <div className="flex justify-end">
-                 <button className="bg-[#ff5a1f] hover:bg-[#e04a15] text-white px-8 py-4 rounded-xl font-black tracking-widest shadow-[0_4px_15px_rgba(255,90,31,0.3)] transition-all active:scale-95">
-                   GUARDAR CAMBIOS
+                 <button 
+                    onClick={manejarGuardarConfig}
+                    disabled={guardandoConfig}
+                    className="bg-[#ff5a1f] hover:bg-[#e04a15] text-white px-8 py-4 rounded-xl font-black tracking-widest shadow-[0_4px_15px_rgba(255,90,31,0.3)] transition-all active:scale-95 disabled:opacity-50"
+                 >
+                   {guardandoConfig ? 'GUARDANDO...' : 'GUARDAR CAMBIOS'}
                  </button>
               </div>
 
@@ -264,62 +389,65 @@ export default function ErpDashboard({ onVolverAlPos }) {
                   <h3 className="text-2xl font-black text-white">Editor de Carta Digital</h3>
                   <p className="text-neutral-500 text-sm mt-1">Crea tus categorías, platos y ajusta los precios en tiempo real.</p>
                 </div>
-                <button className="w-full md:w-auto bg-[#ff5a1f] text-white px-8 py-4 rounded-xl font-black shadow-[0_0_20px_rgba(255,90,31,0.2)] active:scale-95 transition-all flex justify-center items-center gap-2">
+                <button 
+                  onClick={() => { setFormPlato({ id: null, nombre: '', precio_base: '', disponible: true }); setModalPlato(true); }}
+                  className="w-full md:w-auto bg-[#ff5a1f] text-white px-8 py-4 rounded-xl font-black shadow-[0_0_20px_rgba(255,90,31,0.2)] active:scale-95 transition-all flex justify-center items-center gap-2"
+                >
                   <span className="text-xl">🍔</span> NUEVO PLATO
                 </button>
               </div>
 
               <div className="flex flex-col lg:flex-row gap-6">
                 
-                {/* Columna Izquierda: Categorías */}
+                {/* Columna Izquierda: Categorías (Fijas por ahora o dinámicas si extraes) */}
                 <div className="lg:w-1/4 space-y-2">
-                  <h4 className="text-neutral-500 text-[10px] font-bold uppercase tracking-widest mb-4 px-2">Categorías del Menú</h4>
-                  {[
-                    { n: '🔥 Promociones', a: false },
-                    { n: '🍔 Hamburguesas', a: true },
-                    { n: '🍗 Brasas y Pollos', a: false },
-                    { n: '🥤 Bebidas', a: false },
-                    { n: '🍰 Postres', a: false }
-                  ].map((cat, i) => (
-                    <button key={i} className={`w-full text-left px-5 py-4 rounded-2xl font-bold transition-all flex justify-between items-center group
-                      ${cat.a ? 'bg-[#ff5a1f] text-white shadow-md' : 'bg-[#1a1a1a] text-neutral-400 hover:bg-[#222] border border-[#333]'}`}>
-                      {cat.n}
-                      <span className="opacity-0 group-hover:opacity-100 transition-opacity text-sm">⋮</span>
+                  <h4 className="text-neutral-500 text-[10px] font-bold uppercase tracking-widest mb-4 px-2">Categorías</h4>
+                  {['Todos', 'General'].map((cat, i) => (
+                    <button 
+                      key={i} 
+                      onClick={() => setCategoriaSeleccionada(cat)}
+                      className={`w-full text-left px-5 py-4 rounded-2xl font-bold transition-all flex justify-between items-center group
+                      ${categoriaSeleccionada === cat ? 'bg-[#ff5a1f] text-white shadow-md' : 'bg-[#1a1a1a] text-neutral-400 hover:bg-[#222] border border-[#333]'}`}
+                    >
+                      {cat}
                     </button>
                   ))}
-                  <button className="w-full text-center px-4 py-4 border-2 border-dashed border-[#333] rounded-2xl text-neutral-500 font-bold hover:border-[#ff5a1f] hover:text-[#ff5a1f] transition-all mt-4">
-                    + Añadir Categoría
-                  </button>
                 </div>
 
-                {/* Columna Derecha: Cuadrícula de Platos */}
+                {/* Columna Derecha: Cuadrícula de Platos Reales */}
                 <div className="lg:w-3/4">
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                     {[
-                       { n: 'Burger Clásica', p: '15.00', st: true, img: '🍔', desc: 'Carne de res 150g, queso, lechuga y tomate.' },
-                       { n: 'Burger Royal', p: '18.50', st: true, img: '🍔', desc: 'Huevo frito, tocino ahumado, queso y salsas.' },
-                       { n: 'Burger Extrema Doble', p: '24.00', st: false, img: '🍔', desc: 'Doble carne, aros de cebolla y queso cheddar.' },
-                       { n: 'Salchipapa Simple', p: '12.00', st: true, img: '🍟', desc: 'Papas nativas con hot dog frankfurt.' },
-                     ].map((plato, i) => (
-                       <div key={i} className="bg-[#111] border border-[#222] rounded-3xl p-5 group hover:border-[#ff5a1f]/50 transition-colors flex flex-col relative overflow-hidden">
+                     {productosReales.length === 0 && <p className="text-neutral-500">No hay platos registrados.</p>}
+                     
+                     {productosReales.map((plato) => (
+                       <div key={plato.id} className={`bg-[#111] border border-[#222] rounded-3xl p-5 group hover:border-[#ff5a1f]/50 transition-colors flex flex-col relative overflow-hidden ${!plato.disponible ? 'opacity-60 grayscale' : ''}`}>
                          
                          {/* Indicador de Stock */}
-                         <div className="absolute top-4 right-4 flex items-center gap-2 bg-[#1a1a1a] px-3 py-1.5 rounded-full border border-[#333]">
-                           <span className={`w-2 h-2 rounded-full ${plato.st ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500'}`}></span>
-                           <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">{plato.st ? 'Disponible' : 'Agotado'}</span>
-                         </div>
+                         <button 
+                           onClick={() => toggleDisponibilidad(plato)}
+                           className="absolute top-4 right-4 flex items-center gap-2 bg-[#1a1a1a] px-3 py-1.5 rounded-full border border-[#333] hover:scale-105 transition-transform z-10"
+                           title="Clic para cambiar disponibilidad"
+                         >
+                           <span className={`w-2 h-2 rounded-full ${plato.disponible ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500'}`}></span>
+                           <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">{plato.disponible ? 'Disponible' : 'Agotado'}</span>
+                         </button>
 
                          <div className="w-full h-32 bg-gradient-to-br from-[#1a1a1a] to-[#111] border border-[#222] rounded-2xl flex items-center justify-center text-6xl mb-4 group-hover:scale-105 transition-transform shadow-inner">
-                           {plato.img}
+                           🍽️
                          </div>
                          
-                         <h5 className="text-white font-black text-xl leading-tight mb-1">{plato.n}</h5>
-                         <p className="text-neutral-500 text-xs mb-4 line-clamp-2">{plato.desc}</p>
+                         <h5 className="text-white font-black text-xl leading-tight mb-1">{plato.nombre}</h5>
+                         <p className="text-neutral-500 text-xs mb-4 line-clamp-2">Plato del menú</p>
                          
                          <div className="mt-auto flex items-center justify-between">
-                            <p className="text-[#ff5a1f] font-black text-2xl">S/ {plato.p}</p>
+                            <p className="text-[#ff5a1f] font-black text-2xl">S/ {parseFloat(plato.precio_base).toFixed(2)}</p>
                             <div className="flex gap-2">
-                              <button className="w-10 h-10 bg-[#1a1a1a] hover:bg-[#222] text-white flex items-center justify-center rounded-xl transition-colors border border-[#333]">✏️</button>
+                              <button 
+                                onClick={() => abrirModalEditar(plato)}
+                                className="w-10 h-10 bg-[#1a1a1a] hover:bg-[#222] text-white flex items-center justify-center rounded-xl transition-colors border border-[#333]"
+                              >
+                                ✏️
+                              </button>
                             </div>
                          </div>
                        </div>
@@ -347,19 +475,25 @@ export default function ErpDashboard({ onVolverAlPos }) {
                 </button>
               </div>
 
-              {/* LISTADO DE EMPLEADOS (Responsive) */}
+              {/* LISTADO DE EMPLEADOS REALES */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {empleados.map(emp => (
-                  <div key={emp.id} className="bg-[#121212] border border-[#222] p-5 rounded-3xl flex items-center justify-between group hover:border-[#ff5a1f]/50 transition-colors">
+                {empleadosReales.length === 0 && <p className="text-neutral-500 py-4">Aún no hay empleados registrados.</p>}
+                
+                {empleadosReales.map(emp => (
+                  <div key={emp.id} className="bg-[#121212] border border-[#222] p-5 rounded-3xl flex items-center justify-between group hover:border-[#ff5a1f]/50 transition-colors animate-slideUp">
                     <div className="flex items-center gap-4">
                       <div className="w-12 h-12 bg-[#222] rounded-full flex items-center justify-center text-xl border border-[#333]">
-                        {emp.rol === 'Administrador' ? '👑' : emp.rol === 'Cajero' ? '💰' : emp.rol === 'Mesero' ? '🏃' : '👨‍🍳'}
+                        {emp.rol_nombre?.includes('Admin') ? '👑' : emp.rol_nombre?.includes('Cajer') ? '💰' : emp.rol_nombre?.includes('Mesero') ? '🏃' : '👨‍🍳'}
                       </div>
                       <div>
                         <h4 className="font-bold text-white text-lg">{emp.nombre}</h4>
                         <div className="flex gap-2 mt-1">
-                          <span className="text-[10px] font-black bg-[#1a1a1a] text-[#ff5a1f] px-2 py-0.5 rounded border border-[#ff5a1f]/20 uppercase">{emp.rol}</span>
-                          <span className="text-[10px] font-black bg-[#1a1a1a] text-neutral-500 px-2 py-0.5 rounded border border-[#333] uppercase">{emp.sede}</span>
+                          <span className="text-[10px] font-black bg-[#1a1a1a] text-[#ff5a1f] px-2 py-0.5 rounded border border-[#ff5a1f]/20 uppercase">
+                            {emp.rol_nombre || 'Sin Rol'}
+                          </span>
+                          <span className={`text-[10px] font-black bg-[#1a1a1a] px-2 py-0.5 rounded border uppercase ${emp.activo ? 'text-green-500 border-green-500/20' : 'text-red-500 border-red-500/20'}`}>
+                            {emp.activo ? 'ACTIVO' : 'INACTIVO'}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -525,7 +659,7 @@ export default function ErpDashboard({ onVolverAlPos }) {
 
         </main>
       </div>
-      {/* MODAL PARA AGREGAR EMPLEADO */}
+      {/* MODAL PARA AGREGAR EMPLEADO REAL */}
       {modalEmpleado && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="bg-[#121212] border border-[#333] rounded-3xl w-full max-w-md overflow-hidden animate-fadeIn">
@@ -536,28 +670,94 @@ export default function ErpDashboard({ onVolverAlPos }) {
             <div className="p-6 space-y-4">
               <div>
                 <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest mb-2 block">Nombre Completo</label>
-                <input type="text" className="w-full bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3 text-white focus:border-[#ff5a1f] outline-none" placeholder="Ej. Juan Pérez" />
+                <input 
+                  type="text" 
+                  value={formEmpleado.nombre}
+                  onChange={(e) => setFormEmpleado({...formEmpleado, nombre: e.target.value})}
+                  className="w-full bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3 text-white focus:border-[#ff5a1f] outline-none" 
+                  placeholder="Ej. Juan Pérez" 
+                />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest mb-2 block">Rol</label>
-                  <select className="w-full bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3 text-white focus:border-[#ff5a1f] outline-none">
-                    {rolesDisponibles.map(r => <option key={r} value={r}>{r}</option>)}
+                  <select 
+                    value={formEmpleado.rol}
+                    onChange={(e) => setFormEmpleado({...formEmpleado, rol: e.target.value})}
+                    className="w-full bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3 text-white focus:border-[#ff5a1f] outline-none"
+                  >
+                    {rolesReales.map(r => <option key={r.id} value={r.id}>{r.nombre}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest mb-2 block">PIN (4 Dígitos)</label>
-                  <input type="password" maxLength="4" className="w-full bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3 text-white text-center font-mono text-xl tracking-[10px] focus:border-[#ff5a1f] outline-none" placeholder="0000" />
+                  <input 
+                    type="password" 
+                    maxLength="4" 
+                    value={formEmpleado.pin}
+                    onChange={(e) => setFormEmpleado({...formEmpleado, pin: e.target.value.replace(/\D/g, '')})} // Solo números
+                    className="w-full bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3 text-white text-center font-mono text-xl tracking-[10px] focus:border-[#ff5a1f] outline-none" 
+                    placeholder="0000" 
+                  />
                 </div>
               </div>
               <div>
                 <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest mb-2 block">Sede Asignada</label>
-                <select className="w-full bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3 text-white focus:border-[#ff5a1f] outline-none">
-                  {sedes.map(s => <option key={s} value={s}>{s}</option>)}
+                <select 
+                  value={formEmpleado.sede}
+                  onChange={(e) => setFormEmpleado({...formEmpleado, sede: e.target.value})}
+                  className="w-full bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3 text-white focus:border-[#ff5a1f] outline-none"
+                >
+                  {sedesReales.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
                 </select>
               </div>
-              <button className="w-full bg-[#ff5a1f] text-white py-4 rounded-xl font-black mt-4 shadow-lg active:scale-95 transition-all">
+              <button 
+                onClick={manejarCrearEmpleado}
+                disabled={!formEmpleado.nombre || formEmpleado.pin.length !== 4}
+                className="w-full bg-[#ff5a1f] text-white py-4 rounded-xl font-black mt-4 shadow-lg active:scale-95 transition-all disabled:opacity-50"
+              >
                 CREAR ACCESO
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* MODAL PARA AGREGAR/EDITAR PLATO */}
+      {modalPlato && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-[#121212] border border-[#333] rounded-3xl w-full max-w-md overflow-hidden animate-fadeIn">
+            <div className="p-6 border-b border-[#222] bg-[#1a1a1a] flex justify-between items-center">
+              <h3 className="text-xl font-black text-white">{formPlato.id ? 'Editar Plato' : 'Nuevo Plato'}</h3>
+              <button onClick={() => setModalPlato(false)} className="text-neutral-500 font-bold">✕</button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest mb-2 block">Nombre del Plato</label>
+                <input 
+                  type="text" 
+                  value={formPlato.nombre}
+                  onChange={(e) => setFormPlato({...formPlato, nombre: e.target.value})}
+                  className="w-full bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3 text-white focus:border-[#ff5a1f] outline-none" 
+                  placeholder="Ej. Hamburguesa Clásica" 
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest mb-2 block">Precio Base (S/)</label>
+                <input 
+                  type="number" 
+                  step="0.10"
+                  value={formPlato.precio_base}
+                  onChange={(e) => setFormPlato({...formPlato, precio_base: e.target.value})}
+                  className="w-full bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3 text-white focus:border-[#ff5a1f] outline-none" 
+                  placeholder="0.00" 
+                />
+              </div>
+              <button 
+                onClick={manejarGuardarPlato}
+                disabled={!formPlato.nombre || !formPlato.precio_base}
+                className="w-full bg-[#ff5a1f] text-white py-4 rounded-xl font-black mt-4 shadow-lg active:scale-95 transition-all disabled:opacity-50"
+              >
+                GUARDAR PLATO
               </button>
             </div>
           </div>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { cerrarCaja } from './api/api'; // Asegúrate de exportar esta función en tu api.js
+import { cerrarCaja } from './api/api'; 
 
 export default function ModalCierreCaja({ isOpen, onClose, onCierreExitoso }) {
   const [efectivo, setEfectivo] = useState('');
@@ -7,14 +7,19 @@ export default function ModalCierreCaja({ isOpen, onClose, onCierreExitoso }) {
   const [tarjeta, setTarjeta] = useState('');
   const [procesando, setProcesando] = useState(false);
 
+  // ✨ EXTRAEMOS LOS DATOS DE AUDITORÍA Y SEDE DE LA MEMORIA ✨
+  const sedeActualId = localStorage.getItem('sede_id');
+  const empleadoCierreId = localStorage.getItem('empleado_id');
+
   if (!isOpen) return null;
 
   const procesarCierre = async () => {
     setProcesando(true);
     try {
-      // 1. Enviamos lo que el cajero CONTÓ físicamente
+      // 1. Enviamos lo que el cajero CONTÓ físicamente + Los datos de la Sede
       const payload = {
-        empleado_id: 1, // Esto vendrá de tu AuthContext/Store más adelante
+        empleado_id: empleadoCierreId, // 👈 ¡Ahora sí sabemos quién cerró la caja!
+        sede_id: sedeActualId,         // 👈 ¡Y de qué local es esta caja!
         conteo_efectivo: parseFloat(efectivo || 0),
         conteo_yape: parseFloat(yape || 0),
         conteo_tarjeta: parseFloat(tarjeta || 0)
@@ -27,7 +32,7 @@ export default function ModalCierreCaja({ isOpen, onClose, onCierreExitoso }) {
       
     } catch (error) {
       console.error("Error en el cierre:", error);
-      alert("No se pudo procesar el cierre. Verifica tu conexión.");
+      alert("No se pudo procesar el cierre. Verifica tu conexión o revisa la consola.");
     } finally {
       setProcesando(false);
     }
@@ -47,12 +52,12 @@ export default function ModalCierreCaja({ isOpen, onClose, onCierreExitoso }) {
              <span className="text-2xl mb-2 block">🔒</span>
              <p className="text-red-400 font-bold text-sm">Cierre Ciego Activado</p>
              <p className="text-neutral-500 text-xs mt-1">
-               Cuenta el dinero en tu gaveta e ingrésalo. Cualquier diferencia será reportada al administrador.[cite: 6]
+               Cuenta el dinero en tu gaveta e ingrésalo. Cualquier diferencia será reportada al administrador.
              </p>
           </div>
 
           <div className="space-y-4">
-            {/* Input Efectivo[cite: 6] */}
+            {/* Input Efectivo */}
             <div>
               <label className="text-neutral-400 text-[10px] font-bold uppercase tracking-widest mb-2 block">💵 Total Efectivo (Billetes y Monedas)</label>
               <div className="flex items-center bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3 focus-within:border-green-500 transition-colors">
@@ -67,7 +72,7 @@ export default function ModalCierreCaja({ isOpen, onClose, onCierreExitoso }) {
               </div>
             </div>
 
-            {/* Input Yape/Plin[cite: 6] */}
+            {/* Input Yape/Plin */}
             <div>
               <label className="text-neutral-400 text-[10px] font-bold uppercase tracking-widest mb-2 block">📱 Total en Yape / Plin (Revisa tu celular)</label>
               <div className="flex items-center bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3 focus-within:border-purple-500 transition-colors">
@@ -82,7 +87,7 @@ export default function ModalCierreCaja({ isOpen, onClose, onCierreExitoso }) {
               </div>
             </div>
 
-            {/* Input Tarjeta[cite: 6] */}
+            {/* Input Tarjeta */}
             <div>
               <label className="text-neutral-400 text-[10px] font-bold uppercase tracking-widest mb-2 block">💳 Total en POS (Vouchers de Tarjeta)</label>
               <div className="flex items-center bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3 focus-within:border-blue-500 transition-colors">
