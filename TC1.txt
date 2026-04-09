@@ -1,0 +1,59 @@
+- VISTA:  KdsView.jsx
+    - FUNCIONA:
+        - La vista funciona con normalidad, recibe pedidos al instante, el consolidado funciona
+    - FALTA:
+        - [ ]  La función de filtrar por estacion, comida, gaseosas, no funciona, no filtra
+    - CAMBIOS POR VER:
+        - [ ]  Implementar notificaciones cuando llega un pedido con audio
+        
+- VISTA:  MesasView.jsx
+    - FUNCIONA:
+        - funciona bien, cambia de estados, libre ocupada, une y separa las mesas
+        - Error al realizar ventas rapidas :
+        
+        POST http://127.0.0.1:8000/api/pagos/ 400 (Bad Request)
+        
+        MesasView.jsx:574 Error al procesar el cobro de delivery:
+        
+    - FALTA:
+        - [ ]  Al finalizar el cobro de una mesa junta, deberia separarse automaticamente al momento de regresar a mesas
+        - [ ]  Cuando juntamos 3 mesas, solo aparece el numero de mesa del primer y ultimo, mas no todos los numeros de mesas que se juntaron
+    - CAMBIOS POR VER:
+        - [ ]  Lo que pasa es que, durante el dia, se realizan ventas, y ciertos ingredientes se acaban, aceite, arroz, y se manda a comprar a la tienda, en ese caso nunca va a cuadrar la caja porque no se restaron las compras, debemos de encontrar una forma facil de registrar las compras extras durante el trabajo.
+        - [ ]  La confirmacion de separar mesa, es una notificacion fea, deberia ser un modal bonito o una notificacion personalizada
+        
+- VISTA:  PosView.jsx
+    - FUNCIONA:
+        - Funciona parcialmente, si queremos dividir la cuenta en 2, pagamos la primera mitad y es como si hubiera pagado completo
+        - No aparecen los nombres de los productos en cobrar por plato
+        - Si selecciono, para pagar por plato, la cuenta se pone en cero
+        - Al enviar una orden para llevar me sale error:
+        
+        PosView.jsx:111 ReferenceError: telefonoLlevar is not defined
+            at manejarEnviarCocina (PosView.jsx:97:44)
+        
+    - FALTA:
+        - [ ]  Implementar notificaciones de que el pedido en cocina ya esta listo, claro con sonido tambien
+    - CAMBIOS POR VER:
+        - [ ]  Integraremos el pago manual, como lo venimos trabajando, solo poner el qr del yape en el modal y listo
+        - [ ]  Para las personas que quieran la integracion de la confirmacion de yape, se integrara culqui (3% comision)
+    
+    ERP:
+    
+    - Me esta trayendo 00, como ingresos totales, sin en bargo ya realiza pedidos y los cobre con el numero de ordenes igual, aparece como 0, actividad reciente tambien, no me lo esta traendo, pero antes si me lo traia recuerdas?
+    - No se puede editar al personal, presionas el boton de editar pero no pasa nada
+    - No hay forma de eliminar al usuario
+    - Se puden crear 2 empleados con el mismo nombre y pin
+    - La matriz de permisos es solo una maqueta
+    - CRM por ahora es maqueta y esta bien asi
+    - Inventario por ahora es maqueta y esta bien asi
+    - TAB MENU:
+        - Solo se pueden crear platos normales
+        - No se pueden crear platos con variaciones/opciones
+        - No se pueden crear platos que requieran seleccion
+        - No se pueden eliminar productos (eliminacion vitual)
+        - No hay forma de crear categorias
+    - TAB CONFIGURACION:
+        - El numero que coloco desaparece, deberia quedarse como place holder no?
+        - presiono subir archivo pero no abre el navegador de archivos ni nada no hace nada
+        - Desactive el kds, pero ingrese con el pin de cocinero y de igual forma me dejo ingresar

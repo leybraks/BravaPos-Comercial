@@ -53,7 +53,10 @@ export default function PosView({ mesaId, onVolver }) {
         // ✨ LE DECIMOS A DJANGO QUE SOLO NOS DÉ LAS ÓRDENES DE ESTA SEDE ✨
         const responseOrdenes = await getOrdenes({ sede_id: sedeActualId });
         const ordenViva = responseOrdenes.data.find(o => 
-          o.mesa === mesaId && o.estado !== 'pagado'
+            o.mesa === mesaId && 
+            o.estado !== 'completado' && 
+            o.estado !== 'cancelado' &&
+            o.estado_pago !== 'pagado' // 👈 El filtro correcto
         );
         
         if (ordenViva) {
@@ -456,7 +459,8 @@ export default function PosView({ mesaId, onVolver }) {
                 });
                 
                 await actualizarOrden(ordenActiva.id, { 
-                  estado: 'pagado', 
+                  estado: 'completado', 
+                  estado_pago: 'pagado',
                   pago_confirmado: true 
                 });
 

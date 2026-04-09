@@ -34,12 +34,16 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
         // ✨ ACTUALIZACIÓN: Le pedimos a Django SOLO las mesas y órdenes de esta sede
         const resMesas = await getMesas({ sede_id: sedeActualId });
         const resOrdenes = await getOrdenes({ sede_id: sedeActualId });
-
-        const ordenesVivas = resOrdenes.data.filter(o => o.estado !== 'pagado');
+        console.log("🔍 DATOS EXACTOS DE DJANGO:", resOrdenes.data);
+        const ordenesVivas = resOrdenes.data.filter(o => 
+          o.estado !== 'completado' && 
+          o.estado !== 'cancelado' &&
+          o.estado_pago !== 'pagado'
+        );
         const ordenesDeliveryReales = resOrdenes.data
-                  .filter(o => o.tipo === 'llevar' && o.estado !== 'pagado') 
-                  .reverse() 
-                  .slice(0, 10);
+          .filter(o => o.tipo === 'llevar' && o.estado !== 'completado' && o.estado !== 'cancelado') 
+          .reverse() 
+          .slice(0, 10);
         
         setOrdenesLlevar(ordenesDeliveryReales);
         
@@ -490,17 +494,16 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
             if (idDeLaOrden === 'venta_rapida') {
               const resNuevaOrden = await crearOrden({
                 tipo: 'llevar',
-                estado: 'listo',
-                pago_confirmado: true,
-                // ✨ ACTUALIZACIÓN AQUÍ: Se toma la Sede de la memoria de la tablet
+                estado: 'completado', // ✨ La venta rápida nace y muere completada
+                estado_pago: 'pagado', // ✨ El campo correcto para tu BD
                 sede: sedeActualId, 
                 detalles: ordenACobrar.detalles || [] 
               });
               idDeLaOrden = resNuevaOrden.data.id; 
             } else {
               await actualizarOrden(idDeLaOrden, { 
-                pago_confirmado: true,
-                estado: ordenACobrar.estado === 'listo' ? 'listo' : 'preparando'
+                estado_pago: 'pagado', // ✨ Registra el pago en Django
+                estado: 'completado'   // ✨ Esto libera la mesa automáticamente
               });
             }
 

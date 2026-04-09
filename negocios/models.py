@@ -146,7 +146,7 @@ class DetalleOrden(models.Model):
     orden = models.ForeignKey(Orden, related_name='detalles', on_delete=models.CASCADE)
     producto = models.ForeignKey(Producto, on_delete=models.PROTECT)
     cantidad = models.IntegerField(default=1)
-    # ✨ ÚNICO CAMBIO AQUÍ: max_digits de 8 a 10
+    
     precio_unitario = models.DecimalField(max_digits=10, decimal_places=2, default=0.00) 
     notas_y_modificadores = models.JSONField(default=dict, blank=True)
     notas_cocina = models.TextField(blank=True, null=True)
@@ -208,7 +208,7 @@ class SesionCaja(models.Model):
     # 3. La diferencia final (+ es sobrante, - es faltante)
     diferencia = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     class Meta:
-        # ✨ MAGIA DE NIVEL 10/10: Evita cajas dobles
+        
         constraints = [
             models.UniqueConstraint(
                 fields=['sede'], 
