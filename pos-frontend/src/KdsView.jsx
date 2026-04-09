@@ -25,21 +25,55 @@ export default function KdsView({ onVolver }) {
       const data = JSON.parse(event.data);
       
       if (data.type === 'nueva_orden') {
-        const nuevaOrden = {
-          id: data.orden.id,
-          real_id: data.orden.real_id || data.orden.id,
-          origen: data.orden.mesa ? `Mesa ${data.orden.mesa}` : `🛍️ LLEVAR - ${data.orden.cliente_nombre || 'Cliente'}`, 
-          minutos: 0, 
-          estacion: 'COCINA', 
-          items: data.orden.detalles.map(d => ({
-            id: d.id,
-            cant: d.cantidad,
-            nombre: d.producto_nombre,
-            listo: false,
-            notas: d.notas_cocina 
-          }))
-        };
-        setOrdenes(prev => [nuevaOrden, ...prev]);
+        
+        // 1. Formateamos los platos que acaban de llegar de Django
+        const nuevosItems = data.orden.detalles.map(d => ({
+          id: d.id,
+          // ✨ ARREGLO DE CANTIDAD: Atrapamos la cantidad exacta que manda Django
+          cant: d.cantidad !== undefined ? d.cantidad : 1, 
+          nombre: d.producto_nombre || d.nombre,
+          listo: false,
+          notas: d.notas_cocina 
+        }));
+
+        setOrdenes(prev => {
+          const ticketViejo = prev.find(o => o.id === data.orden.id);
+          
+          if (ticketViejo) {
+            // ✨ LA FUSIÓN: Si el ticket ya existía en pantalla, no lo borramos.
+            // Filtramos por si acaso Django nos manda platos repetidos, y solo agregamos los verdaderamente nuevos.
+            const horaActual = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const itemsRealmenteNuevos = nuevosItems
+              .filter(nuevo => !ticketViejo.items.some(viejo => viejo.id === nuevo.id))
+              .map(item => ({ 
+                  ...item, 
+                  agregado_reciente: true, // 👈 Le ponemos una bandera
+                  hora_agregado: horaActual // 👈 Guardamos a qué hora entró
+              }));
+
+            const ticketActualizado = {
+              ...ticketViejo,
+              // Juntamos los platos viejos con los nuevos
+              items: [...ticketViejo.items, ...itemsRealmenteNuevos], 
+            };
+
+            // Ponemos el ticket actualizado al principio de la fila para que el cocinero vea que hubo un agregado
+            return [ticketActualizado, ...prev.filter(o => o.id !== data.orden.id)];
+          }
+
+          // ✨ SI ES UN TICKET NUEVO (Nadie lo había pedido antes)
+          const nuevaOrden = {
+            kds_id: `ws_${data.orden.id}_${Date.now()}`,
+            id: data.orden.id,
+            real_id: data.orden.real_id || data.orden.id,
+            origen: data.orden.mesa ? `Mesa ${data.orden.mesa}` : `🛍️ LLEVAR - ${data.orden.cliente_nombre || 'Cliente'}`, 
+            minutos: 0, 
+            estacion: 'COCINA', 
+            items: nuevosItems
+          };
+
+          return [nuevaOrden, ...prev];
+        });
       }
     };
 
@@ -64,6 +98,7 @@ export default function KdsView({ onVolver }) {
           const minutosTranscurridos = Math.floor((new Date() - fechaCreacion) / 60000);
 
           return {
+            kds_id: `mem_${o.id}_${Math.random()}`,
             id: o.id,
             origen: o.mesa ? `Mesa ${o.mesa}` : `🛍️ LLEVAR - ${o.cliente_nombre || 'Cliente'}`,
             minutos: isNaN(minutosTranscurridos) ? 0 : minutosTranscurridos, 
@@ -96,9 +131,9 @@ export default function KdsView({ onVolver }) {
     return () => clearInterval(intervalo);
   }, []);
 
-  const tacharItem = (ordenId, itemId) => {
+  const tacharItem = (kdsId, itemId) => {
     setOrdenes(prev => prev.map(o => {
-      if (o.id === ordenId) {
+      if (o.kds_id === kdsId) { // ✨ Buscamos por el ticket visual
         return { ...o, items: o.items.map(i => i.id === itemId ? { ...i, listo: !i.listo } : i) };
       }
       return o;
@@ -110,7 +145,8 @@ export default function KdsView({ onVolver }) {
       await actualizarOrden(orden.real_id || orden.id, { estado: 'listo' });
       
       setHistorial([orden, ...historial].slice(0, 5)); 
-      setOrdenes(ordenes.filter(o => o.id !== orden.id));
+      // ✨ LA MAGIA: Solo borramos el ticket exacto que despachaste
+      setOrdenes(ordenes.filter(o => o.kds_id !== orden.kds_id)); 
       
     } catch (error) {
       console.error("Error al despachar la orden:", error);
@@ -236,7 +272,7 @@ export default function KdsView({ onVolver }) {
               const todosListos = orden.items.every(i => i.listo);
 
               return (
-                <div key={orden.id} className="w-full bg-[#121212] border border-[#2a2a2a] rounded-2xl overflow-hidden flex flex-col shadow-xl animate-fadeIn">
+                <div key={orden.kds_id} className="w-full bg-[#121212] border border-[#2a2a2a] rounded-2xl overflow-hidden flex flex-col shadow-xl animate-fadeIn">
                   <div className={`p-4 border-b flex justify-between items-center ${colorHeader}`}>
                     <div>
                       <h2 className="text-xl sm:text-2xl font-black tracking-tight truncate max-w-[150px] sm:max-w-[180px]">{orden.origen}</h2>
@@ -252,16 +288,30 @@ export default function KdsView({ onVolver }) {
                     {orden.items.map(item => (
                       <button 
                         key={item.id}
-                        onClick={() => tacharItem(orden.id, item.id)}
+                        onClick={() => tacharItem(orden.kds_id, item.id)}
                         className={`w-full text-left p-3 rounded-xl flex items-start gap-3 transition-colors active:scale-[0.98] ${item.listo ? 'bg-[#1a1a1a] opacity-50' : 'bg-[#222] hover:bg-[#2a2a2a]'}`}
                       >
                         <div className={`w-8 h-8 shrink-0 rounded-lg flex items-center justify-center font-black text-lg border ${item.listo ? 'bg-green-500/20 border-green-500/50 text-green-500' : 'bg-[#111] border-[#444] text-[#ff5a1f]'}`}>
                           {item.cant}
                         </div>
+                        
                         <div className="flex-1 pt-0.5">
-                          <p className={`font-bold text-[15px] sm:text-[17px] leading-tight ${item.listo ? 'line-through text-neutral-500' : 'text-neutral-100'}`}>
-                            {item.nombre}
-                          </p>
+                          
+                          {/* ✨ LA FUSIÓN VISUAL: Agrupamos el nombre y la etiqueta */}
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className={`font-bold text-[15px] sm:text-[17px] leading-tight ${item.listo ? 'line-through text-neutral-500' : 'text-neutral-100'}`}>
+                              {item.nombre}
+                            </p>
+                            
+                            {/* ✨ LA ETIQUETA DE ALERTA: Solo sale si es un plato nuevo agregado al ticket */}
+                            {item.agregado_reciente && !item.listo && (
+                              <span className="bg-blue-500/20 text-blue-400 border border-blue-500/30 text-[9px] uppercase tracking-widest font-black px-1.5 py-0.5 rounded flex items-center gap-1">
+                                🔔 Agregado {item.hora_agregado}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Las notas (Sin cebolla, etc) intactas */}
                           {item.notas && !item.listo && (
                             <p className="text-yellow-400 text-xs mt-1 font-semibold flex gap-1 items-center">
                               <span className="text-[10px]">⚠️</span> {item.notas}
@@ -292,7 +342,7 @@ export default function KdsView({ onVolver }) {
           <span className="text-neutral-500 text-[10px] font-bold uppercase tracking-widest whitespace-nowrap">Recién Despachados:</span>
           {historial.map(h => (
             <button 
-              key={h.id} 
+              key={h.kds_id}
               onClick={() => recuperarOrden(h)} 
               className="bg-[#1a1a1a] px-4 py-2.5 rounded-xl text-xs font-bold border border-[#333] hover:border-red-500 hover:text-red-400 transition-colors whitespace-nowrap flex items-center gap-2"
             >

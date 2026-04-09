@@ -13,10 +13,19 @@ export default function ModalModificadores({ isOpen, onClose, producto, modifica
   // Reiniciar el modal cada vez que se abre con un producto nuevo
   useEffect(() => {
     if (isOpen && producto) {
-      setCantidad(1);
-      setSelecciones({});
-      setChipsActivos([]);
-      setNotaLibre("");
+      if (producto.cart_id && producto.notas_y_modificadores) {
+        // 🔄 MODO EDICIÓN: Cargamos la memoria del carrito
+        setCantidad(producto.cantidad || 1);
+        setSelecciones(producto.notas_y_modificadores.variaciones || {});
+        setChipsActivos(producto.notas_y_modificadores.chips || []);
+        setNotaLibre(producto.notas_y_modificadores.nota_libre || "");
+      } else {
+        // 🆕 MODO NUEVO: Formulario en blanco
+        setCantidad(1);
+        setSelecciones({});
+        setChipsActivos([]);
+        setNotaLibre("");
+      }
     }
   }, [isOpen, producto]);
 
@@ -77,17 +86,13 @@ export default function ModalModificadores({ isOpen, onClose, producto, modifica
 
   // --- ENVIAR AL CARRITO ---
   const manejarAgregar = () => {
-    // Armamos el JSON hermoso para Django
     const notasYModificadores = {
-      variaciones: selecciones, // Mandamos los IDs para que Django o React sepan qué se eligió
+      variaciones: selecciones, 
       chips: chipsActivos,
       nota_libre: notaLibre
     };
 
-    // Armamos el texto plano para el KDS (Cocina)
     let textoCocina = [];
-    
-    // 1. Textos de variaciones (Ej: "Familiar", "Extra Queso")
     Object.values(selecciones).forEach(opcionesSeleccionadas => {
       opcionesSeleccionadas.forEach(idOpcion => {
         producto.grupos_variacion?.forEach(g => {
@@ -96,26 +101,27 @@ export default function ModalModificadores({ isOpen, onClose, producto, modifica
         });
       });
     });
-    // 2. Textos de chips
     if (chipsActivos.length > 0) textoCocina.push(...chipsActivos);
-    // 3. Nota libre
     if (notaLibre.trim()) textoCocina.push(`Nota: ${notaLibre.trim()}`);
 
-    // Construimos el item final para el carrito
+    // ✨ EL DETECTOR: Si el producto ya tiene un cart_id, significa que viene del carrito (es edición).
+    const esEdicion = !!producto.cart_id;
+
     const itemCarrito = {
       ...producto, 
-      cart_id: `${producto.id}_${Date.now()}`, 
+      // ✨ EL ARREGLO: Si es edición, conservamos su ID. Si es nuevo, lo dejamos en undefined 
+      // para que tu Store genere su genial "Firma Única".
+      cart_id: esEdicion ? producto.cart_id : undefined, 
       
-      // ✨ EL TRUCO: Sobrescribimos el precio original (0) con el precio real calculado
       precio: precioUnitarioFinal, 
-      
       precio_unitario_calculado: precioUnitarioFinal,
       cantidad: cantidad,
       notas_y_modificadores: notasYModificadores,
       notas_cocina: textoCocina.join(" | ") 
     };
 
-    onAgregarAlCarrito(itemCarrito);
+    // ✨ Le pasamos un segundo parámetro al padre para avisarle que estamos editando
+    onAgregarAlCarrito(itemCarrito, esEdicion);
     onClose();
   };
 
@@ -178,7 +184,7 @@ export default function ModalModificadores({ isOpen, onClose, producto, modifica
                       </span>
                       {precioAdicional > 0 && (
                         <span className="text-neutral-500 font-mono text-xs font-bold">
-                          +{formatearSoles(precioAdicional)}
+                          {precioBase === 0 ? formatearSoles(precioAdicional) : `+${formatearSoles(precioAdicional)}`}
                         </span>
                       )}
                     </button>
@@ -245,7 +251,7 @@ export default function ModalModificadores({ isOpen, onClose, producto, modifica
               <span className="text-2xl font-black leading-none pb-1">+</span>
             </button>
           </div>
-
+          
           {/* Botón Principal PREMIUM */}
           <button 
             disabled={!todosLosObligatoriosListos}
@@ -256,18 +262,22 @@ export default function ModalModificadores({ isOpen, onClose, producto, modifica
                 : 'bg-[#222] text-neutral-500 cursor-not-allowed border border-[#333]'
             }`}
           >
-            {/* Texto adaptable (si es muy largo se cortará con puntos suspensivos en lugar de desbordarse) */}
+            {/* ✨ ARREGLO 3.1: Cambio de texto inteligente */}
             <span className="text-xs sm:text-lg uppercase truncate pr-2 text-left leading-tight">
-              {todosLosObligatoriosListos ? 'Confirmar' : 'Agregar'}
+              {!todosLosObligatoriosListos 
+                  ? 'Falta Seleccionar' 
+                  : (producto.cart_id ? 'Guardar Cambios' : 'Confirmar')}
             </span>
             
-            {/* Caja de Precio Inamovible */}
-            <div className="flex items-center gap-1.5 sm:gap-2 bg-black/40 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg shrink-0">
-                <span className="text-[9px] sm:text-[10px] text-neutral-300 tracking-widest uppercase hidden sm:block">Total</span>
-                <span className="font-mono text-sm sm:text-xl font-bold">
-                    {formatearSoles(precioTotal)}
-                </span>
-            </div>
+            {/* ✨ ARREGLO 3.2: Ocultamos el cuadro negro si el precio es 0 */}
+            {precioTotal > 0 && (
+              <div className="flex items-center gap-1.5 sm:gap-2 bg-black/40 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg shrink-0">
+                  <span className="text-[9px] sm:text-[10px] text-neutral-300 tracking-widest uppercase hidden sm:block">Total</span>
+                  <span className="font-mono text-sm sm:text-xl font-bold">
+                      {formatearSoles(precioTotal)}
+                  </span>
+              </div>
+            )}
           </button>
 
         </div>

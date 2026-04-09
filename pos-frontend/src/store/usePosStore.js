@@ -99,6 +99,34 @@ const usePosStore = create((set, get) => ({
           item.cart_id === itemCompleto.cart_id ? itemCompleto : item
       )
   })),
+  // ✨ NUEVA FUNCIÓN: Para editar notas sin clonar el producto
+  editarNotaItem: (cartIdOriginal, nuevaNota) => set((state) => {
+    const index = state.carrito.findIndex(item => item.cart_id === cartIdOriginal);
+    if (index === -1) return state;
+
+    const nuevoCarrito = [...state.carrito];
+    const itemEditado = { ...nuevoCarrito[index] };
+
+    // 1. Actualizamos la nota
+    const notasLimpias = (nuevaNota || '').trim();
+    itemEditado.notas_cocina = notasLimpias;
+
+    // 2. Recalculamos su Firma Única para que el sistema no se confunda a futuro
+    const opciones = itemEditado.opciones_seleccionadas ? JSON.stringify(itemEditado.opciones_seleccionadas) : '';
+    if (notasLimpias === '' && (opciones === '' || opciones === '[]')) {
+      itemEditado.cart_id = `base_${itemEditado.id}`;
+    } else {
+      itemEditado.cart_id = `mod_${itemEditado.id}_${notasLimpias}_${opciones}`;
+    }
+
+    // 3. Reemplazamos el viejo por el nuevo en la misma posición
+    nuevoCarrito[index] = itemEditado;
+
+    // (Opcional) Si al cambiar el nombre resulta que ahora es idéntico a OTRO producto 
+    // que ya estaba en el carrito, se quedarán en filas separadas. Para tu TC2, esto está perfecto y funcional.
+
+    return { carrito: nuevoCarrito };
+  }),
 
   eliminarProducto: (identificadorUnique) => set((state) => ({
     carrito: state.carrito.filter(item => item.cart_id !== identificadorUnique)

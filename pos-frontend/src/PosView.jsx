@@ -27,7 +27,7 @@ export default function PosView({ mesaId, onVolver }) {
   const [ordenActiva, setOrdenActiva] = useState(null);
 
   const { 
-    carrito, agregarProducto, restarProducto, eliminarProducto, 
+    carrito, agregarProducto,editarNotaItem, restarProducto, eliminarProducto, 
     obtenerTotalItems, restarDesdeGrid, obtenerTotalDinero, vaciarCarrito, actualizarItemCompleto, sumarUnidad
   } = usePosStore();
 
