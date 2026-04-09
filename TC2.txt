@@ -1,0 +1,228 @@
+### ID Prueba: 1
+
+**Vista/Módulo:** pos-frontend\src\LoginView.jsx 
+**Rol & Sede:** admin - Principal
+
+**Rol & Sede:** mesero - San Borja
+
+---
+
+**1. Contexto (Pre-condiciones):**
+
+- Creamos otra sede en la cual hay un empleado con el mismo pin que el de administrador
+
+**2. Pasos realizados:**
+
+1. Vinculación del dispositivo
+2. Eleccion de la sede (Principal)
+3. Ingresar pin de administrador
+4. Abri otro navegador 
+5. Vinculacion de dispositivo
+6. Eleccion de la sede (San Borja)
+7. Ingrese pin de mesero ( es igual al pin de administrador de la sede principal)
+
+**3. Evaluación:**
+
+- **Comportamiento esperado: Se espera que el sistema se comporte con los roles de mesero para el empleado de San borja a pesar de que el pin sea igual al pin de administrador de la sede principal, si al tratar de entrar con un pin de la sede principal en la sede san borja y ese pin no le pertenece a ningun empleado de san borja, entonces bloquear acceso**
+- **Comportamiento obtenido: Se le nego el acceso porque en la sede de san borja aun no se habia abierto la caja, en la sede principal se coloco el pin de administrador, y pudo abrir la caja, tambien tratamos de ingresar con el pin de un empleado de la sede principal en la sede de san borja, pero ese pin no estaba asociado a ningun empleado en san borja, y se le nego el acceso, el resultado fue el esperado**
+- **Resultado:** ✅ PASÓ
+
+**4. Diagnóstico Técnico (Logs):**
+
+- **Frontend (Consola):** Ninguno
+- **Backend (Terminal):** Ninguno
+
+**5. Aspectos de mejora:**
+
+- **Backend: Ninguno, todo funciona bien**
+- **Frontend:**
+    - **Hacer que el nombre del local sea variable, dependiendo del nombre del negocio**
+    - Adaptar el login a pantallas de escritorio, actualmente se ve como si solo fuera para móvil
+    - Hacer un poco mas esquinados los botones de los números, no tan esquinados pero un poquito mas si
+    - Los puntos se están pintando de color blanco al presionar un numero, seria mejor si fuera de colores
+    - Aparece un mensaje feo cuando colocamos mal la contraseña o cuando la caja esta cerrada, etc., deberíamos hacer mensajes a corde al diseño
+    - “Local Abierto” “Local Cerrado”, ese mensaje, debería ser un poco mas grande
+- Cambios por ver:
+    - Eliminar el botón de marcar asistencia, y hacer que cuando el empleado ingrese por primera vez al sistema con su pin, en vez de que vea directo las mesas, vea un modal con fondo transparente el cual diga marcar asistencia, pero solo la primera vez que entra en el día.
+
+### 🧪 ID Prueba: 2
+
+**Vista/Módulo:** pos-frontend\src\MesasView.jsx
+**Rol & Sede:** Mesero - Principal
+
+**Rol : Cajero, Administrador**
+
+---
+
+**1. Contexto (Pre-condiciones):**
+
+- Se probara el acceso con distintos pines, para probar el acceso que otorga cada uno
+
+**2. Pasos realizados:**
+
+1. Inicio de sesion con pin de Mesero
+2. Inicio de sesion con pin de Cajero
+3. Inicio de sesion con pin de Administrador
+
+**3. Evaluación:**
+
+- **Comportamiento esperado: Cambio en los botones dependiendo del rol que este asociado al pin, la carga de la cantidad de mesas dependiendo la sede, cambio de estado dependiendo si esta ocupada o no**
+- **Comportamiento obtenido: El comportamiento fue el esperado, se pueden unir las mesas con normalidad, la cantidad de mesas cambia dependiendo la sede, los botones cambian dependiendo el rol del pin, tambien cambia el estado de la mesa dependiendo si esta ocupada o no**
+- **Resultado:** ✅ PASÓ
+
+**4. Diagnóstico Técnico (Logs):**
+
+- **Frontend (Consola): Ninguno**
+- **Backend (Terminal):** **Ninguno**
+
+**5. Aspectos de mejora:**
+
+- **Backend: Ninguno todo funciona bien**
+- **Frontend:**
+    - **El mensaje de cerrar caja es un mensaje feo del sistema, debemos hacerlo a corde el diseño de nuestro sistema**
+    - La vista de para llevar, en movil de ve bien pero en desktop no tanto, el sistema debe de verse bien tanto para escritorio y movil
+
+### 🧪 ID Prueba: 3
+
+**Vista/Módulo:** pos-frontend\src\PosView.jsx
+**Rol & Sede:** mesero - principal
+
+---
+
+**1. Contexto (Pre-condiciones):**
+
+- Editar productos cuando estan añadidos al carrito
+
+**2. Pasos realizados:**
+
+1. Añadir producto sin notas
+2. Añadir producto con notas
+3. Añadir producto que requiere seleccion
+4. Añadir producto con variaciones
+5. Editar un producto del carrito,
+
+**3. Evaluación:**
+
+- **Comportamiento esperado:**
+    - **Al editar un producto que este dentro del carrito, no se duplicacara o no se añadira como producto independiente, solo se agregara la modificacion que tenga.**
+    - Al ser un plato que require seleccion y se realize una modificacion desde el carrito, este cargara el modal con su seleccion precargada, lo mismo va para los platos con variacion
+- **Comportamiento obtenido:**
+    - Al añadir un producto y modificarlo en el carrito, se agrega un nuevo producto con la modificacion, manteniendo el producto original, eso no deberia pasar, se deberia modificar el mismo producto
+    - Los productos que requieren seleccion y los que tienen variacion, al tratar de modificarlos, tambien se duplican como lo anteriormente mencionado, y no recuerdan su seleccion, aparece el modal limpo, si las selecciones escogidas.
+- **Resultado:**  ❌ FALLÓ
+
+**4. Diagnóstico Técnico (Logs):**
+
+- **Frontend (Consola):** Ninguno
+- **Backend (Terminal):** Ninguno
+
+**5. Aspectos de mejora:**
+
+- **Backend: Añadir categorias para los productos, hasta ahora no hay nada para controlar las categorias y poe ende no habra como hacer metricas por categoria**
+- **Frontend:**
+    - **Arreglar la duplicacion de elementos el modificar un producto desde el carrito**
+    - Cuando sea editar plato, ya no deberia aparece el precio, solo deberia aparece si la modificacion tiene costo extra, o si el precio cambia, pero si se mantiene igual, entonces el boton deberia decir confirmar o aceptar
+    - Mejorar las animaciones de entrada y de salida de los modales
+    - Mejorar las animaciones al presionar un producto
+    - Mejorar las animaciones al dejar vacio el carrito
+    - Las notas de modificaciones, deben ser mas grandes su font size
+    - Mejorar animacion de confirmacion al mandar un pedido a cocina
+    - El nombre de la mesa es diferente al numero de mesa en mesas, en la sede principal hay 3 mesas y en la de san borja 1, pero en el pos de san borja el numero de mesas en la vista mesas aparece como 1 y esta bien pero dentro de pos aparece con el numero 4
+
+### 🧪 ID Prueba: 4
+
+**Vista/Módulo:** pos-frontend\src\KdsView.jsx
+**Rol & Sede:** [cocinero, mesero] - principal
+
+**Rol & Sede:** [cocinero, mesero] - San Borja
+
+---
+
+**1. Contexto (Pre-condiciones):**
+
+- Dos locales estan teniendo ventas al mismo tiempo
+
+**2. Pasos realizados:**
+
+1. Realizar un pedido en la sede principal
+2. Realizar un pedido en la sede san borja
+3. Ver pedidos en kds principal
+4. Ver pedidos en kds san borja
+
+**3. Evaluación:**
+
+- **Comportamiento esperado: Los pedidos no se combinan, y corresponden a la sede en la cual se realizo el pedido**
+- **Comportamiento obtenido: Si bien los pedidos no se combinan y pertenecen a su respectivo local, los pedidos solo aparecen al recargar la pagina mas no al instante, el websocket se desconecta al enviar un pedido a cocina, pero fuera de eso, los pedidos no se combinan**
+- **Resultado:** ✅ PASÓ / ❌ FALLÓ
+
+**4. Diagnóstico Técnico (Logs):**
+
+- **Frontend (Consola):** KdsView.jsx:46
+    
+    KDS Conectado a la Cocina (Sede 1) en Tiempo Real
+    KdsView.jsx:46 KDS Desconectado
+    
+    KDS Conectado a la Cocina (Sede 2) en Tiempo Real
+    KdsView.jsx:46 KDS Desconectado
+    
+- **Backend (Terminal):**
+    
+    File "C:\Users\leybr_y4eqwn6\Documents\WEB\BravaPos-Comercial\venv\Lib\site-packages\channels\[consumer.py](http://consumer.py/)", line 76, in dispatch
+    raise ValueError("No handler for message type %s" % message["type"])
+    ValueError: No handler for message type orden_nueva
+    WebSocket DISCONNECT /ws/cocina/2/ [127.0.0.1:50136]
+    
+
+**5. Aspectos de mejora:**
+
+- **Backend: Mejorar los websockets**
+- **Frontend: Mejorar las notifficaciones y animaciones en general, quiero que se sienta como una app nativa**
+
+### 🧪 ID Prueba: 5
+
+**Vista/Módulo:** pos-frontend\src\PosView.jsx
+**Rol & Sede:** Mesero - Principal
+
+---
+
+**1. Contexto (Pre-condiciones):**
+
+- Un cliente compro una gaseosa (venta rapida)
+
+**2. Pasos realizados:**
+
+1. Escoger el producto a vender 
+2. Escoger el modo de pago 
+3. Cerrar la venta
+
+**3. Evaluación:**
+
+- **Comportamiento esperado: Se espera que el flujo sea rapido y simple al ser una venta rapida, deberia tomar un minuto o 2 como maximo**
+- **Comportamiento obtenido: Error al finalizar la venta**
+- **Resultado:** ❌ FALLÓ
+
+**4. Diagnóstico Técnico (Logs):**
+
+- **Frontend (Consola): MesasView.jsx:520**
+    
+    Hubo un error al guardar el pago. Revisa la consola.
+    
+- **Backend (Terminal):**
+    
+    File "C:\Users\leybr_y4eqwn6\Documents\WEB\BravaPos-Comercial\venv\Lib\site-packages\rest_framework\[mixins.py](http://mixins.py/)", line 19, in create
+    self.perform_create(serializer)
+    File "C:\Users\leybr_y4eqwn6\Documents\WEB\BravaPos-Comercial\negocios\[views.py](http://views.py/)", line 89, in perform_create
+    cantidad=d['cantidad'],
+    ~^^^^^^^^^^^^
+    KeyError: 'cantidad'
+    HTTP POST /api/ordenes/ 500 [0.03, 127.0.0.1:52453]
+    
+
+**5. Aspectos de mejora:**
+
+- **Backend: Arreglar el porque no se esta concretando la venta**
+- **Frontend:  El modal de cobro es el mismo que el que usamos para las ventas normales, no tiene sentido que este la opcion de dividir entre y pagar por platos, ocupa espacio, le da mas a que pensar al mesero, seria mejor si solo estubiera la calculadora y listo**
+
+### Fallo general:
+
+No se estan procesando las ventas, cuando colocamos el cerrar y volver a mesa, sin eso no podemos continuar realizando pruebas

@@ -529,7 +529,17 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
         onProcederPago={(carrito, total) => {
           setCarritoVentaRapida(carrito);
           setTotalVentaRapida(total);
-          setOrdenACobrar({ id: 'venta_rapida', total: total, detalles: carrito.map(c => ({ producto: c.id, nombre: c.nombre, precio_unitario: c.precio })) });
+          setOrdenACobrar({ 
+            id: 'venta_rapida', 
+            total: total, 
+            // ✨ AQUÍ ESTÁ EL ARREGLO: Agregamos cantidad: c.cantidad ✨
+            detalles: carrito.map(c => ({ 
+                producto: c.id, 
+                nombre: c.nombre, 
+                precio_unitario: c.precio,
+                cantidad: c.cantidad 
+            })) 
+          });
           setDrawerVentaRapidaAbierto(false); 
         }}
       />

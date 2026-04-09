@@ -21,6 +21,13 @@ class CocinaConsumer(AsyncWebsocketConsumer):
             self.room_group_name, # Usa el nombre del grupo con la sede
             self.channel_name
         )
+    
+    async def orden_nueva(self, event):
+        # Esto atrapa el evento de Django y lo "escupe" hacia React
+        await self.send(text_data=json.dumps({
+            'type': 'nueva_orden', # React espera este nombre
+            'orden': event['orden']
+        }))
 
 
 class SalonConsumer(AsyncWebsocketConsumer):
