@@ -17,7 +17,7 @@ export default function KdsView({ onVolver }) {
   // 1. LA MAGIA: CONEXIÓN WEBSOCKET MULTI-SEDE
   useEffect(() => {
     // Nos conectamos al túnel específico de ESTA sede
-    ws.current = new WebSocket(`ws://127.0.0.1:8000/ws/cocina/${sedeActualId}/`);
+    ws.current = new WebSocket(`ws://163.176.135.213:8000/ws/cocina/${sedeActualId}/`);
 
     ws.current.onopen = () => console.log(`🔥 KDS Conectado a la Cocina (Sede ${sedeActualId}) en Tiempo Real`);
 
