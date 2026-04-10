@@ -4,9 +4,9 @@ services:
   db:
     image: postgres:15-alpine
     environment:
-      POSTGRES_DB: tu_base_datos
-      POSTGRES_USER: tu_usuario
-      POSTGRES_PASSWORD: tu_password
+      POSTGRES_DB: bravapos_db
+      POSTGRES_USER: bravapos_user
+      POSTGRES_PASSWORD: bravapos_password
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: always
@@ -16,12 +16,12 @@ services:
     restart: always
 
   backend:
-    build: ./carpeta_django # ⚠️ Cambia esto por el nombre de tu carpeta Django
-    command: daphne -b 0.0.0.0 -p 8000 tu_proyecto.asgi:application # ⚠️ Cambia "tu_proyecto"
+    build: .
+    command: daphne -b 0.0.0.0 -p 8000 core.asgi:application
     volumes:
-      - ./carpeta_django:/app
+      - .:/app
     environment:
-      - DATABASE_URL=postgres://tu_usuario:tu_password@db:5432/tu_base_datos
+      - DATABASE_URL=postgres://bravapos_user:bravapos_password@db:5432/bravapos_db
       - REDIS_URL=redis://redis:6379/0
     ports:
       - "8000:8000"
@@ -30,7 +30,7 @@ services:
       - redis
 
   frontend:
-    build: ./carpeta_react # ⚠️ Cambia esto por el nombre de tu carpeta React
+    build: ./pos-frontend
     ports:
       - "80:80"
     depends_on:
