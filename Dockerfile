@@ -20,5 +20,5 @@ COPY . .
 EXPOSE 8000
 
 # Usamos Daphne para soportar tus WebSockets y tu API HTTP al mismo tiempo
-CMD ["daphne", "-b", "0.0.0.0", "-p", "8000", "tu_proyecto.asgi:application"] 
+CMD ["daphne", "-b", "0.0.0.0", "-p", "8000", "core.asgi:application"] 
 # ⚠️ CAMBIA "tu_proyecto" por el nombre real de la carpeta donde está tu asgi.py
