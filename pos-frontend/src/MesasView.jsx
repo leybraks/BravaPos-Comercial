@@ -482,11 +482,18 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
         isOpen={!!ordenACobrar} 
         onClose={() => setOrdenACobrar(null)} 
         total={ordenACobrar ? parseFloat(ordenACobrar.total) : 0} 
+        
+        // 👇 1. Agregamos la "cantidad" al carrito para que el modal no se confunda
         carrito={ordenACobrar ? ordenACobrar.detalles.map(d => ({
           id: d.producto, 
           nombre: d.nombre, 
-          precio: parseFloat(d.precio_unitario)
+          precio: parseFloat(d.precio_unitario),
+          cantidad: d.cantidad || 1 // ✨ IMPORTANTE
         })) : []} 
+
+        // 👇 2. LA BANDERA MÁGICA QUE ENCIENDE EL MODO EXPRESS
+        esVentaRapida={ordenACobrar?.es_venta_rapida || false}
+
         onCobroExitoso={async (pagosRegistrados) => {
           try {
             let idDeLaOrden = ordenACobrar.id;
@@ -534,8 +541,8 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
           setTotalVentaRapida(total);
           setOrdenACobrar({ 
             id: 'venta_rapida', 
+            es_venta_rapida: true, // ✨ ESTA ES LA BANDERA MÁGICA ✨
             total: total, 
-            // ✨ AQUÍ ESTÁ EL ARREGLO: Agregamos cantidad: c.cantidad ✨
             detalles: carrito.map(c => ({ 
                 producto: c.id, 
                 nombre: c.nombre, 

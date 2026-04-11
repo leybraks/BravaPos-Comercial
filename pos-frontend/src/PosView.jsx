@@ -2,13 +2,13 @@ import React, { useState, useEffect, useCallback } from 'react';
 import usePosStore from './store/usePosStore';
 import ModalCobro from './ModalCobro';
 import ModalModificadores from './ModalModificadores';
-import { getProductos, crearOrden, actualizarOrden, getOrdenes, crearPago, agregarProductosAOrden } from './api/api';
+import { getProductos, crearOrden, actualizarOrden, getOrdenes,getCategorias, crearPago, agregarProductosAOrden } from './api/api';
 
 export default function PosView({ mesaId, onVolver }) {
   const [categoriaActiva, setCategoriaActiva] = useState('Todos');
   const [categoriasExpandidas, setCategoriasExpandidas] = useState(false);
   const [modalCobroAbierto, setModalCobroAbierto] = useState(false);
-  
+  const [categoriasReales, setCategoriasReales] = useState([]);
   const [formLlevar, setFormLlevar] = useState({
     nombre: '',
     telefono: ''
@@ -40,15 +40,19 @@ export default function PosView({ mesaId, onVolver }) {
 
   const cargarData = useCallback(async () => {
       try {
-        const responseProductos = await getProductos();
+        const [responseProductos, responseCategorias] = await Promise.all([
+            getProductos(),
+            getCategorias()
+        ]);
         const dataFormateada = responseProductos.data.map(p => ({
           ...p,
           id: p.id, 
           nombre: p.nombre, 
           precio: parseFloat(p.precio_base), 
-          categoria: p.categoria?.nombre || 'General'
+          categoria: p.categoria
         }));
         setProductosBase(dataFormateada);
+        setCategoriasReales(responseCategorias.data);
 
         // ✨ LE DECIMOS A DJANGO QUE SOLO NOS DÉ LAS ÓRDENES DE ESTA SEDE ✨
         const responseOrdenes = await getOrdenes({ sede_id: sedeActualId });
@@ -76,11 +80,7 @@ export default function PosView({ mesaId, onVolver }) {
     cargarData();
   }, [cargarData]);
 
-  const productosFiltrados = categoriaActiva === 'Todos' 
-    ? productosBase 
-    : productosBase.filter(p => p.categoria == categoriaActiva);
   
-  const categoriasReales = ['Todos', ...new Set(productosBase.map(p => p.categoria))];
 
   const totalMesa = (ordenActiva ? parseFloat(ordenActiva.total) : 0) + obtenerTotalDinero();
   const cantItemsMesa = (ordenActiva ? ordenActiva.detalles.reduce((acc, el) => acc + el.cantidad, 0) : 0) + obtenerTotalItems();
@@ -149,7 +149,17 @@ export default function PosView({ mesaId, onVolver }) {
   
   const esParaLlevar = (typeof mesaId === 'object' && mesaId?.id === 'llevar') || mesaId === 'llevar';
   const nombreLlevar = typeof mesaId === 'object' ? mesaId.cliente : 'Cliente (🛍️ Llevar)';
+  const productosFiltrados = productosBase.filter(plato => {
+    // 1. Si el cajero eligió "Todas", dejamos pasar todo el menú
+    if (categoriaActiva === 'Todas' || categoriaActiva === 'Todos') return true;
 
+    // 2. EL TRADUCTOR: Buscamos en la lista de categorías el ID del plato para saber su nombre real
+    // Usamos String() para asegurar que "3" (texto) y 3 (número) hagan match perfecto.
+    const nombreCatDelPlato = categoriasReales.find(c => String(c.id) === String(plato.categoria))?.nombre || plato.categoria;
+
+    // 3. Ahora sí, comparamos "Pizzas" con "Pizzas"
+    return nombreCatDelPlato === categoriaActiva;
+  });
   return (
     <>
       <header className="bg-[#0a0a0a] p-4 shadow-xl sticky top-0 z-10 border-b border-[#222]">
@@ -167,18 +177,50 @@ export default function PosView({ mesaId, onVolver }) {
           </div>
         </div>
 
+        {/* ======================= FILTRO DE CATEGORÍAS (POS) ======================= */}
         <div className="mb-2 relative z-20">
-          <button onClick={() => setCategoriasExpandidas(!categoriasExpandidas)} className="w-full flex justify-between items-center bg-[#1a1a1a] text-neutral-200 px-4 py-3 h-14 rounded-2xl border border-[#2a2a2a] hover:bg-[#222] transition-colors shadow-sm active:scale-[0.99]">
-            <span className="font-semibold text-sm">Categoría: <span className="text-[#ff5a1f] ml-1 uppercase tracking-widest font-bold text-xs">{categoriaActiva}</span></span>
-            <svg className={`w-5 h-5 transform transition-transform duration-200 ${categoriasExpandidas ? 'rotate-180 text-[#ff5a1f]' : 'text-neutral-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+          <button 
+            onClick={() => setCategoriasExpandidas(!categoriasExpandidas)} 
+            className="w-full flex justify-between items-center bg-[#1a1a1a] text-neutral-200 px-4 py-3 h-14 rounded-2xl border border-[#2a2a2a] hover:bg-[#222] transition-colors shadow-sm active:scale-[0.99]"
+          >
+            <span className="font-semibold text-sm">
+              Categoría: 
+              <span className="text-[#ff5a1f] ml-1 uppercase tracking-widest font-bold text-xs">
+                {categoriaActiva === 'Todas' ? 'Todas' : categoriaActiva}
+              </span>
+            </span>
+            <svg className={`w-5 h-5 transform transition-transform duration-200 ${categoriasExpandidas ? 'rotate-180 text-[#ff5a1f]' : 'text-neutral-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
+            </svg>
           </button>
+          
           {categoriasExpandidas && (
             <div className="absolute top-full left-0 w-full bg-[#111] border border-[#222] rounded-2xl mt-2 p-2 grid grid-cols-2 gap-2 shadow-2xl animate-fadeIn z-50">
-                {categoriasReales.map(cat => (
-                    <button key={cat} onClick={() => { setCategoriaActiva(cat); setCategoriasExpandidas(false); }} className={`py-3.5 px-3 rounded-xl text-xs font-black transition-colors border text-center uppercase tracking-wider ${categoriaActiva === cat ? 'bg-[#ff5a1f] text-white border-[#ff5a1f]' : 'bg-[#1a1a1a] text-neutral-400 border-[#222] hover:bg-[#222] hover:text-white'}`}>
-                        {cat}
-                    </button>
-                ))}
+                {/* Opción "Todas" */}
+                <button 
+                  onClick={() => { setCategoriaActiva('Todas'); setCategoriasExpandidas(false); }} 
+                  className={`py-3.5 px-3 rounded-xl text-xs font-black transition-colors border text-center uppercase tracking-wider col-span-2 ${categoriaActiva === 'Todas' ? 'bg-[#ff5a1f] text-white border-[#ff5a1f]' : 'bg-[#1a1a1a] text-neutral-400 border-[#222] hover:bg-[#222] hover:text-white'}`}
+                >
+                    🍔 TODAS
+                </button>
+                
+                {/* Mapeo de Categorías (Asegúrate de que categoriasReales sea un array de objetos) */}
+                {categoriasReales.map((cat, index) => {
+                    // Magia: Si es objeto usa el nombre, si es texto plano usa el texto
+                    const nombreMostrar = cat.nombre || cat; 
+                    // Magia 2: Si tiene ID lo usa, si no, usa el número de posición en la lista
+                    const keyUnica = cat.id || `cat-${index}`; 
+
+                    return (
+                        <button 
+                          key={keyUnica} 
+                          onClick={() => { setCategoriaActiva(nombreMostrar); setCategoriasExpandidas(false); }} 
+                          className={`py-3.5 px-3 rounded-xl text-xs font-black transition-colors border text-center uppercase tracking-wider ${categoriaActiva === nombreMostrar ? 'bg-[#ff5a1f] text-white border-[#ff5a1f]' : 'bg-[#1a1a1a] text-neutral-400 border-[#222] hover:bg-[#222] hover:text-white'}`}
+                        >
+                            {nombreMostrar}
+                        </button>
+                    )
+                })}
             </div>
           )}
         </div>
@@ -192,6 +234,9 @@ export default function PosView({ mesaId, onVolver }) {
               .reduce((acc, curr) => acc + curr.cantidad, 0);
           const tieneVariantes = carrito.some(item => item.id === prod.id && item.cart_id !== `base_${prod.id}`);
           
+          // 👇 1. AQUÍ ESTÁ LA MAGIA: El traductor visual para el nombre
+          const nombreCategoriaMuestra = categoriasReales.find(c => String(c.id) === String(prod.categoria))?.nombre || 'Sin categoría';
+          
           // ==============================
           // 1. TARJETAS CON SELECCIÓN
           // ==============================
@@ -199,17 +244,14 @@ export default function PosView({ mesaId, onVolver }) {
               return (
                 <button 
                   key={prod.id} 
-                  // 👇 Evita el clic si está agotado
                   onClick={() => prod.disponible && abrirModalParaNuevo(prod)} 
                   disabled={!prod.disponible}
-                  // 👇 Condicional de estilos
                   className={`relative p-4 rounded-3xl shadow-lg transition-all flex flex-col justify-between h-40 text-left group ${
                     prod.disponible 
                       ? 'bg-[#111] border border-[#222] hover:border-[#444] active:scale-95 cursor-pointer' 
                       : 'bg-[#0a0a0a] border border-[#1a1a1a] opacity-50 cursor-not-allowed'
                   }`}
                 >
-                  {/* 👇 LETRERO AGOTADO */}
                   {!prod.disponible && (
                     <div className="absolute top-3 right-3 bg-red-600 text-white text-[9px] font-black px-2 py-1 rounded uppercase tracking-widest z-10 shadow-lg">
                       Agotado
@@ -218,7 +260,8 @@ export default function PosView({ mesaId, onVolver }) {
 
                   <div>
                     <span className="font-bold text-neutral-200 leading-tight text-[15px] group-hover:text-white">{prod.nombre}</span>
-                    <p className="text-[10px] text-neutral-600 mt-1 uppercase font-black tracking-widest">{prod.categoria}</p>
+                    {/* 👇 2. Reemplazamos prod.categoria por la variable traducida */}
+                    <p className="text-[10px] text-neutral-600 mt-1 uppercase font-black tracking-widest">{nombreCategoriaMuestra}</p>
                   </div>
                   <div className="flex justify-between items-end w-full mt-2">
                       <span className="text-[10px] uppercase font-black tracking-widest text-neutral-400 bg-[#1a1a1a] px-2.5 py-1.5 rounded-lg border border-[#2a2a2a]">Opciones</span>
@@ -238,16 +281,13 @@ export default function PosView({ mesaId, onVolver }) {
           return (
             <div 
               key={prod.id} 
-              // 👇 Evita el clic en la tarjeta si está agotado
               onClick={() => prod.disponible && agregarProducto(prod)} 
-              // 👇 Condicional de estilos
               className={`relative p-3 sm:p-4 rounded-3xl shadow-lg transition-all flex flex-col h-full text-left justify-between overflow-hidden ${
                 prod.disponible 
                   ? 'bg-[#111] border border-[#222] hover:border-[#ff5a1f]/50 hover:bg-[#151515] cursor-pointer' 
                   : 'bg-[#0a0a0a] border border-[#1a1a1a] opacity-50 cursor-not-allowed'
               }`}
             >
-              {/* 👇 LETRERO AGOTADO */}
               {!prod.disponible && (
                 <div className="absolute top-3 right-3 bg-red-600 text-white text-[9px] font-black px-2 py-1 rounded uppercase tracking-widest z-10 shadow-lg">
                   Agotado
@@ -256,11 +296,11 @@ export default function PosView({ mesaId, onVolver }) {
               
               <div className='flex-1 mb-3 pointer-events-none'>
                 <span className="font-bold text-neutral-200 leading-tight text-[13px] sm:text-[15px] line-clamp-2">{prod.nombre}</span>
-                <p className="text-[9px] text-neutral-600 mt-1 uppercase font-black tracking-widest truncate">{prod.categoria}</p>
+                {/* 👇 3. Aquí también reemplazamos prod.categoria por la variable traducida */}
+                <p className="text-[9px] text-neutral-600 mt-1 uppercase font-black tracking-widest truncate">{nombreCategoriaMuestra}</p>
                 <p className="font-mono text-sm text-[#ff5a1f] font-bold mt-1.5">{formatearSoles(precioAMostrar)}</p>
               </div>
               
-              {/* 👇 Si está agotado, bloqueamos los clics en los botones internos con pointer-events-none */}
               <div className={`flex flex-col gap-2 pt-2 border-t border-[#1a1a1a] shrink-0 ${!prod.disponible ? 'pointer-events-none' : ''}`}>
                   
                   {totalCantidadProd > 0 && (
@@ -316,7 +356,6 @@ export default function PosView({ mesaId, onVolver }) {
                     </button>
                   )}
               </div>
-              
             </div>
           );
         })}

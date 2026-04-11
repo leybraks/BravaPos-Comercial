@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 
-export default function ModalCobro({ isOpen, onClose, total, onCobroExitoso, carrito = [] }) {
+// 👇 1. Agregamos esVentaRapida = false a los props
+export default function ModalCobro({ isOpen, onClose, total, onCobroExitoso, carrito = [], esVentaRapida = false }) {
   const [paso, setPaso] = useState('cobro');
   
   // Memorias de la calculadora
@@ -157,57 +158,62 @@ export default function ModalCobro({ isOpen, onClose, total, onCobroExitoso, car
             </div>
 
             <div className="flex-1 overflow-y-auto px-6 pb-6 space-y-6 scrollbar-hide">
-              <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-2xl p-4">
-                <div className="flex justify-between items-center mb-4 border-b border-[#2a2a2a] pb-4">
-                  <span className="text-neutral-300 font-bold text-sm">Dividir entre:</span>
-                  <div className="flex items-center gap-3 bg-[#121212] rounded-xl p-1 border border-[#333]">
-                    <button onClick={() => setDividirEntre(Math.max(1, dividirEntre - 1))} className="w-8 h-8 rounded-lg bg-[#222] text-white font-bold">-</button>
-                    <span className="w-6 text-center font-bold text-white">{dividirEntre}</span>
-                    <button onClick={() => setDividirEntre(dividirEntre + 1)} className="w-8 h-8 rounded-lg bg-[#222] text-white font-bold">+</button>
+              
+              {/* 👇 2. LA MAGIA: Ocultamos esta caja si es Venta Rápida 👇 */}
+              {!esVentaRapida && (
+                <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-2xl p-4">
+                  <div className="flex justify-between items-center mb-4 border-b border-[#2a2a2a] pb-4">
+                    <span className="text-neutral-300 font-bold text-sm">Dividir entre:</span>
+                    <div className="flex items-center gap-3 bg-[#121212] rounded-xl p-1 border border-[#333]">
+                      <button onClick={() => setDividirEntre(Math.max(1, dividirEntre - 1))} className="w-8 h-8 rounded-lg bg-[#222] text-white font-bold">-</button>
+                      <span className="w-6 text-center font-bold text-white">{dividirEntre}</span>
+                      <button onClick={() => setDividirEntre(dividirEntre + 1)} className="w-8 h-8 rounded-lg bg-[#222] text-white font-bold">+</button>
+                    </div>
                   </div>
-                </div>
 
-                <div>
-                  <p className="text-neutral-500 font-bold uppercase tracking-widest text-[10px] mb-3">O cobrar por platos:</p>
-                  <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
-                    
-                    {carritoFiltrado.map(item => {
-                      const maxQty = item.cantidadDisponible;
-                      const currentSelected = cantidadesAPagar[item.id] || 0;
+                  <div>
+                    <p className="text-neutral-500 font-bold uppercase tracking-widest text-[10px] mb-3">O cobrar por platos:</p>
+                    <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
+                      
+                      {carritoFiltrado.map(item => {
+                        const maxQty = item.cantidadDisponible;
+                        const currentSelected = cantidadesAPagar[item.id] || 0;
 
-                      return (
-                        <div key={item.id} className={`flex justify-between items-center p-3 rounded-xl border transition-colors ${currentSelected > 0 ? 'border-[#ff5a1f] bg-[#ff5a1f]/5' : 'border-[#333] hover:bg-[#222]'}`}>
-                          <div>
-                            <p className="text-neutral-200 font-bold text-sm">{item.nombreReal}</p>
-                            <p className="text-neutral-500 text-xs">S/ {item.precioReal.toFixed(2)} c/u {maxQty > 1 ? `(Disp: ${maxQty})` : ''}</p>
-                          </div>
-                          
-                          {/* SI HAY 1 SOLO PLATO: Muestra un Checkbox gigante */}
-                          {maxQty === 1 ? (
-                            <button 
-                              onClick={() => handleToggleUnico(item.id)}
-                              className={`w-8 h-8 rounded-lg border-2 flex items-center justify-center transition-colors ${currentSelected ? 'bg-[#ff5a1f] border-[#ff5a1f]' : 'border-neutral-600'}`}
-                            >
-                              {currentSelected > 0 && <span className="text-white text-sm font-black">✓</span>}
-                            </button>
-                          ) : (
-                            /* SI HAY VARIOS: Muestra contador + y - */
-                            <div className="flex items-center gap-3 bg-[#121212] rounded-lg p-1 border border-[#444]">
-                              <button onClick={() => handleSub(item.id)} className="w-8 h-8 rounded-md bg-[#222] hover:bg-[#333] text-white font-bold transition-colors">-</button>
-                              <span className="w-4 text-center font-bold text-white text-sm">{currentSelected}</span>
-                              <button onClick={() => handleAdd(item.id, maxQty)} className="w-8 h-8 rounded-md bg-[#222] hover:bg-[#333] text-white font-bold transition-colors">+</button>
+                        return (
+                          <div key={item.id} className={`flex justify-between items-center p-3 rounded-xl border transition-colors ${currentSelected > 0 ? 'border-[#ff5a1f] bg-[#ff5a1f]/5' : 'border-[#333] hover:bg-[#222]'}`}>
+                            <div>
+                              <p className="text-neutral-200 font-bold text-sm">{item.nombreReal}</p>
+                              <p className="text-neutral-500 text-xs">S/ {item.precioReal.toFixed(2)} c/u {maxQty > 1 ? `(Disp: ${maxQty})` : ''}</p>
                             </div>
-                          )}
-                        </div>
-                      )
-                    })}
+                            
+                            {/* SI HAY 1 SOLO PLATO: Muestra un Checkbox gigante */}
+                            {maxQty === 1 ? (
+                              <button 
+                                onClick={() => handleToggleUnico(item.id)}
+                                className={`w-8 h-8 rounded-lg border-2 flex items-center justify-center transition-colors ${currentSelected ? 'bg-[#ff5a1f] border-[#ff5a1f]' : 'border-neutral-600'}`}
+                              >
+                                {currentSelected > 0 && <span className="text-white text-sm font-black">✓</span>}
+                              </button>
+                            ) : (
+                              /* SI HAY VARIOS: Muestra contador + y - */
+                              <div className="flex items-center gap-3 bg-[#121212] rounded-lg p-1 border border-[#444]">
+                                <button onClick={() => handleSub(item.id)} className="w-8 h-8 rounded-md bg-[#222] hover:bg-[#333] text-white font-bold transition-colors">-</button>
+                                <span className="w-4 text-center font-bold text-white text-sm">{currentSelected}</span>
+                                <button onClick={() => handleAdd(item.id, maxQty)} className="w-8 h-8 rounded-md bg-[#222] hover:bg-[#333] text-white font-bold transition-colors">+</button>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
 
-                    {carritoFiltrado.length === 0 && <p className="text-green-500 font-bold text-sm text-center py-2">✨ ¡Todos los platos han sido pagados!</p>}
+                      {carritoFiltrado.length === 0 && <p className="text-green-500 font-bold text-sm text-center py-2">✨ ¡Todos los platos han sido pagados!</p>}
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
+              {/* 👆 FIN DEL BLOQUE OCULTO 👆 */}
 
-              {/* MÉTODOS DE PAGO Y TECLADO */}
+              {/* MÉTODOS DE PAGO Y TECLADO (Siempre visibles) */}
               <div className="grid grid-cols-3 gap-3">
                 <button onClick={() => setMetodo('efectivo')} className={`py-4 rounded-xl flex justify-center items-center transition-all ${metodo === 'efectivo' ? 'bg-green-500 shadow-[0_0_15px_rgba(34,197,94,0.3)]' : 'bg-[#1a1a1a] border border-[#2a2a2a]'}`}><span className="text-2xl">💵</span></button>
                 <button onClick={() => setMetodo('yape')} className={`py-4 rounded-xl flex justify-center items-center transition-all ${metodo === 'yape' ? 'bg-purple-500 shadow-[0_0_15px_rgba(168,85,247,0.3)]' : 'bg-[#1a1a1a] border border-[#2a2a2a]'}`}><span className="text-2xl">📱</span></button>
