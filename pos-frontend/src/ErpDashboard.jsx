@@ -9,7 +9,8 @@ import {
   updateNegocioConfig,
   getProductos,
   crearProducto,
-  actualizarProducto
+  actualizarProducto,
+  parchearProducto
 } from './api/api';
 
 export default function ErpDashboard({ onVolverAlPos }) {
@@ -29,8 +30,18 @@ export default function ErpDashboard({ onVolverAlPos }) {
   const [guardandoConfig, setGuardandoConfig] = useState(false);
   const [productosReales, setProductosReales] = useState([]);
   const [modalPlato, setModalPlato] = useState(false);
-  const [formPlato, setFormPlato] = useState({ id: null, nombre: '', precio_base: '', disponible: true });  
-
+  const [pasoModal, setPasoModal] = useState(1);
+  const [formPlato, setFormPlato] = useState({ 
+    id: null, 
+    nombre: '', 
+    precio_base: '', 
+    categoria_id: '', 
+    es_venta_rapida: true,
+    requiere_seleccion: false, 
+    tiene_variaciones: false, 
+    disponible: true,
+    grupos_variacion: []
+  });
   const [empleadosReales, setEmpleadosReales] = useState([]);
   const [rolesReales, setRolesReales] = useState([]);
   const [sedesReales, setSedesReales] = useState([]);
@@ -199,37 +210,112 @@ export default function ErpDashboard({ onVolverAlPos }) {
 
   // 3. Guardar/Editar Plato del Menú
   const manejarGuardarPlato = async () => {
-    if (!formPlato.nombre || !formPlato.precio_base) return alert("Nombre y precio son obligatorios.");
+    if (!formPlato.nombre) return alert("El nombre del plato es obligatorio.");
+    if (!formPlato.requiere_seleccion && !formPlato.precio_base) return alert("Debes ingresar un precio base.");
+
+    // 👇 1. EL SALVAVIDAS: Si el localStorage está vacío, usamos el negocio 1 por defecto
+    const negocioId = localStorage.getItem('negocio_id') || 1;
+
+    const gruposLimpios = formPlato.grupos_variacion.map(grupo => ({
+      ...grupo,
+      opciones: grupo.opciones.map(op => ({
+        ...op,
+        precio_adicional: op.precio_adicional === '' ? "0.00" : op.precio_adicional 
+      }))
+    }));
+
+    // 👇 2. Agregamos el 'negocio' directamente al paquete principal
+    const payload = {
+      negocio: negocioId, // 👈 ¡ESTA ES LA LÍNEA CLAVE!
+      nombre: formPlato.nombre,
+      precio_base: formPlato.precio_base === '' ? "0.00" : formPlato.precio_base,
+      es_venta_rapida: formPlato.es_venta_rapida,
+      requiere_seleccion: formPlato.requiere_seleccion,
+      tiene_variaciones: formPlato.tiene_variaciones,
+      disponible: formPlato.disponible,
+      categoria: formPlato.categoria_id === '' ? null : formPlato.categoria_id, 
+      grupos_variacion: gruposLimpios
+    };
+
     try {
       if (formPlato.id) {
-        await actualizarProducto(formPlato.id, formPlato);
+        await actualizarProducto(formPlato.id, payload);
       } else {
-        const negocioId = localStorage.getItem('negocio_id');
-        await crearProducto({ ...formPlato, negocio: negocioId }); 
+        // 👇 3. Como el payload ya tiene el negocio adentro, lo enviamos directo
+        await crearProducto(payload); 
       }
+      
       setModalPlato(false);
-      setFormPlato({ id: null, nombre: '', precio_base: '', disponible: true });
+      setPasoModal(1);
       
       const res = await getProductos({ sede_id: sedeFiltroId });
       setProductosReales(res.data);
+      alert("¡Plato guardado con éxito! 🎉");
+
     } catch (error) {
       console.error("Error al guardar plato:", error);
+      
+      // 2. EL CHISMOSO: Esto atrapará el error 400 y te dirá qué campo falló
+      if (error.response && error.response.data) {
+        console.error("💥 QUEJA EXACTA DE DJANGO:", error.response.data);
+        
+        // Formateamos el error para que sea legible en el alert
+        const detallesError = Object.entries(error.response.data)
+          .map(([campo, mensaje]) => `${campo.toUpperCase()}: ${mensaje}`)
+          .join('\n');
+          
+        alert(`Django rechazó los datos:\n\n${detallesError}`);
+      } else {
+        alert("Hubo un error al guardar. Revisa la consola.");
+      }
     }
   };
 
   // 4. Cambiar disponibilidad (Agotado/Disponible)
+  // 4. Cambiar disponibilidad (Agotado/Disponible)
   const toggleDisponibilidad = async (plato) => {
     try {
-      await actualizarProducto(plato.id, { disponible: !plato.disponible });
+      // Usamos la nueva función PATCH que solo requiere el campo a cambiar
+      await parchearProducto(plato.id, { disponible: !plato.disponible });
+      
+      // Actualizamos la pantalla de React
       setProductosReales(prev => prev.map(p => p.id === plato.id ? { ...p, disponible: !p.disponible } : p));
+      
     } catch (error) {
       console.error("Error cambiando disponibilidad:", error);
+      
+      // El chismoso por si algo falla
+      if (error.response && error.response.data) {
+        alert(`Error al cambiar estado:\n${JSON.stringify(error.response.data)}`);
+      }
     }
   };
 
   // 5. Abrir Modal para editar plato
   const abrirModalEditar = (plato) => {
-    setFormPlato({ id: plato.id, nombre: plato.nombre, precio_base: plato.precio_base, disponible: plato.disponible });
+    // Tomamos los grupos tal cual vienen de Django, y nos aseguramos de que
+    // las opciones existan y usen el nombre correcto para el precio.
+    const gruposFormateados = plato.grupos_variacion ? plato.grupos_variacion.map(grupo => ({
+      ...grupo,
+      opciones: grupo.opciones ? grupo.opciones.map(op => ({
+        id: op.id, // Importante para editar después
+        nombre: op.nombre,
+        precio_adicional: op.precio_adicional // Usamos el nombre real de tu DB
+      })) : []
+    })) : [];
+
+    setFormPlato({ 
+      id: plato.id, 
+      nombre: plato.nombre, 
+      precio_base: plato.precio_base, 
+      categoria_id: plato.categoria || '', 
+      es_venta_rapida: plato.es_venta_rapida || false,
+      requiere_seleccion: plato.requiere_seleccion || false,
+      tiene_variaciones: plato.tiene_variaciones || false,
+      disponible: plato.disponible,
+      grupos_variacion: gruposFormateados // 👈 Solo usamos esto
+    });
+    
     setModalPlato(true);
   };
   return (
@@ -723,42 +809,215 @@ export default function ErpDashboard({ onVolverAlPos }) {
         </div>
       )}
       {/* MODAL PARA AGREGAR/EDITAR PLATO */}
+      {/* MODAL PARA AGREGAR/EDITAR PLATO (VERSIÓN WIZARD) */}
       {modalPlato && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <div className="bg-[#121212] border border-[#333] rounded-3xl w-full max-w-md overflow-hidden animate-fadeIn">
-            <div className="p-6 border-b border-[#222] bg-[#1a1a1a] flex justify-between items-center">
-              <h3 className="text-xl font-black text-white">{formPlato.id ? 'Editar Plato' : 'Nuevo Plato'}</h3>
-              <button onClick={() => setModalPlato(false)} className="text-neutral-500 font-bold">✕</button>
+          <div className="bg-[#121212] border border-[#333] rounded-3xl w-full max-w-xl max-h-[90vh] overflow-y-auto animate-fadeIn relative">
+            
+            {/* Cabecera Fija */}
+            <div className="p-6 border-b border-[#222] bg-[#1a1a1a] flex justify-between items-center sticky top-0 z-10">
+              <div className="flex items-center gap-3">
+                {pasoModal === 2 && (
+                  <button onClick={() => setPasoModal(1)} className="text-neutral-500 hover:text-white bg-[#222] w-8 h-8 rounded-full flex items-center justify-center font-bold transition-colors">
+                    ←
+                  </button>
+                )}
+                <h3 className="text-xl font-black text-white">
+                  {formPlato.id ? 'Editar Plato' : 'Nuevo Plato'} 
+                  {pasoModal === 2 && <span className="text-[#ff5a1f]"> - Presentaciones</span>}
+                </h3>
+              </div>
+              <button onClick={() => setModalPlato(false)} className="text-neutral-500 hover:text-white font-bold text-xl">✕</button>
             </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest mb-2 block">Nombre del Plato</label>
-                <input 
-                  type="text" 
-                  value={formPlato.nombre}
-                  onChange={(e) => setFormPlato({...formPlato, nombre: e.target.value})}
-                  className="w-full bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3 text-white focus:border-[#ff5a1f] outline-none" 
-                  placeholder="Ej. Hamburguesa Clásica" 
-                />
-              </div>
-              <div>
-                <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest mb-2 block">Precio Base (S/)</label>
-                <input 
-                  type="number" 
-                  step="0.10"
-                  value={formPlato.precio_base}
-                  onChange={(e) => setFormPlato({...formPlato, precio_base: e.target.value})}
-                  className="w-full bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3 text-white focus:border-[#ff5a1f] outline-none" 
-                  placeholder="0.00" 
-                />
-              </div>
-              <button 
-                onClick={manejarGuardarPlato}
-                disabled={!formPlato.nombre || !formPlato.precio_base}
-                className="w-full bg-[#ff5a1f] text-white py-4 rounded-xl font-black mt-4 shadow-lg active:scale-95 transition-all disabled:opacity-50"
-              >
-                GUARDAR PLATO
-              </button>
+            
+            <div className="p-6 space-y-6">
+
+              {/* ======================= PANTALLA 1: DATOS BÁSICOS ======================= */}
+              {pasoModal === 1 && (
+                <div className="space-y-6 animate-fadeIn">
+                  {/* Nombre y Precio */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="col-span-1 md:col-span-2">
+                      <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest mb-2 block">Nombre del Plato</label>
+                      <input 
+                        type="text" 
+                        value={formPlato.nombre}
+                        onChange={(e) => setFormPlato({...formPlato, nombre: e.target.value})}
+                        className="w-full bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3 text-white focus:border-[#ff5a1f] outline-none" 
+                        placeholder="Ej. Pizza Hawaiana" 
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest mb-2 block">Precio Base (S/)</label>
+                      <input 
+                        type="number" 
+                        step="0.10"
+                        value={formPlato.precio_base}
+                        onChange={(e) => setFormPlato({...formPlato, precio_base: e.target.value})}
+                        disabled={formPlato.requiere_seleccion} // 👈 ¡Se bloquea si requiere selección!
+                        className="w-full bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3 text-white focus:border-[#ff5a1f] outline-none disabled:opacity-30 disabled:cursor-not-allowed transition-all" 
+                        placeholder="0.00" 
+                      />
+                    </div>
+                  </div>
+
+                  {/* Comportamiento (Switches) */}
+                  <div className="bg-[#1a1a1a] border border-[#333] rounded-2xl p-4 space-y-4">
+                    <h4 className="text-white font-bold text-sm mb-2">Comportamiento en POS</h4>
+                    
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-white font-bold text-sm">Requiere Selección (Ej. Tamaños)</p>
+                        <p className="text-neutral-500 text-xs">Desactiva el precio base. Exige elegir un tamaño.</p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input 
+                          type="checkbox" 
+                          className="sr-only peer" 
+                          checked={formPlato.requiere_seleccion} 
+                          onChange={(e) => {
+                            const requires = e.target.checked;
+                            let nuevosGrupos = [...formPlato.grupos_variacion];
+                            
+                            // Si lo activa y no hay grupos, pre-creamos el molde para el Paso 2
+                            if (requires && nuevosGrupos.length === 0) {
+                              nuevosGrupos = [{ nombre: 'Seleccione tamaño/presentación', obligatorio: true, seleccion_multiple: false, opciones: [] }];
+                            }
+
+                            setFormPlato({
+                              ...formPlato, 
+                              requiere_seleccion: requires,
+                              precio_base: requires ? '0.00' : formPlato.precio_base, // Borra el precio base
+                              grupos_variacion: nuevosGrupos
+                            });
+                          }} 
+                        />
+                        <div className="w-11 h-6 bg-[#333] peer-focus:outline-none rounded-full peer peer-checked:bg-[#ff5a1f] transition-colors">
+                          <div className={`absolute top-[2px] left-[2px] bg-white rounded-full h-5 w-5 transition-transform ${formPlato.requiere_seleccion ? 'translate-x-full' : ''}`}></div>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* BOTONES DEL PASO 1 */}
+                  {formPlato.requiere_seleccion ? (
+                    // Si requiere selección, el botón dice SIGUIENTE (o Editar si ya existe)
+                    <button 
+                      onClick={() => setPasoModal(2)}
+                      className="w-full bg-[#2463EB] hover:bg-blue-500 text-white py-4 rounded-xl font-black shadow-lg shadow-blue-500/20 transition-all flex justify-center items-center gap-2"
+                    >
+                      {formPlato.id ? 'EDITAR TAMAÑOS / PRECIOS →' : 'SIGUIENTE: DEFINIR TAMAÑOS →'}
+                    </button>
+                  ) : (
+                    // Si es un plato normal, el botón dice GUARDAR
+                    <button 
+                      onClick={manejarGuardarPlato}
+                      disabled={!formPlato.nombre || !formPlato.precio_base}
+                      className="w-full bg-[#ff5a1f] hover:bg-[#e04a15] text-white py-4 rounded-xl font-black shadow-lg shadow-[#ff5a1f]/20 disabled:opacity-50 transition-all"
+                    >
+                      {formPlato.id ? 'ACTUALIZAR PLATO' : 'GUARDAR PLATO'}
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* ======================= PANTALLA 2: LAS SELECCIONES ======================= */}
+              {pasoModal === 2 && (
+                <div className="space-y-6 animate-fadeIn">
+                  
+                  {/* Solo mostramos el primer grupo (para no marear al usuario) */}
+                  {formPlato.grupos_variacion.slice(0, 1).map((grupo, gIndex) => (
+                    <div key={gIndex} className="space-y-4">
+                      
+                      {/* Nombre de la selección */}
+                      <div>
+                        <label className="text-[10px] font-black text-[#ff5a1f] uppercase tracking-widest block mb-2">Nombre de la Selección</label>
+                        <input 
+                          type="text" 
+                          value={grupo.nombre}
+                          onChange={(e) => {
+                            const nuevosGrupos = [...formPlato.grupos_variacion];
+                            nuevosGrupos[0].nombre = e.target.value;
+                            setFormPlato({...formPlato, grupos_variacion: nuevosGrupos});
+                          }}
+                          className="w-full bg-[#1a1a1a] border border-[#ff5a1f]/30 focus:border-[#ff5a1f] rounded-xl px-4 py-3 text-white font-bold outline-none" 
+                        />
+                      </div>
+
+                      <div className="h-px w-full bg-[#222]"></div>
+
+                      {/* Lista de Opciones (Familiar, Personal, etc) */}
+                      <div>
+                        <div className="flex justify-between items-center mb-4">
+                          <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest">Opciones y Precios</label>
+                          <button 
+                            onClick={() => {
+                              const nuevosGrupos = [...formPlato.grupos_variacion];
+                              nuevosGrupos[0].opciones.push({ nombre: '', precio_adicional: '' });
+                              setFormPlato({...formPlato, grupos_variacion: nuevosGrupos});
+                            }}
+                            className="text-[#ff5a1f] text-xs font-bold bg-[#ff5a1f]/10 px-3 py-1.5 rounded-lg hover:bg-[#ff5a1f]/20 transition-colors"
+                          >
+                            + Añadir Opción
+                          </button>
+                        </div>
+
+                        <div className="space-y-3">
+                          {grupo.opciones.map((opcion, oIndex) => (
+                            <div key={oIndex} className="flex gap-2 w-full"> {/* 👈 w-full asegura que respete los bordes */}
+                              <input 
+                                type="text" 
+                                placeholder="Ej. Familiar"
+                                value={opcion.nombre}
+                                onChange={(e) => {
+                                  const nuevosGrupos = [...formPlato.grupos_variacion];
+                                  nuevosGrupos[0].opciones[oIndex].nombre = e.target.value;
+                                  setFormPlato({...formPlato, grupos_variacion: nuevosGrupos});
+                                }}
+                                // 👇 Agregamos min-w-0 (clave para evitar overflow) y bajamos px-4 a px-3
+                                className="flex-1 min-w-0 bg-[#1a1a1a] border border-[#333] rounded-xl px-3 py-3 text-white outline-none focus:border-white text-sm" 
+                              />
+                              <input 
+                                type="number" 
+                                placeholder="0.00"
+                                value={opcion.precio_adicional}
+                                onChange={(e) => {
+                                  const nuevosGrupos = [...formPlato.grupos_variacion];
+                                  nuevosGrupos[0].opciones[oIndex].precio_adicional = e.target.value;
+                                  setFormPlato({...formPlato, grupos_variacion: nuevosGrupos});
+                                }}
+                                // 👇 Reducimos ancho a w-24 y agregamos shrink-0 para que nunca se comprima
+                                className="w-24 shrink-0 bg-[#1a1a1a] border border-[#333] rounded-xl px-3 py-3 text-white outline-none focus:border-white text-right text-sm" 
+                              />
+                              <button 
+                                onClick={() => {
+                                  const nuevosGrupos = [...formPlato.grupos_variacion];
+                                  nuevosGrupos[0].opciones = nuevosGrupos[0].opciones.filter((_, i) => i !== oIndex);
+                                  setFormPlato({...formPlato, grupos_variacion: nuevosGrupos});
+                                }}
+                                // 👇 Botón un pelín más delgado (w-10) y shrink-0
+                                className="w-10 shrink-0 flex items-center justify-center text-red-500 bg-red-500/10 hover:bg-red-500 hover:text-white rounded-xl transition-colors font-bold"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                    </div>
+                  ))}
+
+                  {/* BOTÓN FINAL DE GUARDAR */}
+                  <button 
+                    onClick={manejarGuardarPlato}
+                    className="w-full bg-[#ff5a1f] hover:bg-[#e04a15] text-white py-4 rounded-xl font-black shadow-lg shadow-[#ff5a1f]/20 mt-8 transition-all"
+                  >
+                    TERMINAR Y GUARDAR
+                  </button>
+                </div>
+              )}
+              
             </div>
           </div>
         </div>

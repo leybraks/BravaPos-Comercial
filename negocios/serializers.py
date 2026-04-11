@@ -33,25 +33,68 @@ class ModificadorRapidoSerializer(serializers.ModelSerializer):
 class OpcionVariacionSerializer(serializers.ModelSerializer):
     class Meta:
         model = OpcionVariacion
-        fields = '__all__'
+        fields = ['id', 'nombre', 'precio_adicional']
+        # 👇 Esto evita errores cuando actualizamos opciones que ya existen
+        extra_kwargs = {'id': {'read_only': False, 'required': False}}
 
 class GrupoVariacionSerializer(serializers.ModelSerializer):
-    opciones = OpcionVariacionSerializer(many=True, read_only=True)
+    # 👇 Quitamos el read_only y ponemos required=False
+    opciones = OpcionVariacionSerializer(many=True, required=False)
 
     class Meta:
         model = GrupoVariacion
-        fields = '__all__'
+        fields = ['id', 'nombre', 'obligatorio', 'seleccion_multiple', 'opciones']
+        extra_kwargs = {'id': {'read_only': False, 'required': False}}
 
-# ==========================================
-# PRODUCTO
-# ==========================================
 class ProductoSerializer(serializers.ModelSerializer):
-    grupos_variacion = GrupoVariacionSerializer(many=True, read_only=True)
+    # 👇 Quitamos el read_only=True para que Django acepte los datos de React
+    grupos_variacion = GrupoVariacionSerializer(many=True, required=False)
 
     class Meta:
         model = Producto
         fields = '__all__'
 
+    # 🚀 MAGIA 1: Le enseñamos a Django a CREAR un plato nuevo con sus tamaños
+    def create(self, validated_data):
+        grupos_data = validated_data.pop('grupos_variacion', [])
+        
+        # 1. Creamos el plato base (La Pizza)
+        producto = Producto.objects.create(**validated_data)
+        
+        # 2. Creamos los Grupos (Tamaños) y sus Opciones (Familiar, Personal)
+        for grupo_data in grupos_data:
+            opciones_data = grupo_data.pop('opciones', [])
+            grupo = GrupoVariacion.objects.create(producto=producto, **grupo_data)
+            
+            for opcion_data in opciones_data:
+                OpcionVariacion.objects.create(grupo=grupo, **opcion_data)
+                
+        return producto
+
+    # 🚀 MAGIA 2: Le enseñamos a ACTUALIZAR un plato que ya existe
+    def update(self, instance, validated_data):
+        grupos_data = validated_data.pop('grupos_variacion', None)
+        
+        # 1. Actualizamos nombre, precio_base, etc.
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+
+        # 2. Si React mandó grupos nuevos, la forma más segura es recrearlos
+        if grupos_data is not None:
+            instance.grupos_variacion.all().delete() # Borra los viejos
+            
+            for grupo_data in grupos_data:
+                opciones_data = grupo_data.pop('opciones', [])
+                grupo_data.pop('id', None) # Limpiamos IDs viejos para no chocar
+                
+                grupo = GrupoVariacion.objects.create(producto=instance, **grupo_data)
+                
+                for opcion_data in opciones_data:
+                    opcion_data.pop('id', None)
+                    OpcionVariacion.objects.create(grupo=grupo, **opcion_data)
+                    
+        return instance
 # ==========================================
 # ORDEN Y DETALLES (Arquitectura 10/10)
 # ==========================================

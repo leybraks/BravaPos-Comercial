@@ -59,9 +59,20 @@ class Mesa(models.Model):
     def __str__(self):
         return f"{self.numero_o_nombre} - {self.sede.nombre}"
 
+class Categoria(models.Model):
+    negocio = models.ForeignKey(Negocio, on_delete=models.CASCADE, related_name='categorias')
+    nombre = models.CharField(max_length=50) # Ej. "Pizzas", "Parrillas", "Bebidas"
+    orden = models.IntegerField(default=0) # Para que tú elijas qué categoría sale primero
+    activo = models.BooleanField(default=True)
+
+    def __str__(self):
+        return f"{self.nombre} - {self.negocio.nombre}"
+
 class Producto(models.Model):
     # El producto sigue siendo del Negocio (Menú global)
     negocio = models.ForeignKey(Negocio, on_delete=models.CASCADE)
+    categoria = models.ForeignKey('Categoria', on_delete=models.SET_NULL, null=True, blank=True, related_name='productos') # 👈 ¡ESTA ES LA LÍNEA QUE FALTABA!
+    
     nombre = models.CharField(max_length=100)
     es_venta_rapida = models.BooleanField(default=False)
     precio_base = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
@@ -69,13 +80,16 @@ class Producto(models.Model):
     tiene_variaciones = models.BooleanField(default=False)
     requiere_seleccion = models.BooleanField(default=False)
     activo = models.BooleanField(default=True)
+    
     objects = ActivoManager()
     all_objects = models.Manager()
+    
     class Meta:
         unique_together = ('negocio', 'nombre')
         indexes = [
             models.Index(fields=['negocio', 'disponible']), # Acelera la carga del menú en React
         ]
+        
     def __str__(self):
         return f"{self.nombre} (S/ {self.precio_base})"
 

@@ -1,6 +1,6 @@
 import axios from 'axios';
-
-const API_URL = 'http://163.176.135.213:8000/api';
+const apiUrl = import.meta.env.VITE_API_URL;
+const API_URL = `${apiUrl}/api`;
 
 const api = axios.create({
   baseURL: API_URL,
@@ -81,5 +81,6 @@ export const getSedes = () => api.get('/sedes/');
 export const crearEmpleado = (data) => api.post('/empleados/', data);
 export const crearProducto = (data) => api.post('/productos/', data);
 export const actualizarProducto = (id, data) => api.put(`/productos/${id}/`, data);
+export const parchearProducto = (id, data) => api.patch(`/productos/${id}/`, data);
 
 export default api;
