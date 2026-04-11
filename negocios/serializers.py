@@ -2,7 +2,7 @@ from rest_framework import serializers
 from .models import (
     Negocio, Sede, Mesa, Producto, Orden, DetalleOrden, Pago,
     ModificadorRapido, GrupoVariacion, OpcionVariacion, Rol, Empleado, SesionCaja,
-    DetalleOrdenOpcion # ✨ IMPORTACIÓN AÑADIDA
+    DetalleOrdenOpcion , Categoria
 )
 
 class NegocioSerializer(serializers.ModelSerializer):
@@ -155,4 +155,9 @@ class EmpleadoSerializer(serializers.ModelSerializer):
 class SesionCajaSerializer(serializers.ModelSerializer):
     class Meta:
         model = SesionCaja
+        fields = '__all__'
+
+class CategoriaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Categoria
         fields = '__all__'

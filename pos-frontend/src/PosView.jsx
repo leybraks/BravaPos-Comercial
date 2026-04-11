@@ -192,9 +192,30 @@ export default function PosView({ mesaId, onVolver }) {
               .reduce((acc, curr) => acc + curr.cantidad, 0);
           const tieneVariantes = carrito.some(item => item.id === prod.id && item.cart_id !== `base_${prod.id}`);
           
+          // ==============================
+          // 1. TARJETAS CON SELECCIÓN
+          // ==============================
           if (prod.requiere_seleccion) {
               return (
-                <button key={prod.id} onClick={() => abrirModalParaNuevo(prod)} className="bg-[#111] border border-[#222] p-4 rounded-3xl shadow-lg active:scale-95 transition-all flex flex-col justify-between h-40 text-left hover:border-[#444] group">
+                <button 
+                  key={prod.id} 
+                  // 👇 Evita el clic si está agotado
+                  onClick={() => prod.disponible && abrirModalParaNuevo(prod)} 
+                  disabled={!prod.disponible}
+                  // 👇 Condicional de estilos
+                  className={`relative p-4 rounded-3xl shadow-lg transition-all flex flex-col justify-between h-40 text-left group ${
+                    prod.disponible 
+                      ? 'bg-[#111] border border-[#222] hover:border-[#444] active:scale-95 cursor-pointer' 
+                      : 'bg-[#0a0a0a] border border-[#1a1a1a] opacity-50 cursor-not-allowed'
+                  }`}
+                >
+                  {/* 👇 LETRERO AGOTADO */}
+                  {!prod.disponible && (
+                    <div className="absolute top-3 right-3 bg-red-600 text-white text-[9px] font-black px-2 py-1 rounded uppercase tracking-widest z-10 shadow-lg">
+                      Agotado
+                    </div>
+                  )}
+
                   <div>
                     <span className="font-bold text-neutral-200 leading-tight text-[15px] group-hover:text-white">{prod.nombre}</span>
                     <p className="text-[10px] text-neutral-600 mt-1 uppercase font-black tracking-widest">{prod.categoria}</p>
@@ -211,12 +232,27 @@ export default function PosView({ mesaId, onVolver }) {
 
           const precioAMostrar = parseFloat(prod.precio_base || prod.precio);
           
+          // ==============================
+          // 2. TARJETAS NORMALES
+          // ==============================
           return (
             <div 
               key={prod.id} 
-              onClick={() => agregarProducto(prod)} 
-              className="bg-[#111] border border-[#222] p-3 sm:p-4 rounded-3xl shadow-lg cursor-pointer hover:border-[#ff5a1f]/50 hover:bg-[#151515] transition-all flex flex-col h-full text-left justify-between relative overflow-hidden"
+              // 👇 Evita el clic en la tarjeta si está agotado
+              onClick={() => prod.disponible && agregarProducto(prod)} 
+              // 👇 Condicional de estilos
+              className={`relative p-3 sm:p-4 rounded-3xl shadow-lg transition-all flex flex-col h-full text-left justify-between overflow-hidden ${
+                prod.disponible 
+                  ? 'bg-[#111] border border-[#222] hover:border-[#ff5a1f]/50 hover:bg-[#151515] cursor-pointer' 
+                  : 'bg-[#0a0a0a] border border-[#1a1a1a] opacity-50 cursor-not-allowed'
+              }`}
             >
+              {/* 👇 LETRERO AGOTADO */}
+              {!prod.disponible && (
+                <div className="absolute top-3 right-3 bg-red-600 text-white text-[9px] font-black px-2 py-1 rounded uppercase tracking-widest z-10 shadow-lg">
+                  Agotado
+                </div>
+              )}
               
               <div className='flex-1 mb-3 pointer-events-none'>
                 <span className="font-bold text-neutral-200 leading-tight text-[13px] sm:text-[15px] line-clamp-2">{prod.nombre}</span>
@@ -224,7 +260,8 @@ export default function PosView({ mesaId, onVolver }) {
                 <p className="font-mono text-sm text-[#ff5a1f] font-bold mt-1.5">{formatearSoles(precioAMostrar)}</p>
               </div>
               
-              <div className="flex flex-col gap-2 pt-2 border-t border-[#1a1a1a] shrink-0">
+              {/* 👇 Si está agotado, bloqueamos los clics en los botones internos con pointer-events-none */}
+              <div className={`flex flex-col gap-2 pt-2 border-t border-[#1a1a1a] shrink-0 ${!prod.disponible ? 'pointer-events-none' : ''}`}>
                   
                   {totalCantidadProd > 0 && (
                     <div className='flex items-center justify-between gap-1'>
@@ -233,7 +270,8 @@ export default function PosView({ mesaId, onVolver }) {
                             e.stopPropagation(); 
                             restarDesdeGrid(prod.id);
                           }}
-                          className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center font-black text-lg transition-all border bg-red-500/10 text-red-500 border-red-500/20 hover:bg-red-500 hover:text-white"
+                          disabled={!prod.disponible}
+                          className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center font-black text-lg transition-all border bg-red-500/10 text-red-500 border-red-500/20 hover:bg-red-500 hover:text-white disabled:opacity-50"
                       >-</button>
                       
                       <span className="flex-1 h-9 sm:h-10 rounded-xl font-black text-lg flex items-center justify-center border transition-all bg-[#1a1a1a] text-white border-[#333]">
@@ -248,7 +286,8 @@ export default function PosView({ mesaId, onVolver }) {
                             e.stopPropagation(); 
                             agregarProducto(prod); 
                           }} 
-                          className='w-9 h-9 sm:w-10 sm:h-10 bg-green-500/10 text-green-500 border border-green-500/20 hover:bg-green-500 hover:text-white rounded-xl flex items-center justify-center font-black text-lg transition-all'
+                          disabled={!prod.disponible}
+                          className='w-9 h-9 sm:w-10 sm:h-10 bg-green-500/10 text-green-500 border border-green-500/20 hover:bg-green-500 hover:text-white rounded-xl flex items-center justify-center font-black text-lg transition-all disabled:opacity-50'
                       >+</button>
                     </div>
                   )}
@@ -259,7 +298,8 @@ export default function PosView({ mesaId, onVolver }) {
                         e.stopPropagation(); 
                         abrirModalParaNuevo(prod);
                       }}
-                      className="w-full text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-[#ff5a1f] bg-[#ff5a1f]/10 py-2.5 rounded-lg border border-[#ff5a1f]/30 hover:bg-[#ff5a1f] hover:text-white transition-colors"
+                      disabled={!prod.disponible}
+                      className="w-full text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-[#ff5a1f] bg-[#ff5a1f]/10 py-2.5 rounded-lg border border-[#ff5a1f]/30 hover:bg-[#ff5a1f] hover:text-white transition-colors disabled:opacity-50"
                     >
                       ⚙️ Variantes / Opc.
                     </button>
@@ -269,7 +309,8 @@ export default function PosView({ mesaId, onVolver }) {
                         e.stopPropagation(); 
                         abrirModalParaNuevo(prod);
                       }}
-                      className="w-full text-[9px] sm:text-[10px] font-bold uppercase tracking-widest text-neutral-500 bg-[#1a1a1a] py-2 rounded-lg border border-[#2a2a2a] hover:border-[#444] hover:text-white transition-colors"
+                      disabled={!prod.disponible}
+                      className="w-full text-[9px] sm:text-[10px] font-bold uppercase tracking-widest text-neutral-500 bg-[#1a1a1a] py-2 rounded-lg border border-[#2a2a2a] hover:border-[#444] hover:text-white transition-colors disabled:opacity-50"
                     >
                       📝 Agregar Nota
                     </button>

@@ -10,7 +10,8 @@ import {
   getProductos,
   crearProducto,
   actualizarProducto,
-  parchearProducto
+  parchearProducto,
+  getCategorias
 } from './api/api';
 
 export default function ErpDashboard({ onVolverAlPos }) {
@@ -20,7 +21,7 @@ export default function ErpDashboard({ onVolverAlPos }) {
   const [sedeFiltroId, setSedeFiltroId] = useState(null); // ✨ Nuevo: ID real de la sede
   const [menuAbierto, setMenuAbierto] = useState(false);
   const [modalEmpleado, setModalEmpleado] = useState(false);
-
+  const [categorias, setCategorias] = useState([]);
   const [config, setConfig] = useState({
     numeroYape: '',
     modCocina: false,
@@ -59,6 +60,9 @@ export default function ErpDashboard({ onVolverAlPos }) {
     ticketPromedio: 0,
     actividadReciente: []
   });
+
+  const [modalCategorias, setModalCategorias] = useState(false);
+  const [nombreNuevaCat, setNombreNuevaCat] = useState('');
 
   // ==========================================
   // 📊 EFECTO 1: MÉTRICAS DINÁMICAS
@@ -114,10 +118,17 @@ export default function ErpDashboard({ onVolverAlPos }) {
     if (vistaActiva === 'menu') {
       const cargarMenu = async () => {
         try {
-          const res = await getProductos({ sede_id: sedeFiltroId });
-          setProductosReales(res.data);
+          // ✨ Traemos los productos y las categorías al mismo tiempo
+          const [resProductos, resCategorias] = await Promise.all([
+            getProductos({ sede_id: sedeFiltroId }),
+            getCategorias()
+          ]);
+          
+          setProductosReales(resProductos.data);
+          setCategorias(resCategorias.data); // 👈 ¡Llenamos la variable misteriosa!
+          
         } catch (error) {
-          console.error("Error cargando menú:", error);
+          console.error("Error cargando menú y categorías:", error);
         }
       };
       cargarMenu();
@@ -271,7 +282,43 @@ export default function ErpDashboard({ onVolverAlPos }) {
     }
   };
 
-  // 4. Cambiar disponibilidad (Agotado/Disponible)
+  // 📁 CREAR NUEVA CATEGORÍA RÁPIDA
+  const manejarCrearCategoria = async () => {
+    if (!nombreNuevaCat.trim()) return;
+
+    try {
+      const negocioId = localStorage.getItem('negocio_id') || 1; // El salvavidas de siempre
+      
+      const payload = {
+        nombre: nombreNuevaCat,
+        negocio: negocioId,
+        orden: 0,
+        activo: true
+      };
+
+      const res = await crearCategoria(payload);
+      
+      // Actualizamos la lista de categorías en pantalla al instante
+      setCategorias([...categorias, res.data]);
+      setNombreNuevaCat(''); // Limpiamos el input
+      
+    } catch (error) {
+      console.error("Error al crear categoría:", error);
+      alert("Hubo un error al crear la categoría.");
+    }
+  };
+
+  // 🗑️ DESACTIVAR CATEGORÍA (Soft Delete)
+  const eliminarCategoriaLocal = async (id) => {
+    if(!window.confirm("¿Seguro que quieres ocultar esta categoría?")) return;
+    try {
+      await parchearCategoria(id, { activo: false });
+      setCategorias(categorias.filter(c => c.id !== id));
+    } catch (error) {
+      console.error("Error eliminando categoría:", error);
+    }
+  };
+
   // 4. Cambiar disponibilidad (Agotado/Disponible)
   const toggleDisponibilidad = async (plato) => {
     try {
@@ -315,8 +362,27 @@ export default function ErpDashboard({ onVolverAlPos }) {
       disponible: plato.disponible,
       grupos_variacion: gruposFormateados // 👈 Solo usamos esto
     });
-    
+    setPasoModal(1);
     setModalPlato(true);
+  };
+
+  const cerrarModalPlato = () => {
+    setModalPlato(false); // Oculta el modal
+    setPasoModal(1);      // 👈 ¡Soluciona el problema de la segunda pantalla!
+    
+    // 👇 ¡Soluciona el problema de los cambios guardados sin querer!
+    // Reseteamos el formulario a su estado original, totalmente en blanco
+    setFormPlato({ 
+      id: null, 
+      nombre: '', 
+      precio_base: '', 
+      categoria_id: '', 
+      es_venta_rapida: false,
+      requiere_seleccion: false,
+      tiene_variaciones: false,
+      disponible: true,
+      grupos_variacion: [] 
+    });
   };
   return (
     <div className="bg-[#0a0a0a] min-h-screen font-sans text-neutral-100 flex">
@@ -470,17 +536,39 @@ export default function ErpDashboard({ onVolverAlPos }) {
           {vistaActiva === 'menu' && (
             <div className="animate-fadeIn space-y-6 max-w-6xl mx-auto min-w-0">
               
-              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-[#111] border border-[#222] p-6 rounded-3xl">
+              {/* CABECERA DEL EDITOR DE MENÚ */}
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-5 bg-[#121212] p-6 rounded-3xl border border-[#222] mb-6">
+                
+                {/* Textos a la izquierda */}
                 <div>
-                  <h3 className="text-2xl font-black text-white">Editor de Carta Digital</h3>
+                  <h2 className="text-2xl font-black text-white">Editor de Carta Digital</h2>
                   <p className="text-neutral-500 text-sm mt-1">Crea tus categorías, platos y ajusta los precios en tiempo real.</p>
                 </div>
-                <button 
-                  onClick={() => { setFormPlato({ id: null, nombre: '', precio_base: '', disponible: true }); setModalPlato(true); }}
-                  className="w-full md:w-auto bg-[#ff5a1f] text-white px-8 py-4 rounded-xl font-black shadow-[0_0_20px_rgba(255,90,31,0.2)] active:scale-95 transition-all flex justify-center items-center gap-2"
-                >
-                  <span className="text-xl">🍔</span> NUEVO PLATO
-                </button>
+
+                {/* Grupo de Acciones a la derecha */}
+                <div className="flex flex-col sm:flex-row w-full md:w-auto gap-3 shrink-0">
+                  
+                  {/* Botón Secundario */}
+                  <button 
+                    onClick={() => setModalCategorias(true)}
+                    className="flex items-center justify-center gap-2 bg-[#1a1a1a] hover:bg-[#2a2a2a] text-neutral-300 border border-[#333] hover:border-[#555] px-5 py-3 rounded-xl font-bold transition-all w-full sm:w-auto text-sm"
+                  >
+                    📁 Administrar Categorías
+                  </button>
+                  
+                  {/* Botón Primario */}
+                  <button 
+                    onClick={() => {
+                      // Aquí pones la función que ya tenías para abrir el modal de nuevo plato
+                      cerrarModalPlato(); // Nos aseguramos que esté limpio
+                      setModalPlato(true);
+                    }}
+                    className="flex items-center justify-center gap-2 bg-[#ff5a1f] hover:bg-[#e04a15] text-white px-6 py-3 rounded-xl font-black shadow-lg shadow-[#ff5a1f]/20 transition-all w-full sm:w-auto text-sm"
+                  >
+                    🍔 NUEVO PLATO
+                  </button>
+                  
+                </div>
               </div>
 
               <div className="flex flex-col lg:flex-row gap-6">
@@ -827,7 +915,7 @@ export default function ErpDashboard({ onVolverAlPos }) {
                   {pasoModal === 2 && <span className="text-[#ff5a1f]"> - Presentaciones</span>}
                 </h3>
               </div>
-              <button onClick={() => setModalPlato(false)} className="text-neutral-500 hover:text-white font-bold text-xl">✕</button>
+              <button onClick={cerrarModalPlato} className="text-neutral-500 hover:text-white font-bold text-xl">✕</button>
             </div>
             
             <div className="p-6 space-y-6">
@@ -835,7 +923,7 @@ export default function ErpDashboard({ onVolverAlPos }) {
               {/* ======================= PANTALLA 1: DATOS BÁSICOS ======================= */}
               {pasoModal === 1 && (
                 <div className="space-y-6 animate-fadeIn">
-                  {/* Nombre y Precio */}
+                  {/* Nombre, Precio y Categoría */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="col-span-1 md:col-span-2">
                       <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest mb-2 block">Nombre del Plato</label>
@@ -854,170 +942,259 @@ export default function ErpDashboard({ onVolverAlPos }) {
                         step="0.10"
                         value={formPlato.precio_base}
                         onChange={(e) => setFormPlato({...formPlato, precio_base: e.target.value})}
-                        disabled={formPlato.requiere_seleccion} // 👈 ¡Se bloquea si requiere selección!
+                        disabled={formPlato.requiere_seleccion} 
                         className="w-full bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3 text-white focus:border-[#ff5a1f] outline-none disabled:opacity-30 disabled:cursor-not-allowed transition-all" 
                         placeholder="0.00" 
                       />
+                    </div>
+                    <div className="col-span-1 md:col-span-3">
+                      <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest mb-2 block">Categoría</label>
+                      <select
+                        value={formPlato.categoria_id}
+                        onChange={(e) => setFormPlato({...formPlato, categoria_id: e.target.value})}
+                        className="w-full bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3 text-white focus:border-[#ff5a1f] outline-none appearance-none"
+                      >
+                        <option value="">Seleccione una categoría...</option>
+                        {/* Asegúrate de que la variable "categorias" exista en tu componente */}
+                        {categorias.map(cat => (
+                          <option key={cat.id} value={cat.id}>{cat.nombre}</option>
+                        ))}
+                      </select>
                     </div>
                   </div>
 
                   {/* Comportamiento (Switches) */}
                   <div className="bg-[#1a1a1a] border border-[#333] rounded-2xl p-4 space-y-4">
-                    <h4 className="text-white font-bold text-sm mb-2">Comportamiento en POS</h4>
+                    <h4 className="text-white font-bold text-sm mb-2 border-b border-[#333] pb-2">Comportamiento en POS</h4>
                     
+                    {/* 1. Venta Rápida */}
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-white font-bold text-sm">Requiere Selección (Ej. Tamaños)</p>
-                        <p className="text-neutral-500 text-xs">Desactiva el precio base. Exige elegir un tamaño.</p>
+                        <p className="text-white font-bold text-sm">Venta Rápida (Directo al carrito)</p>
+                        <p className="text-neutral-500 text-[11px]">Sin ventanas extra. Ideal para gaseosas.</p>
                       </div>
                       <label className="relative inline-flex items-center cursor-pointer">
-                        <input 
-                          type="checkbox" 
-                          className="sr-only peer" 
-                          checked={formPlato.requiere_seleccion} 
-                          onChange={(e) => {
-                            const requires = e.target.checked;
-                            let nuevosGrupos = [...formPlato.grupos_variacion];
-                            
-                            // Si lo activa y no hay grupos, pre-creamos el molde para el Paso 2
-                            if (requires && nuevosGrupos.length === 0) {
-                              nuevosGrupos = [{ nombre: 'Seleccione tamaño/presentación', obligatorio: true, seleccion_multiple: false, opciones: [] }];
-                            }
+                        <input type="checkbox" className="sr-only peer" checked={formPlato.es_venta_rapida} onChange={(e) => setFormPlato({...formPlato, es_venta_rapida: e.target.checked, requiere_seleccion: false, tiene_variaciones: false})} />
+                        <div className="w-11 h-6 bg-[#333] peer-focus:outline-none rounded-full peer peer-checked:bg-[#ff5a1f] transition-colors"><div className={`absolute top-[2px] left-[2px] bg-white rounded-full h-5 w-5 transition-transform ${formPlato.es_venta_rapida ? 'translate-x-full' : ''}`}></div></div>
+                      </label>
+                    </div>
 
-                            setFormPlato({
-                              ...formPlato, 
-                              requiere_seleccion: requires,
-                              precio_base: requires ? '0.00' : formPlato.precio_base, // Borra el precio base
-                              grupos_variacion: nuevosGrupos
-                            });
+                    {/* 2. Requiere Selección */}
+                    <div className="flex items-center justify-between opacity-100 transition-opacity">
+                      <div>
+                        <p className="text-white font-bold text-sm">Requiere Selección (Presentaciones)</p>
+                        <p className="text-neutral-500 text-[11px]">Ej. Personal o Familiar. Obliga a elegir.</p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" className="sr-only peer" checked={formPlato.requiere_seleccion} 
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setFormPlato({...formPlato, requiere_seleccion: checked, es_venta_rapida: false, precio_base: checked ? '0.00' : formPlato.precio_base});
                           }} 
                         />
-                        <div className="w-11 h-6 bg-[#333] peer-focus:outline-none rounded-full peer peer-checked:bg-[#ff5a1f] transition-colors">
-                          <div className={`absolute top-[2px] left-[2px] bg-white rounded-full h-5 w-5 transition-transform ${formPlato.requiere_seleccion ? 'translate-x-full' : ''}`}></div>
-                        </div>
+                        <div className="w-11 h-6 bg-[#333] peer-focus:outline-none rounded-full peer peer-checked:bg-[#ff5a1f] transition-colors"><div className={`absolute top-[2px] left-[2px] bg-white rounded-full h-5 w-5 transition-transform ${formPlato.requiere_seleccion ? 'translate-x-full' : ''}`}></div></div>
+                      </label>
+                    </div>
+
+                    {/* 3. Tiene Variaciones */}
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-white font-bold text-sm">Tiene Variaciones (Extras Opcionales)</p>
+                        <p className="text-neutral-500 text-[11px]">Ej. Sin cebolla, Extra Queso. Abre modal.</p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" className="sr-only peer" checked={formPlato.tiene_variaciones} 
+                          onChange={(e) => setFormPlato({...formPlato, tiene_variaciones: e.target.checked, es_venta_rapida: false})} 
+                        />
+                        <div className="w-11 h-6 bg-[#333] peer-focus:outline-none rounded-full peer peer-checked:bg-[#ff5a1f] transition-colors"><div className={`absolute top-[2px] left-[2px] bg-white rounded-full h-5 w-5 transition-transform ${formPlato.tiene_variaciones ? 'translate-x-full' : ''}`}></div></div>
                       </label>
                     </div>
                   </div>
 
                   {/* BOTONES DEL PASO 1 */}
-                  {formPlato.requiere_seleccion ? (
-                    // Si requiere selección, el botón dice SIGUIENTE (o Editar si ya existe)
-                    <button 
-                      onClick={() => setPasoModal(2)}
-                      className="w-full bg-[#2463EB] hover:bg-blue-500 text-white py-4 rounded-xl font-black shadow-lg shadow-blue-500/20 transition-all flex justify-center items-center gap-2"
-                    >
-                      {formPlato.id ? 'EDITAR TAMAÑOS / PRECIOS →' : 'SIGUIENTE: DEFINIR TAMAÑOS →'}
+                  {(formPlato.requiere_seleccion || formPlato.tiene_variaciones) ? (
+                    <button onClick={() => {
+                      // Si no hay grupos, creamos uno por defecto al pasar al Paso 2
+                      if (formPlato.grupos_variacion.length === 0) {
+                        setFormPlato({...formPlato, grupos_variacion: [{ nombre: 'Opciones', obligatorio: formPlato.requiere_seleccion, seleccion_multiple: false, opciones: [] }]});
+                      }
+                      setPasoModal(2);
+                    }} className="w-full bg-[#2463EB] hover:bg-blue-500 text-white py-4 rounded-xl font-black shadow-lg transition-all flex justify-center items-center gap-2">
+                      {formPlato.id ? 'EDITAR OPCIONES / PRECIOS →' : 'SIGUIENTE: DEFINIR OPCIONES →'}
                     </button>
                   ) : (
-                    // Si es un plato normal, el botón dice GUARDAR
-                    <button 
-                      onClick={manejarGuardarPlato}
-                      disabled={!formPlato.nombre || !formPlato.precio_base}
-                      className="w-full bg-[#ff5a1f] hover:bg-[#e04a15] text-white py-4 rounded-xl font-black shadow-lg shadow-[#ff5a1f]/20 disabled:opacity-50 transition-all"
-                    >
+                    <button onClick={manejarGuardarPlato} disabled={!formPlato.nombre || !formPlato.precio_base} className="w-full bg-[#ff5a1f] hover:bg-[#e04a15] text-white py-4 rounded-xl font-black shadow-lg disabled:opacity-50 transition-all">
                       {formPlato.id ? 'ACTUALIZAR PLATO' : 'GUARDAR PLATO'}
                     </button>
                   )}
                 </div>
               )}
 
-              {/* ======================= PANTALLA 2: LAS SELECCIONES ======================= */}
+              {/* ======================= PANTALLA 2: LAS SELECCIONES / VARIACIONES ======================= */}
               {pasoModal === 2 && (
                 <div className="space-y-6 animate-fadeIn">
                   
-                  {/* Solo mostramos el primer grupo (para no marear al usuario) */}
-                  {formPlato.grupos_variacion.slice(0, 1).map((grupo, gIndex) => (
-                    <div key={gIndex} className="space-y-4">
-                      
-                      {/* Nombre de la selección */}
-                      <div>
-                        <label className="text-[10px] font-black text-[#ff5a1f] uppercase tracking-widest block mb-2">Nombre de la Selección</label>
-                        <input 
-                          type="text" 
-                          value={grupo.nombre}
-                          onChange={(e) => {
-                            const nuevosGrupos = [...formPlato.grupos_variacion];
-                            nuevosGrupos[0].nombre = e.target.value;
-                            setFormPlato({...formPlato, grupos_variacion: nuevosGrupos});
-                          }}
-                          className="w-full bg-[#1a1a1a] border border-[#ff5a1f]/30 focus:border-[#ff5a1f] rounded-xl px-4 py-3 text-white font-bold outline-none" 
-                        />
-                      </div>
+                  <div className="flex justify-between items-center mb-2">
+                    <h4 className="text-white font-bold text-sm">Grupos de Opciones</h4>
+                    <button onClick={() => {
+                      setFormPlato({...formPlato, grupos_variacion: [...formPlato.grupos_variacion, { nombre: 'Nuevo Grupo', obligatorio: false, seleccion_multiple: true, opciones: [] }]});
+                    }} className="text-[#ff5a1f] text-xs font-bold bg-[#ff5a1f]/10 px-3 py-1.5 rounded-lg hover:bg-[#ff5a1f]/20 transition-colors">
+                      + Añadir Grupo
+                    </button>
+                  </div>
 
-                      <div className="h-px w-full bg-[#222]"></div>
+                  <div className="space-y-6 max-h-[50vh] overflow-y-auto pr-2">
+                    {formPlato.grupos_variacion.map((grupo, gIndex) => (
+                      <div key={gIndex} className="bg-[#1a1a1a] border border-[#333] rounded-2xl p-4 relative">
+                        
+                        {/* Botón eliminar grupo */}
+                        <button onClick={() => {
+                          const nuevos = formPlato.grupos_variacion.filter((_, i) => i !== gIndex);
+                          setFormPlato({...formPlato, grupos_variacion: nuevos});
+                        }} className="absolute top-4 right-4 text-neutral-500 hover:text-red-500 transition-colors">🗑️</button>
 
-                      {/* Lista de Opciones (Familiar, Personal, etc) */}
-                      <div>
-                        <div className="flex justify-between items-center mb-4">
-                          <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest">Opciones y Precios</label>
-                          <button 
-                            onClick={() => {
+                        {/* Nombre y Reglas del Grupo */}
+                        <div className="space-y-3 mb-4 pr-8">
+                          <div>
+                            <label className="text-[10px] font-black text-[#ff5a1f] uppercase tracking-widest block mb-1">Nombre del Grupo</label>
+                            <input type="text" value={grupo.nombre} onChange={(e) => {
                               const nuevosGrupos = [...formPlato.grupos_variacion];
-                              nuevosGrupos[0].opciones.push({ nombre: '', precio_adicional: '' });
+                              nuevosGrupos[gIndex].nombre = e.target.value;
                               setFormPlato({...formPlato, grupos_variacion: nuevosGrupos});
-                            }}
-                            className="text-[#ff5a1f] text-xs font-bold bg-[#ff5a1f]/10 px-3 py-1.5 rounded-lg hover:bg-[#ff5a1f]/20 transition-colors"
-                          >
-                            + Añadir Opción
-                          </button>
+                            }} className="w-full bg-[#111] border border-[#ff5a1f]/30 focus:border-[#ff5a1f] rounded-xl px-4 py-2 text-white font-bold outline-none text-sm" placeholder="Ej. Elige tu crema" />
+                          </div>
+                          
+                          <div className="flex gap-6">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input type="checkbox" checked={grupo.obligatorio} onChange={(e) => {
+                                const nuevosGrupos = [...formPlato.grupos_variacion];
+                                nuevosGrupos[gIndex].obligatorio = e.target.checked;
+                                setFormPlato({...formPlato, grupos_variacion: nuevosGrupos});
+                              }} className="accent-[#ff5a1f] w-4 h-4" />
+                              <span className="text-white text-xs font-bold">Es Obligatorio</span>
+                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input type="checkbox" checked={grupo.seleccion_multiple} onChange={(e) => {
+                                const nuevosGrupos = [...formPlato.grupos_variacion];
+                                nuevosGrupos[gIndex].seleccion_multiple = e.target.checked;
+                                setFormPlato({...formPlato, grupos_variacion: nuevosGrupos});
+                              }} className="accent-[#ff5a1f] w-4 h-4" />
+                              <span className="text-white text-xs font-bold">Selección Múltiple</span>
+                            </label>
+                          </div>
                         </div>
 
-                        <div className="space-y-3">
-                          {grupo.opciones.map((opcion, oIndex) => (
-                            <div key={oIndex} className="flex gap-2 w-full"> {/* 👈 w-full asegura que respete los bordes */}
-                              <input 
-                                type="text" 
-                                placeholder="Ej. Familiar"
-                                value={opcion.nombre}
-                                onChange={(e) => {
+                        <div className="h-px w-full bg-[#333] mb-4"></div>
+
+                        {/* Lista de Opciones (Familiar, Personal, Sin Cebolla) */}
+                        <div>
+                          <div className="flex justify-between items-center mb-3">
+                            <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest">Opciones y Precios (+S/)</label>
+                            <button onClick={() => {
+                              const nuevosGrupos = [...formPlato.grupos_variacion];
+                              nuevosGrupos[gIndex].opciones.push({ nombre: '', precio_adicional: '' });
+                              setFormPlato({...formPlato, grupos_variacion: nuevosGrupos});
+                            }} className="text-[#ff5a1f] text-xs font-bold hover:underline">
+                              + Añadir Opción
+                            </button>
+                          </div>
+
+                          <div className="space-y-2 w-full overflow-hidden">
+                            {grupo.opciones.map((opcion, oIndex) => (
+                              <div key={oIndex} className="grid grid-cols-[1fr_80px_40px] sm:grid-cols-[1fr_100px_40px] gap-2 items-center">
+                                <input type="text" placeholder="Ej. Sin Cebolla" value={opcion.nombre} onChange={(e) => {
                                   const nuevosGrupos = [...formPlato.grupos_variacion];
-                                  nuevosGrupos[0].opciones[oIndex].nombre = e.target.value;
+                                  nuevosGrupos[gIndex].opciones[oIndex].nombre = e.target.value;
                                   setFormPlato({...formPlato, grupos_variacion: nuevosGrupos});
-                                }}
-                                // 👇 Agregamos min-w-0 (clave para evitar overflow) y bajamos px-4 a px-3
-                                className="flex-1 min-w-0 bg-[#1a1a1a] border border-[#333] rounded-xl px-3 py-3 text-white outline-none focus:border-white text-sm" 
-                              />
-                              <input 
-                                type="number" 
-                                placeholder="0.00"
-                                value={opcion.precio_adicional}
-                                onChange={(e) => {
+                                }} className="w-full bg-[#111] border border-[#333] rounded-xl px-3 py-2.5 text-white outline-none focus:border-white text-sm" />
+                                
+                                <input type="number" placeholder="0.00" value={opcion.precio_adicional} onChange={(e) => {
                                   const nuevosGrupos = [...formPlato.grupos_variacion];
-                                  nuevosGrupos[0].opciones[oIndex].precio_adicional = e.target.value;
+                                  nuevosGrupos[gIndex].opciones[oIndex].precio_adicional = e.target.value;
                                   setFormPlato({...formPlato, grupos_variacion: nuevosGrupos});
-                                }}
-                                // 👇 Reducimos ancho a w-24 y agregamos shrink-0 para que nunca se comprima
-                                className="w-24 shrink-0 bg-[#1a1a1a] border border-[#333] rounded-xl px-3 py-3 text-white outline-none focus:border-white text-right text-sm" 
-                              />
-                              <button 
-                                onClick={() => {
+                                }} className="w-full bg-[#111] border border-[#333] rounded-xl px-3 py-2.5 text-white outline-none focus:border-white text-right text-sm" />
+                                
+                                <button onClick={() => {
                                   const nuevosGrupos = [...formPlato.grupos_variacion];
-                                  nuevosGrupos[0].opciones = nuevosGrupos[0].opciones.filter((_, i) => i !== oIndex);
+                                  nuevosGrupos[gIndex].opciones = nuevosGrupos[gIndex].opciones.filter((_, i) => i !== oIndex);
                                   setFormPlato({...formPlato, grupos_variacion: nuevosGrupos});
-                                }}
-                                // 👇 Botón un pelín más delgado (w-10) y shrink-0
-                                className="w-10 shrink-0 flex items-center justify-center text-red-500 bg-red-500/10 hover:bg-red-500 hover:text-white rounded-xl transition-colors font-bold"
-                              >
-                                ✕
-                              </button>
-                            </div>
-                          ))}
+                                }} className="w-full h-[42px] flex items-center justify-center text-red-500 bg-red-500/10 hover:bg-red-500 hover:text-white rounded-xl transition-colors font-bold">✕</button>
+                              </div>
+                            ))}
+                            {grupo.opciones.length === 0 && (
+                              <p className="text-neutral-500 text-xs italic">Añade opciones para este grupo.</p>
+                            )}
+                          </div>
                         </div>
+
                       </div>
-
-                    </div>
-                  ))}
+                    ))}
+                  </div>
 
                   {/* BOTÓN FINAL DE GUARDAR */}
-                  <button 
-                    onClick={manejarGuardarPlato}
-                    className="w-full bg-[#ff5a1f] hover:bg-[#e04a15] text-white py-4 rounded-xl font-black shadow-lg shadow-[#ff5a1f]/20 mt-8 transition-all"
-                  >
+                  <button onClick={manejarGuardarPlato} className="w-full bg-[#ff5a1f] hover:bg-[#e04a15] text-white py-4 rounded-xl font-black shadow-lg shadow-[#ff5a1f]/20 mt-8 transition-all">
                     TERMINAR Y GUARDAR
                   </button>
                 </div>
               )}
               
+            </div>
+          </div>
+        </div>
+      )}
+      {/* MODAL DE ADMINISTRACIÓN DE CATEGORÍAS */}
+      {modalCategorias && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-[#121212] border border-[#333] rounded-3xl w-full max-w-md animate-fadeIn relative overflow-hidden">
+            
+            <div className="p-6 border-b border-[#222] bg-[#1a1a1a] flex justify-between items-center">
+              <h3 className="text-xl font-black text-white">Categorías del Menú</h3>
+              <button onClick={() => setModalCategorias(false)} className="text-neutral-500 hover:text-white font-bold text-xl">✕</button>
+            </div>
+            
+            <div className="p-6 space-y-6">
+              
+              {/* INPUT PARA NUEVA CATEGORÍA */}
+              <div className="flex gap-2">
+                <input 
+                  type="text" 
+                  value={nombreNuevaCat}
+                  onChange={(e) => setNombreNuevaCat(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && manejarCrearCategoria()}
+                  className="flex-1 bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3 text-white focus:border-[#ff5a1f] outline-none" 
+                  placeholder="Ej. Bebidas, Postres..." 
+                />
+                <button 
+                  onClick={manejarCrearCategoria}
+                  disabled={!nombreNuevaCat.trim()}
+                  className="bg-[#ff5a1f] hover:bg-[#e04a15] text-white px-6 font-bold rounded-xl disabled:opacity-50 transition-all"
+                >
+                  Agregar
+                </button>
+              </div>
+
+              <div className="h-px w-full bg-[#222]"></div>
+
+              {/* LISTA DE CATEGORÍAS ACTUALES */}
+              <div className="max-h-[40vh] overflow-y-auto space-y-2 pr-2">
+                {categorias.length === 0 ? (
+                  <p className="text-neutral-500 text-center text-sm py-4">No hay categorías creadas aún.</p>
+                ) : (
+                  categorias.map(cat => (
+                    <div key={cat.id} className="flex justify-between items-center bg-[#1a1a1a] p-3 rounded-xl border border-[#222]">
+                      <span className="text-white font-bold">{cat.nombre}</span>
+                      <button 
+                        onClick={() => eliminarCategoriaLocal(cat.id)}
+                        className="text-neutral-500 hover:text-red-500 hover:bg-red-500/10 w-8 h-8 rounded-lg flex items-center justify-center transition-all"
+                        title="Eliminar categoría"
+                      >
+                        🗑️
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+
             </div>
           </div>
         </div>

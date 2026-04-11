@@ -82,5 +82,9 @@ export const crearEmpleado = (data) => api.post('/empleados/', data);
 export const crearProducto = (data) => api.post('/productos/', data);
 export const actualizarProducto = (id, data) => api.put(`/productos/${id}/`, data);
 export const parchearProducto = (id, data) => api.patch(`/productos/${id}/`, data);
-
+// Asegúrate de tener esto junto a tus otras llamadas de la API
+export const getCategorias = () => api.get('/categorias/'); 
+export const crearCategoria = (data) => api.post('/categorias/', data);
+export const parchearCategoria = (id, data) => api.patch(`/categorias/${id}/`, data);
+// (Ajusta la URL si en tu Django la llamaste diferente)
 export default api;

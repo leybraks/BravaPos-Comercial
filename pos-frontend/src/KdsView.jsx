@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { actualizarOrden, getOrdenes } from './api/api';
 
 export default function KdsView({ onVolver }) {
+  const wsUrl = import.meta.env.VITE_WS_URL;
   const [estacionActiva, setEstacionActiva] = useState('TODO');
   const [estacionesExpandidas, setEstacionesExpandidas] = useState(false);
   const [verConsolidado, setVerConsolidado] = useState(false);

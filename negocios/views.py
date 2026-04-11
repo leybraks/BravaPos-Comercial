@@ -14,11 +14,12 @@ from django.contrib.auth.hashers import check_password
 from rest_framework.permissions import AllowAny
 from rest_framework.decorators import action , permission_classes,api_view
 import time 
-from .models import Negocio, Sede, Mesa, Producto, Orden, DetalleOrden, Pago, ModificadorRapido,DetalleOrdenOpcion, GrupoVariacion, OpcionVariacion, Rol, Empleado, SesionCaja
+from .models import (GrupoVariacion, Negocio, Sede, Mesa, Producto, Orden, DetalleOrden, Pago, ModificadorRapido,DetalleOrdenOpcion, 
+GrupoVariacion, OpcionVariacion, Rol, Empleado, SesionCaja, Categoria)
 from .serializers import (
     NegocioSerializer, SedeSerializer, MesaSerializer,
     ProductoSerializer, ModificadorRapidoSerializer, GrupoVariacionSerializer, OpcionVariacionSerializer,
-    OrdenSerializer, DetalleOrdenSerializer, PagoSerializer, RolSerializer, EmpleadoSerializer, SesionCajaSerializer
+    OrdenSerializer, DetalleOrdenSerializer, PagoSerializer, RolSerializer, EmpleadoSerializer, SesionCajaSerializer, CategoriaSerializer
 )
 
 class NegocioViewSet(viewsets.ModelViewSet):
@@ -349,6 +350,10 @@ class SesionCajaViewSet(viewsets.ModelViewSet):
             }
         })
 
+class CategoriaViewSet(viewsets.ModelViewSet):
+    # Traemos todas las categorías activas
+    queryset = Categoria.objects.filter(activo=True)
+    serializer_class = CategoriaSerializer
 # ==========================================
 # VISTAS INDEPENDIENTES (ERP Y DASHBOARD)
 # ==========================================
