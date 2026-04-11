@@ -11,12 +11,14 @@ import {
   crearProducto,
   actualizarProducto,
   parchearProducto,
-  getCategorias
+  getCategorias,
+  crearCategoria,
 } from './api/api';
 
 export default function ErpDashboard({ onVolverAlPos }) {
   const [vistaActiva, setVistaActiva] = useState('dashboard');
   const [sedeFiltro, setSedeFiltro] = useState('Todas');
+  const [dropdownAbierto, setDropdownAbierto] = useState(false);
   const [categoriaSeleccionada, setCategoriaSeleccionada] = useState('Todos');
   const [sedeFiltroId, setSedeFiltroId] = useState(null); // ✨ Nuevo: ID real de la sede
   const [menuAbierto, setMenuAbierto] = useState(false);
@@ -63,7 +65,7 @@ export default function ErpDashboard({ onVolverAlPos }) {
 
   const [modalCategorias, setModalCategorias] = useState(false);
   const [nombreNuevaCat, setNombreNuevaCat] = useState('');
-
+  const [dropdownCatModalAbierto, setDropdownCatModalAbierto] = useState(false);
   // ==========================================
   // 📊 EFECTO 1: MÉTRICAS DINÁMICAS
   // ==========================================
@@ -574,58 +576,160 @@ export default function ErpDashboard({ onVolverAlPos }) {
               <div className="flex flex-col lg:flex-row gap-6">
                 
                 {/* Columna Izquierda: Categorías (Fijas por ahora o dinámicas si extraes) */}
-                <div className="lg:w-1/4 space-y-2">
-                  <h4 className="text-neutral-500 text-[10px] font-bold uppercase tracking-widest mb-4 px-2">Categorías</h4>
-                  {['Todos', 'General'].map((cat, i) => (
-                    <button 
-                      key={i} 
-                      onClick={() => setCategoriaSeleccionada(cat)}
-                      className={`w-full text-left px-5 py-4 rounded-2xl font-bold transition-all flex justify-between items-center group
-                      ${categoriaSeleccionada === cat ? 'bg-[#ff5a1f] text-white shadow-md' : 'bg-[#1a1a1a] text-neutral-400 hover:bg-[#222] border border-[#333]'}`}
+                {/* ======================= FILTRO DE CATEGORÍAS ======================= */}
+                {/* EN MÓVIL: Select (Combo Box) | EN PC: Columna lateral */}
+                <div className="w-full lg:w-1/4 shrink-0 mb-4 lg:mb-0">
+                  <h4 className="text-neutral-500 text-[10px] font-black uppercase tracking-widest mb-3 px-2 hidden lg:block">Categorías</h4>
+                  
+                  {/* VERSIÓN MÓVIL (Custom Dropdown Moderno) */}
+                  <div className="block lg:hidden relative">
+                    {/* Botón Principal (El que muestra la selección) */}
+                    <button
+                      onClick={() => setDropdownAbierto(!dropdownAbierto)}
+                      className="w-full flex items-center justify-between bg-[#1a1a1a] hover:bg-[#222] border border-[#333] hover:border-[#444] text-white font-bold px-5 py-4 rounded-2xl shadow-lg transition-all"
                     >
-                      {cat}
+                      <div className="flex items-center gap-3">
+                        <span className="text-xl">
+                          {categoriaSeleccionada === 'Todos' ? '🍔' : '📌'}
+                        </span>
+                        <span>{categoriaSeleccionada === 'Todos' ? 'Todas las Categorías' : categoriaSeleccionada}</span>
+                      </div>
+                      <span className={`text-neutral-500 transition-transform duration-300 ${dropdownAbierto ? 'rotate-180' : ''}`}>
+                        ▼
+                      </span>
                     </button>
-                  ))}
+
+                    {/* La Lista Desplegable Flotante */}
+                    {dropdownAbierto && (
+                      <div className="absolute z-50 mt-2 w-full bg-[#1a1a1a] border border-[#333] rounded-2xl shadow-2xl overflow-hidden animate-fadeIn">
+                        
+                        <button
+                          onClick={() => {
+                            setCategoriaSeleccionada('Todos');
+                            setDropdownAbierto(false);
+                          }}
+                          className={`w-full text-left px-5 py-4 font-bold transition-all border-b border-[#222] flex items-center gap-3
+                            ${categoriaSeleccionada === 'Todos' ? 'bg-[#ff5a1f]/10 text-[#ff5a1f]' : 'text-neutral-300 hover:bg-[#222] hover:text-white'}`}
+                        >
+                          <span className="text-xl">🍔</span>
+                          Todas las Categorías
+                        </button>
+
+                        {/* Mapeo de Categorías Reales */}
+                        <div className="max-h-60 overflow-y-auto">
+                          {categorias.map(cat => (
+                            <button
+                              key={cat.id}
+                              onClick={() => {
+                                setCategoriaSeleccionada(cat.nombre);
+                                setDropdownAbierto(false);
+                              }}
+                              className={`w-full text-left px-5 py-4 font-bold transition-all border-b border-[#222] last:border-0 flex items-center gap-3
+                                ${categoriaSeleccionada === cat.nombre ? 'bg-[#ff5a1f]/10 text-[#ff5a1f]' : 'text-neutral-300 hover:bg-[#222] hover:text-white'}`}
+                            >
+                               <span className="text-xl opacity-50">📌</span>
+                              {cat.nombre}
+                            </button>
+                          ))}
+                        </div>
+                        
+                      </div>
+                    )}
+                  </div>
+
+                  {/* VERSIÓN PC (Botones Laterales) */}
+                  <div className="hidden lg:flex flex-col space-y-2">
+                    <button 
+                      onClick={() => setCategoriaSeleccionada('Todos')}
+                      className={`w-full text-left px-5 py-3.5 rounded-2xl font-bold transition-all flex justify-between items-center group
+                      ${categoriaSeleccionada === 'Todos' ? 'bg-[#ff5a1f] text-white shadow-[#ff5a1f]/20 shadow-lg border-transparent' : 'bg-[#1a1a1a] text-neutral-400 hover:bg-[#222] border border-[#333] hover:border-[#444]'}`}
+                    >
+                      Todos
+                    </button>
+                    
+                    {/* 👇 AQUÍ HACEMOS EL MAP DE TUS CATEGORÍAS REALES */}
+                    {categorias.map(cat => (
+                      <button 
+                        key={cat.id} 
+                        onClick={() => setCategoriaSeleccionada(cat.nombre)}
+                        className={`w-full text-left px-5 py-3.5 rounded-2xl font-bold transition-all flex justify-between items-center group
+                        ${categoriaSeleccionada === cat.nombre ? 'bg-[#ff5a1f] text-white shadow-[#ff5a1f]/20 shadow-lg border-transparent' : 'bg-[#1a1a1a] text-neutral-400 hover:bg-[#222] border border-[#333] hover:border-[#444]'}`}
+                      >
+                        {cat.nombre}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 {/* Columna Derecha: Cuadrícula de Platos Reales */}
                 <div className="lg:w-3/4">
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                     {productosReales.length === 0 && <p className="text-neutral-500">No hay platos registrados.</p>}
                      
-                     {productosReales.map((plato) => (
-                       <div key={plato.id} className={`bg-[#111] border border-[#222] rounded-3xl p-5 group hover:border-[#ff5a1f]/50 transition-colors flex flex-col relative overflow-hidden ${!plato.disponible ? 'opacity-60 grayscale' : ''}`}>
+                     {/* Filtramos los platos directamente aquí */}
+                     {productosReales
+                       .filter(plato => {
+                         // Si eligió "Todos", pasan todos
+                         if (categoriaSeleccionada === 'Todos') return true;
                          
-                         {/* Indicador de Stock */}
-                         <button 
-                           onClick={() => toggleDisponibilidad(plato)}
-                           className="absolute top-4 right-4 flex items-center gap-2 bg-[#1a1a1a] px-3 py-1.5 rounded-full border border-[#333] hover:scale-105 transition-transform z-10"
-                           title="Clic para cambiar disponibilidad"
-                         >
-                           <span className={`w-2 h-2 rounded-full ${plato.disponible ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500'}`}></span>
-                           <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">{plato.disponible ? 'Disponible' : 'Agotado'}</span>
-                         </button>
+                         // OJO: Si Django te manda plato.categoria como un ID (ej. 1), buscamos su nombre.
+                         // Si ya te lo manda como texto (ej. "Pizzas"), lo usa directo.
+                         const nombreCatDelPlato = categorias.find(c => c.id === plato.categoria)?.nombre || plato.categoria;
+                         
+                         return nombreCatDelPlato === categoriaSeleccionada;
+                       })
+                       .map((plato) => {
+                         // Buscamos el nombre de la categoría para mostrarlo bonito en la tarjeta
+                         const nombreCategoriaMuestra = categorias.find(c => c.id === plato.categoria)?.nombre || plato.categoria || 'Sin categoría';
 
-                         <div className="w-full h-32 bg-gradient-to-br from-[#1a1a1a] to-[#111] border border-[#222] rounded-2xl flex items-center justify-center text-6xl mb-4 group-hover:scale-105 transition-transform shadow-inner">
-                           🍽️
-                         </div>
-                         
-                         <h5 className="text-white font-black text-xl leading-tight mb-1">{plato.nombre}</h5>
-                         <p className="text-neutral-500 text-xs mb-4 line-clamp-2">Plato del menú</p>
-                         
-                         <div className="mt-auto flex items-center justify-between">
-                            <p className="text-[#ff5a1f] font-black text-2xl">S/ {parseFloat(plato.precio_base).toFixed(2)}</p>
-                            <div className="flex gap-2">
-                              <button 
-                                onClick={() => abrirModalEditar(plato)}
-                                className="w-10 h-10 bg-[#1a1a1a] hover:bg-[#222] text-white flex items-center justify-center rounded-xl transition-colors border border-[#333]"
-                              >
-                                ✏️
-                              </button>
-                            </div>
-                         </div>
+                         return (
+                           <div key={plato.id} className={`bg-[#111] border border-[#222] rounded-3xl p-5 group hover:border-[#ff5a1f]/50 transition-colors flex flex-col relative overflow-hidden ${!plato.disponible ? 'opacity-60 grayscale' : ''}`}>
+                             
+                             {/* Indicador de Stock */}
+                             <button 
+                               onClick={() => toggleDisponibilidad(plato)}
+                               className="absolute top-4 right-4 flex items-center gap-2 bg-[#1a1a1a] px-3 py-1.5 rounded-full border border-[#333] hover:scale-105 transition-transform z-10"
+                               title="Clic para cambiar disponibilidad"
+                             >
+                               <span className={`w-2 h-2 rounded-full ${plato.disponible ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500'}`}></span>
+                               <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">{plato.disponible ? 'Disponible' : 'Agotado'}</span>
+                             </button>
+
+                             <div className="w-full h-32 bg-gradient-to-br from-[#1a1a1a] to-[#111] border border-[#222] rounded-2xl flex items-center justify-center text-6xl mb-4 group-hover:scale-105 transition-transform shadow-inner">
+                               🍽️
+                             </div>
+                             
+                             <h5 className="text-white font-black text-xl leading-tight mb-1">{plato.nombre}</h5>
+                             {/* 👇 ¡Mejora! Ahora muestra la categoría real en vez de texto genérico */}
+                             <p className="text-neutral-500 text-[10px] font-bold uppercase tracking-widest mb-4 line-clamp-1">
+                               {nombreCategoriaMuestra}
+                             </p>
+                             
+                             <div className="mt-auto flex items-center justify-between">
+                                <p className="text-[#ff5a1f] font-black text-2xl">S/ {parseFloat(plato.precio_base).toFixed(2)}</p>
+                                <div className="flex gap-2">
+                                  <button 
+                                    onClick={() => abrirModalEditar(plato)}
+                                    className="w-10 h-10 bg-[#1a1a1a] hover:bg-[#222] text-white flex items-center justify-center rounded-xl transition-colors border border-[#333]"
+                                  >
+                                    ✏️
+                                  </button>
+                                </div>
+                             </div>
+                           </div>
+                         );
+                     })}
+
+                     {/* Mensaje si la categoría está vacía */}
+                     {productosReales.filter(plato => {
+                         if (categoriaSeleccionada === 'Todos') return true;
+                         const nombreCatDelPlato = categorias.find(c => c.id === plato.categoria)?.nombre || plato.categoria;
+                         return nombreCatDelPlato === categoriaSeleccionada;
+                     }).length === 0 && (
+                       <div className="col-span-full py-12 text-center">
+                         <p className="text-neutral-500 text-lg font-bold">No hay platos en esta categoría.</p>
                        </div>
-                     ))}
+                     )}
+
                   </div>
                 </div>
 
@@ -947,19 +1051,62 @@ export default function ErpDashboard({ onVolverAlPos }) {
                         placeholder="0.00" 
                       />
                     </div>
-                    <div className="col-span-1 md:col-span-3">
+                    {/* SELECT PERSONALIZADO DE CATEGORÍAS */}
+                    <div className="col-span-1 md:col-span-3 relative">
                       <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest mb-2 block">Categoría</label>
-                      <select
-                        value={formPlato.categoria_id}
-                        onChange={(e) => setFormPlato({...formPlato, categoria_id: e.target.value})}
-                        className="w-full bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3 text-white focus:border-[#ff5a1f] outline-none appearance-none"
+                      
+                      {/* Botón del Select */}
+                      <button
+                        type="button"
+                        onClick={() => setDropdownCatModalAbierto(!dropdownCatModalAbierto)}
+                        className="w-full flex items-center justify-between bg-[#1a1a1a] border border-[#333] hover:border-[#444] rounded-xl px-4 py-3 text-white focus:border-[#ff5a1f] outline-none transition-all text-left"
                       >
-                        <option value="">Seleccione una categoría...</option>
-                        {/* Asegúrate de que la variable "categorias" exista en tu componente */}
-                        {categorias.map(cat => (
-                          <option key={cat.id} value={cat.id}>{cat.nombre}</option>
-                        ))}
-                      </select>
+                        {/* Buscamos el nombre de la categoría porque el formulario solo guarda el ID */}
+                        <span className={!formPlato.categoria_id ? "text-neutral-500" : "text-white font-bold"}>
+                          {formPlato.categoria_id 
+                            ? (categorias.find(c => String(c.id) === String(formPlato.categoria_id))?.nombre || "Categoría desconocida")
+                            : "Seleccione una categoría..."}
+                        </span>
+                        <span className={`text-neutral-500 transition-transform duration-300 ${dropdownCatModalAbierto ? 'rotate-180' : ''}`}>
+                          ▼
+                        </span>
+                      </button>
+
+                      {/* Lista Desplegable Flotante */}
+                      {dropdownCatModalAbierto && (
+                        <div className="absolute z-[60] mt-2 w-full bg-[#1a1a1a] border border-[#333] rounded-xl shadow-2xl overflow-hidden animate-fadeIn">
+                          <div className="max-h-48 overflow-y-auto">
+                            
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setFormPlato({...formPlato, categoria_id: ''});
+                                setDropdownCatModalAbierto(false);
+                              }}
+                              className={`w-full text-left px-4 py-3 text-sm font-bold transition-all border-b border-[#222] 
+                                ${!formPlato.categoria_id ? 'bg-[#ff5a1f]/10 text-[#ff5a1f]' : 'text-neutral-400 hover:bg-[#222] hover:text-white'}`}
+                            >
+                              Ninguna / Quitar selección
+                            </button>
+                            
+                            {categorias.map(cat => (
+                              <button
+                                key={cat.id}
+                                type="button"
+                                onClick={() => {
+                                  setFormPlato({...formPlato, categoria_id: cat.id});
+                                  setDropdownCatModalAbierto(false);
+                                }}
+                                className={`w-full text-left px-4 py-3 text-sm font-bold transition-all border-b border-[#222] last:border-0 
+                                  ${String(formPlato.categoria_id) === String(cat.id) ? 'bg-[#ff5a1f]/10 text-[#ff5a1f]' : 'text-neutral-300 hover:bg-[#222] hover:text-white'}`}
+                              >
+                                {cat.nombre}
+                              </button>
+                            ))}
+                            
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
 
