@@ -305,7 +305,28 @@ class Suscripcion(models.Model):
     def __str__(self):
         return f"{self.negocio.nombre} - {self.plan.nombre} (Activa: {self.activa})"
 
+class MovimientoCaja(models.Model):
+    TIPOS_MOVIMIENTO = [
+        ('ingreso', 'Ingreso (Base/Ajuste)'),
+        ('egreso', 'Egreso (Gasto/Retiro)'),
+    ]
 
+    sede = models.ForeignKey(Sede, on_delete=models.CASCADE, related_name='movimientos_caja')
+    sesion_caja = models.ForeignKey(SesionCaja, on_delete=models.CASCADE, related_name='movimientos')
+    empleado = models.ForeignKey(Empleado, on_delete=models.PROTECT, related_name='movimientos_registrados')
+
+    tipo = models.CharField(max_length=10, choices=TIPOS_MOVIMIENTO)
+    monto = models.DecimalField(max_digits=10, decimal_places=2)
+    concepto = models.CharField(max_length=255) 
+    fecha = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['sesion_caja', 'tipo']),
+        ]
+
+    def __str__(self):
+        return f"{self.get_tipo_display()} - S/ {self.monto} - {self.concepto[:20]}"
 
 
 

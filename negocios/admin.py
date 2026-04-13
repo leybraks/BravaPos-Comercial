@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Negocio, Rol, Empleado, Mesa, Sede, Producto, Orden, DetalleOrden, Pago, ModificadorRapido, GrupoVariacion, OpcionVariacion
+from .models import Negocio, Rol,MovimientoCaja, Empleado, Mesa, Sede, Producto, Orden, DetalleOrden, Pago, ModificadorRapido, GrupoVariacion, OpcionVariacion
 
 admin.site.register(Negocio)
 admin.site.register(Rol)
@@ -35,3 +35,20 @@ class EmpleadoAdmin(admin.ModelAdmin):
     search_fields = ('nombre', 'pin')
     # Y aquí agregamos filtros mágicos a la derecha
     list_filter = ('negocio', 'sede', 'rol', 'activo')
+
+@admin.register(MovimientoCaja)
+class MovimientoCajaAdmin(admin.ModelAdmin):
+    # Columnas que verás en la tabla principal
+    list_display = ('id', 'sede', 'sesion_caja', 'get_tipo_display', 'monto', 'concepto', 'empleado', 'fecha')
+    
+    # Filtros laterales para auditar rápido
+    list_filter = ('tipo', 'fecha', 'sede', 'empleado')
+    
+    # Barra de búsqueda (puedes buscar por concepto o por el nombre del empleado)
+    search_fields = ('concepto', 'empleado__nombre')
+    
+    # Campos que no se deberían poder editar manualmente (por seguridad financiera)
+    readonly_fields = ('fecha',)
+    
+    # Ordenar desde el más reciente al más antiguo
+    ordering = ('-fecha',)

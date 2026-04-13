@@ -82,6 +82,7 @@ export const crearEmpleado = (data) => api.post('/empleados/', data);
 export const crearProducto = (data) => api.post('/productos/', data);
 export const actualizarProducto = (id, data) => api.put(`/productos/${id}/`, data);
 export const parchearProducto = (id, data) => api.patch(`/productos/${id}/`, data);
+export const registrarMovimientoCaja = (data) => api.post('/movimientos-caja/', data);
 // Asegúrate de tener esto junto a tus otras llamadas de la API
 export const getCategorias = () => api.get('/categorias/'); 
 export const crearCategoria = (data) => api.post('/categorias/', data);

@@ -148,10 +148,11 @@ export default function LoginView({ onAccesoConcedido }) {
   const abrirLocal = async () => {
     if (fondoCaja === '') return alert("Ingresa el fondo de caja inicial");
     try {
-      await abrirCajaBD({
+      const respuesta = await abrirCajaBD({
         empleado_id: empleadoActual.id,
         fondo_inicial: parseFloat(fondoCaja)
       });
+      localStorage.setItem('sesion_caja_id', respuesta.data.id);
       setEstadoLocal('abierto');
       setModalApertura(false);
       onAccesoConcedido(empleadoActual.rol_nombre); 

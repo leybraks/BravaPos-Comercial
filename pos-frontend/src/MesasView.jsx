@@ -4,9 +4,11 @@ import ModalCobro from './ModalCobro';
 import ModalCierreCaja from './ModalCierreCaja';
 import usePosStore from './store/usePosStore';
 import DrawerVentaRapida from './DrawerVentaRapida';
-
+import ModalMovimientoCaja from './ModalMovimientoCaja';
+import { registrarMovimientoCaja } from './api/api';
 function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
   console.log("DEBUG - Rol recibido en MesasView:", rolUsuario);
+  const [modalMovimientosAbierto, setModalMovimientosAbierto] = useState(false);
   const [ordenesLlevar, setOrdenesLlevar] = useState([]);
   const [vistaLocal, setVistaLocal] = useState('salon'); 
   const [modoUnir, setModoUnir] = useState(false);
@@ -228,40 +230,49 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
                 <span className="text-lg">⚡</span>
               </button>
 
-              {/* BLOQUE CAJERO */}
+              {/* BLOQUE CAJERO - Botón Caja Chica + Candado */}
               {rolUsuario?.toLowerCase() === 'cajero' && (
-                <button 
-                  onClick={async () => {
-                    const hayMesasOcupadas = mesas.some(mesa => mesa.estado === 'ocupada' || mesa.orden_activa);
-                    const hayLlevarPendientes = ordenesLlevar.some(orden => orden.estado_pago !== 'pagado'); 
+                <>
+                  <button 
+                    onClick={() => setModalMovimientosAbierto(true)}
+                    className="w-11 h-11 rounded-xl flex items-center justify-center border border-green-500/30 bg-green-500/10 text-green-500 hover:bg-green-500 hover:text-white transition-all active:scale-95 shadow-[0_0_10px_rgba(34,197,94,0.1)] shrink-0"
+                    title="Caja Chica (Ingresos/Egresos)"
+                  >
+                    <span className="text-lg">💸</span>
+                  </button>
 
-                    if (hayMesasOcupadas || hayLlevarPendientes) {
-                      alert("⚠️ ALTO AHÍ: No puedes cerrar el turno. Aún hay mesas ocupadas o pedidos pendientes de cobro.");
-                      return; // 🛑 Detenemos la función aquí mismo. No pedimos PIN.
-                    }
-                    const pinIngresado = window.prompt("Ingrese PIN de Cajero para cerrar caja:");
-                    if (!pinIngresado) return;
-                    try {
-                      const respuesta = await validarPinEmpleado({ pin: pinIngresado, accion: 'entrar' });
-                      // AQUÍ ESTABA EL ERROR: Usamos rol_nombre como en tu Login
-                      const rolIngresado = respuesta.data.rol_nombre;
-                      
-                      if (['Cajero', 'Administrador', 'Admin'].includes(rolIngresado)) {
-                        setModalCierreAbierto(true);
-                      } else {
-                        alert("🚫 No tienes permiso para cerrar la caja.");
+                  <button 
+                    onClick={async () => {
+                      const hayMesasOcupadas = mesas.some(mesa => mesa.estado === 'ocupada' || mesa.orden_activa);
+                      const hayLlevarPendientes = ordenesLlevar.some(orden => orden.estado_pago !== 'pagado'); 
+
+                      if (hayMesasOcupadas || hayLlevarPendientes) {
+                        alert("⚠️ ALTO AHÍ: No puedes cerrar el turno. Aún hay mesas ocupadas o pedidos pendientes de cobro.");
+                        return;
                       }
-                    } catch (error) { alert("❌ PIN incorrecto."); }
-                  }}
-                  className="w-11 h-11 rounded-xl flex items-center justify-center border border-red-500/30 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-all active:scale-95 shadow-[0_0_10px_rgba(239,68,68,0.1)] shrink-0"
-                  title="Cerrar Turno"
-                >
-                  <span className="text-lg">🔒</span>
-                </button>
+                      const pinIngresado = window.prompt("Ingrese PIN de Cajero para cerrar caja:");
+                      if (!pinIngresado) return;
+                      try {
+                        const respuesta = await validarPinEmpleado({ pin: pinIngresado, accion: 'entrar' });
+                        const rolIngresado = respuesta.data.rol_nombre;
+                        
+                        if (['Cajero', 'Administrador', 'Admin'].includes(rolIngresado)) {
+                          setModalCierreAbierto(true);
+                        } else {
+                          alert("🚫 No tienes permiso para cerrar la caja.");
+                        }
+                      } catch (error) { alert("❌ PIN incorrecto."); }
+                    }}
+                    className="w-11 h-11 rounded-xl flex items-center justify-center border border-red-500/30 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-all active:scale-95 shadow-[0_0_10px_rgba(239,68,68,0.1)] shrink-0"
+                    title="Cerrar Turno"
+                  >
+                    <span className="text-lg">🔒</span>
+                  </button>
+                </>
               )}
             </div>
 
-            {/* BLOQUE ADMINISTRADOR */}
+            {/* BLOQUE ADMINISTRADOR - ERP + Caja Chica + Candado */}
             {(rolUsuario?.toLowerCase() === 'administrador' || rolUsuario?.toLowerCase() === 'admin') && (
               <div className="flex items-center gap-2">
                 <button 
@@ -273,20 +284,26 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
                 </button>
 
                 <button 
+                  onClick={() => setModalMovimientosAbierto(true)}
+                  className="w-11 h-11 rounded-xl flex items-center justify-center border border-green-500/30 bg-green-500/10 text-green-500 hover:bg-green-500 hover:text-white transition-all active:scale-95 shadow-[0_0_10px_rgba(34,197,94,0.1)] shrink-0"
+                  title="Caja Chica (Ingresos/Egresos)"
+                >
+                  <span className="text-lg">💸</span>
+                </button>
+
+                <button 
                   onClick={async () => {
                     const hayMesasOcupadas = mesas.some(mesa => mesa.estado === 'ocupada' || mesa.orden_activa);
-                    // Asumiendo que ordenesLlevar tiene los pedidos pendientes
                     const hayLlevarPendientes = ordenesLlevar.some(orden => orden.estado_pago !== 'pagado'); 
 
                     if (hayMesasOcupadas || hayLlevarPendientes) {
                       alert("⚠️ ALTO AHÍ: No puedes cerrar el turno. Aún hay mesas ocupadas o pedidos pendientes de cobro.");
-                      return; // 🛑 Detenemos la función aquí mismo. No pedimos PIN.
+                      return;
                     }
                     const pinIngresado = window.prompt("Ingrese PIN de Administrador para cerrar caja:");
                     if (!pinIngresado) return;
                     try {
                       const respuesta = await validarPinEmpleado({ pin: pinIngresado, accion: 'entrar' });
-                      // AQUÍ ESTABA EL ERROR: Usamos rol_nombre como en tu Login
                       const rolIngresado = respuesta.data.rol_nombre;
                       
                       if (['Administrador', 'Admin'].includes(rolIngresado)) {
@@ -595,6 +612,38 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
 
           alert(`${mensaje}\n\nCerrando sesión del sistema...`);
           window.location.reload(); 
+        }}
+      />
+      {/* MODAL DE CAJA CHICA / MOVIMIENTOS */}
+      <ModalMovimientoCaja 
+        isOpen={modalMovimientosAbierto}
+        onClose={() => setModalMovimientosAbierto(false)}
+        onGuardar={async (datosMovimiento) => {
+          try {
+            const sesionId = estadoCaja?.id || localStorage.getItem('sesion_caja_id');
+
+            if (!sesionId) {
+              alert("⚠️ No se encontró una sesión de caja activa. Revisa si la caja está abierta.");
+              return;
+            }
+
+            const payload = {
+              tipo: datosMovimiento.tipo,
+              monto: datosMovimiento.monto,
+              concepto: datosMovimiento.concepto,
+              sesion_caja_id: sesionId,
+              empleado_id: localStorage.getItem('empleado_id') 
+            };
+
+            // ✨ ARREGLADO: Solo disparamos la petición sin guardar la respuesta
+            await registrarMovimientoCaja(payload);
+            
+            alert(`💸 ¡Listo! Se registró el ${datosMovimiento.tipo} de S/ ${datosMovimiento.monto} exitosamente.`);
+            
+          } catch (error) {
+            console.error("Error al registrar caja chica:", error);
+            alert("❌ Hubo un error al guardar el movimiento en el sistema.");
+          }
         }}
       />
     </div>
