@@ -424,7 +424,9 @@ export default function PosView({ mesaId, onVolver }) {
                 {ordenActiva.detalles.map((item, index) => (
                   <div key={`db-${index}`} className="bg-[#111] border border-[#222]/50 rounded-2xl p-4 flex justify-between items-center opacity-60">
                     <div>
-                      <span className="font-bold text-white text-[15px]">{item.nombre}</span>
+                      <span className="font-bold text-white text-[15px]">
+                        {item.producto_nombre || item.nombre || (item.producto && item.producto.nombre) || "Producto Desconocido"}
+                      </span>
                       
                       {(item.notas_cocina || item.notas_y_modificadores || item.notas) && (
                         <span className="block text-[11px] text-[#ff5a1f] mt-1 font-mono leading-tight">

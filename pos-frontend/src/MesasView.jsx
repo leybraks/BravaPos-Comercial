@@ -228,14 +228,25 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
                 <span className="text-lg">⚡</span>
               </button>
 
+              {/* BLOQUE CAJERO */}
               {rolUsuario?.toLowerCase() === 'cajero' && (
                 <button 
                   onClick={async () => {
+                    const hayMesasOcupadas = mesas.some(mesa => mesa.estado === 'ocupada' || mesa.orden_activa);
+                    const hayLlevarPendientes = ordenesLlevar.some(orden => orden.estado_pago !== 'pagado'); 
+
+                    if (hayMesasOcupadas || hayLlevarPendientes) {
+                      alert("⚠️ ALTO AHÍ: No puedes cerrar el turno. Aún hay mesas ocupadas o pedidos pendientes de cobro.");
+                      return; // 🛑 Detenemos la función aquí mismo. No pedimos PIN.
+                    }
                     const pinIngresado = window.prompt("Ingrese PIN de Cajero para cerrar caja:");
                     if (!pinIngresado) return;
                     try {
                       const respuesta = await validarPinEmpleado({ pin: pinIngresado, accion: 'entrar' });
-                      if (respuesta.data.rol === 'Cajero' || respuesta.data.rol === 'Administrador' || respuesta.data.rol === 'Admin') {
+                      // AQUÍ ESTABA EL ERROR: Usamos rol_nombre como en tu Login
+                      const rolIngresado = respuesta.data.rol_nombre;
+                      
+                      if (['Cajero', 'Administrador', 'Admin'].includes(rolIngresado)) {
                         setModalCierreAbierto(true);
                       } else {
                         alert("🚫 No tienes permiso para cerrar la caja.");
@@ -250,6 +261,7 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
               )}
             </div>
 
+            {/* BLOQUE ADMINISTRADOR */}
             {(rolUsuario?.toLowerCase() === 'administrador' || rolUsuario?.toLowerCase() === 'admin') && (
               <div className="flex items-center gap-2">
                 <button 
@@ -262,11 +274,22 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
 
                 <button 
                   onClick={async () => {
+                    const hayMesasOcupadas = mesas.some(mesa => mesa.estado === 'ocupada' || mesa.orden_activa);
+                    // Asumiendo que ordenesLlevar tiene los pedidos pendientes
+                    const hayLlevarPendientes = ordenesLlevar.some(orden => orden.estado_pago !== 'pagado'); 
+
+                    if (hayMesasOcupadas || hayLlevarPendientes) {
+                      alert("⚠️ ALTO AHÍ: No puedes cerrar el turno. Aún hay mesas ocupadas o pedidos pendientes de cobro.");
+                      return; // 🛑 Detenemos la función aquí mismo. No pedimos PIN.
+                    }
                     const pinIngresado = window.prompt("Ingrese PIN de Administrador para cerrar caja:");
                     if (!pinIngresado) return;
                     try {
                       const respuesta = await validarPinEmpleado({ pin: pinIngresado, accion: 'entrar' });
-                      if (respuesta.data.rol === 'Administrador' || respuesta.data.rol === 'Admin') {
+                      // AQUÍ ESTABA EL ERROR: Usamos rol_nombre como en tu Login
+                      const rolIngresado = respuesta.data.rol_nombre;
+                      
+                      if (['Administrador', 'Admin'].includes(rolIngresado)) {
                         setModalCierreAbierto(true);
                       } else {
                         alert("🚫 Tu rol actual no tiene permiso de administrador.");
