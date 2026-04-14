@@ -7,7 +7,8 @@ router = DefaultRouter()
 
 # Rutas normales (mantienen su queryset original)
 router.register(r'negocios', views.NegocioViewSet)
-router.register(r'sedes', views.SedeViewSet)
+router.register(r'sedes', views.SedeViewSet, basename='sede')
+
 router.register(r'detalles', views.DetalleOrdenViewSet)
 router.register(r'pagos', views.PagoViewSet)
 router.register(r'roles', views.RolViewSet)

@@ -198,8 +198,12 @@ class Empleado(models.Model):
     rol = models.ForeignKey('Rol', on_delete=models.SET_NULL, null=True, related_name='empleados')
     activo = models.BooleanField(default=True)
     ultimo_ingreso = models.DateTimeField(null=True, blank=True)
-    objects = ActivoManager()
-    all_objects = models.Manager()
+    
+    # ✨ LA MAGIA OCURRE AQUÍ ✨
+    # 1. Devolvemos el manager normal a su lugar (Trae a todos)
+    objects = models.Manager() 
+    # 2. Tu manager personalizado lo guardamos con otro nombre (por si lo usas en el backend)
+    activos = ActivoManager()
 
     class Meta:
         pass

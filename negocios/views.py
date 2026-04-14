@@ -27,8 +27,14 @@ class NegocioViewSet(viewsets.ModelViewSet):
     serializer_class = NegocioSerializer
 
 class SedeViewSet(viewsets.ModelViewSet):
-    queryset = Sede.objects.all()
     serializer_class = SedeSerializer
+
+    def get_queryset(self):
+        queryset = Sede.objects.all()
+        negocio_id = self.request.query_params.get('negocio_id')
+        if negocio_id:
+            queryset = queryset.filter(negocio_id=negocio_id)
+        return queryset
 
 class MesaViewSet(viewsets.ModelViewSet):
     serializer_class = MesaSerializer
@@ -206,18 +212,26 @@ class RolViewSet(viewsets.ModelViewSet):
 class EmpleadoViewSet(viewsets.ModelViewSet):
     serializer_class = EmpleadoSerializer
     def get_queryset(self):
-        queryset = Empleado.objects.filter(activo=True)
+        # ✨ EL ARREGLO: Traemos a TODOS por defecto (activos e inactivos)
+        queryset = Empleado.objects.all()
         
         # Filtramos los empleados por Sede o por Negocio
         sede_id = self.request.query_params.get('sede_id')
         negocio_id = self.request.query_params.get('negocio_id')
+        solo_activos = self.request.query_params.get('solo_activos')
         
         if sede_id:
             queryset = queryset.filter(sede_id=sede_id)
         elif negocio_id:
             queryset = queryset.filter(negocio_id=negocio_id)
             
+        # Si desde React mandas ?solo_activos=true, los filtramos
+        if solo_activos == 'true':
+            queryset = queryset.filter(activo=True)
+            
         return queryset
+    
+
     @action(detail=False, methods=['POST'], permission_classes=[AllowAny], url_path='validar_pin')
     def validar_pin(self, request):
         pin_ingresado = request.data.get('pin')

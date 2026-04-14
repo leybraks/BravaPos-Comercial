@@ -14,6 +14,7 @@ import {
   getCategorias,
   crearCategoria,
   actualizarNegocio,
+  actualizarEmpleado,
 } from './api/api';
 import api from './api/api';
 import usePosStore from './store/usePosStore';
@@ -63,6 +64,7 @@ export default function ErpDashboard({ onVolverAlPos }) {
   const [sedesReales, setSedesReales] = useState([]);
   
   const [formEmpleado, setFormEmpleado] = useState({
+    id: null,
     nombre: '',
     pin: '',
     rol: '', 
@@ -120,12 +122,15 @@ export default function ErpDashboard({ onVolverAlPos }) {
     if (vistaActiva === 'personal') {
       const cargarDatosPersonal = async () => {
         try {
-          // ✨ Filtramos empleados por la sede seleccionada en el ERP
+          const negocioId = localStorage.getItem('negocio_id') || 1; // ✨ Sacamos el ID de la tablet
+
           const [resEmpleados, resRoles, resSedes] = await Promise.all([
             getEmpleados({ sede_id: sedeFiltroId }), 
             getRoles(), 
-            getSedes()
+            // ✨ LA MAGIA: Hacemos la petición manual para pasarle el negocio_id
+            api.get(`/sedes/?negocio_id=${negocioId}`) 
           ]);
+
           setEmpleadosReales(resEmpleados.data);
           setRolesReales(resRoles.data);
           setSedesReales(resSedes.data);
@@ -453,22 +458,85 @@ export default function ErpDashboard({ onVolverAlPos }) {
   };
 
   // 2. Crear Nuevo Empleado
-  const manejarCrearEmpleado = async () => {
-    if (!formEmpleado.nombre || formEmpleado.pin.length !== 4) {
-      alert("Por favor ingresa un nombre y un PIN de 4 dígitos.");
+  const moduloKdsActivo = configuracionGlobal?.modulos?.cocina;
+  const rolesFiltrados = rolesReales.filter(rol => {
+    // Si el KDS está apagado y el rol dice 'Cocin' o 'Chef', lo ocultamos
+    if (!moduloKdsActivo && (rol.nombre.toLowerCase().includes('cocin') || rol.nombre.toLowerCase().includes('chef'))) {
+      return false;
+    }
+    return true; 
+  });
+
+  // ✏️ FUNCIÓN: Abrir modal para editar
+  const abrirModalEdicion = (emp) => {
+    setFormEmpleado({
+      id: emp.id,
+      nombre: emp.nombre,
+      pin: '', // Dejamos el PIN vacío por seguridad, a menos que el usuario lo quiera cambiar
+      rol: emp.rol, // Asegúrate de que tu backend manda el ID del rol aquí (ej. emp.rol_id o emp.rol)
+      sede: emp.sede
+    });
+    setModalEmpleado(true);
+  };
+
+  // 🔴/🟢 FUNCIÓN: Desactivar / Reactivar
+  const toggleActivo = async (emp) => {
+    if (!window.confirm(`¿Seguro que deseas ${emp.activo ? 'desactivar' : 'reactivar'} a ${emp.nombre}?`)) return;
+    
+    try {
+      await actualizarEmpleado(emp.id, { activo: !emp.activo });
+      // Actualizamos el estado visual sin recargar la página
+      setEmpleadosReales(prev => prev.map(e => e.id === emp.id ? { ...e, activo: !emp.activo } : e));
+    } catch (error) {
+      console.error("Error cambiando estado:", error);
+      alert("Hubo un error de conexión con la base de datos.");
+    }
+  };
+
+  // 💾 FUNCIÓN: Guardar (Sirve para Crear y para Editar)
+  const manejarGuardarEmpleado = async () => {
+    // Validación de PIN: Si estamos creando, es obligatorio. Si estamos editando, puede ser opcional (solo si lo quiere cambiar).
+    const esCreacion = !formEmpleado.id;
+    if (!formEmpleado.nombre || (esCreacion && formEmpleado.pin.length !== 4)) {
+      alert("Por favor ingresa un nombre y un PIN de 4 dígitos válido.");
       return;
     }
+
     try {
-      await crearEmpleado({ ...formEmpleado, activo: true });
+      // ✨ PREPARAMOS EL PAQUETE A PRUEBA DE FALLOS PARA DJANGO
+      const payload = { 
+        nombre: formEmpleado.nombre,
+        // Mandamos ambos formatos por si acaso (Django REST agarrará el que necesite)
+        rol: formEmpleado.rol,
+        rol_id: formEmpleado.rol,
+        sede: formEmpleado.sede,
+        sede_id: formEmpleado.sede
+      };
+
+      if (!esCreacion && formEmpleado.pin) {
+        payload.pin = formEmpleado.pin; // Solo mandamos el pin si escribieron uno nuevo
+      } else if (esCreacion) {
+        payload.pin = formEmpleado.pin; // Obligatorio al crear
+        payload.activo = true;
+      }
+
+      if (esCreacion) {
+        await crearEmpleado(payload);
+        alert("¡Empleado creado con éxito! 🎉");
+      } else {
+        await actualizarEmpleado(formEmpleado.id, payload);
+        alert("¡Empleado actualizado correctamente!");
+      }
+      
+      // Limpiamos y recargamos
       setModalEmpleado(false);
-      setFormEmpleado({ ...formEmpleado, nombre: '', pin: '' });
+      setFormEmpleado({ id: null, nombre: '', pin: '', rol: rolesReales[0]?.id || '', sede: sedesReales[0]?.id || '' });
       
       const resEmpleados = await getEmpleados({ sede_id: sedeFiltroId });
       setEmpleadosReales(resEmpleados.data);
-      alert("¡Empleado creado con éxito! 🎉");
     } catch (error) {
-      console.error("Error creando empleado:", error);
-      alert("Hubo un error al crear el acceso.");
+      console.error("Error guardando empleado:", error);
+      alert("Hubo un error al guardar los datos.");
     }
   };
 
@@ -1496,39 +1564,33 @@ export default function ErpDashboard({ onVolverAlPos }) {
           )}
           {/* ======================= VISTA: PERSONAL Y ROLES ======================= */}
           {vistaActiva === 'personal' && (
-            <div className="animate-fadeIn space-y-6">
+            <div className="animate-fadeIn space-y-6 pb-20">
               
               {/* ========== CABECERA ========== */}
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
-                  <h3 className={`text-2xl font-black ${
-                    config.temaFondo === 'dark' ? 'text-white' : 'text-gray-900'
-                  }`}>
+                  <h3 className={`text-2xl font-black ${config.temaFondo === 'dark' ? 'text-white' : 'text-gray-900'}`}>
                     Equipo de Trabajo
                   </h3>
-                  <p className={`text-sm ${
-                    config.temaFondo === 'dark' ? 'text-neutral-500' : 'text-gray-500'
-                  }`}>
-                    Controla quién accede a cada módulo y sus códigos PIN.
+                  <p className={`text-sm mt-1 ${config.temaFondo === 'dark' ? 'text-neutral-500' : 'text-gray-500'}`}>
+                    Gestiona accesos, edita perfiles y mide el rendimiento de tu personal.
                   </p>
                 </div>
                 <button 
                   onClick={() => setModalEmpleado(true)}
-                  style={{ backgroundColor: config.colorPrimario }}
-                  className="text-white px-6 py-3 rounded-xl font-black shadow-lg active:scale-95 transition-all hover:brightness-110"
+                  style={{ backgroundColor: config.colorPrimario, boxShadow: `0 4px 15px ${config.colorPrimario}40` }}
+                  className="text-white px-6 py-3 rounded-xl font-black transition-all hover:brightness-110 active:scale-95 flex items-center gap-2"
                 >
-                  + NUEVO EMPLEADO
+                  <span className="text-xl">+</span> NUEVO EMPLEADO
                 </button>
               </div>
 
               {/* ========== LISTADO DE EMPLEADOS ========== */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 {empleadosReales.length === 0 && (
-                  <p className={`py-4 ${
-                    config.temaFondo === 'dark' ? 'text-neutral-500' : 'text-gray-500'
-                  }`}>
-                    Aún no hay empleados registrados.
-                  </p>
+                  <div className={`col-span-full py-10 text-center font-bold border-2 border-dashed rounded-3xl ${config.temaFondo === 'dark' ? 'text-neutral-600 border-[#222]' : 'text-gray-400 border-gray-200'}`}>
+                    Aún no hay empleados registrados en esta sede.
+                  </div>
                 )}
                 
                 {empleadosReales.map(emp => (
@@ -1536,110 +1598,121 @@ export default function ErpDashboard({ onVolverAlPos }) {
                     key={emp.id} 
                     className={`p-5 rounded-3xl flex items-center justify-between group transition-all ${
                       config.temaFondo === 'dark'
-                        ? 'bg-[#121212] border border-[#222] hover:border-[#ff5a1f]/50'
+                        ? 'bg-[#121212] border border-[#222] hover:border-[#444]'
                         : 'bg-white border border-gray-200 shadow-sm hover:border-gray-300'
-                    }`}
+                    } ${!emp.activo ? 'opacity-60 grayscale' : ''}`}
                   >
                     <div className="flex items-center gap-4">
-                      <div className={`w-12 h-12 rounded-full flex items-center justify-center text-xl border ${
-                        config.temaFondo === 'dark'
-                          ? 'bg-[#222] border-[#333]'
-                          : 'bg-gray-100 border-gray-200'
+                      <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl border shadow-sm ${
+                        config.temaFondo === 'dark' ? 'bg-[#1a1a1a] border-[#333]' : 'bg-gray-50 border-gray-200'
                       }`}>
                         {emp.rol_nombre?.includes('Admin') ? '👑' : 
-                        emp.rol_nombre?.includes('Cajer') ? '💰' : 
-                        emp.rol_nombre?.includes('Mesero') ? '🏃' : '👨‍🍳'}
+                         emp.rol_nombre?.includes('Cajer') ? '💰' : 
+                         emp.rol_nombre?.includes('Mesero') ? '🏃' : '👨‍🍳'}
                       </div>
                       <div>
-                        <h4 className={`font-bold text-lg ${
-                          config.temaFondo === 'dark' ? 'text-white' : 'text-gray-900'
-                        }`}>
+                        <h4 className={`font-bold text-lg leading-tight ${config.temaFondo === 'dark' ? 'text-white' : 'text-gray-900'} ${!emp.activo ? 'line-through' : ''}`}>
                           {emp.nombre}
                         </h4>
-                        <div className="flex gap-2 mt-1">
+                        <div className="flex flex-wrap gap-2 mt-1.5">
+                          {/* Etiqueta del Rol */}
                           <span className={`text-[10px] font-black px-2 py-0.5 rounded border uppercase ${
-                            config.temaFondo === 'dark'
-                              ? 'bg-[#1a1a1a] text-[#ff5a1f] border-[#ff5a1f]/20'
-                              : 'bg-gray-100 text-[#ff5a1f] border-gray-200'
+                            config.temaFondo === 'dark' ? 'bg-[#1a1a1a] text-neutral-300 border-[#333]' : 'bg-gray-100 text-gray-600 border-gray-200'
                           }`}>
                             {emp.rol_nombre || 'Sin Rol'}
                           </span>
+                          
+                          {/* Etiqueta de Activo/Inactivo */}
                           <span className={`text-[10px] font-black px-2 py-0.5 rounded border uppercase ${
                             emp.activo 
-                              ? (config.temaFondo === 'dark' ? 'text-green-500 border-green-500/20 bg-[#1a1a1a]' : 'text-green-600 border-green-200 bg-gray-50')
-                              : (config.temaFondo === 'dark' ? 'text-red-500 border-red-500/20 bg-[#1a1a1a]' : 'text-red-600 border-red-200 bg-gray-50')
+                              ? (config.temaFondo === 'dark' ? 'text-green-500 border-green-500/20 bg-green-500/10' : 'text-green-600 border-green-200 bg-green-50')
+                              : (config.temaFondo === 'dark' ? 'text-red-500 border-red-500/20 bg-red-500/10' : 'text-red-600 border-red-200 bg-red-50')
                           }`}>
                             {emp.activo ? 'ACTIVO' : 'INACTIVO'}
                           </span>
+
+                          {/* ✨ NUEVO: Etiqueta de Sede (Se oculta mágicamente si solo hay 1) */}
+                          {sedesReales.length > 1 && (
+                            <span className={`text-[10px] font-black px-2 py-0.5 rounded border uppercase flex items-center gap-1 ${
+                              config.temaFondo === 'dark' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 'bg-blue-50 text-blue-600 border-blue-200'
+                            }`}>
+                              📍 {sedesReales.find(s => s.id === emp.sede)?.nombre || 'Sede Principal'}
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${
-                        config.temaFondo === 'dark' ? 'text-neutral-500' : 'text-gray-500'
-                      }`}>
+
+                    <div className="text-right flex flex-col items-end">
+                      <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${config.temaFondo === 'dark' ? 'text-neutral-500' : 'text-gray-500'}`}>
                         PIN de Acceso
                       </p>
-                      <p className={`font-mono font-bold tracking-[4px] ${
-                        config.temaFondo === 'dark' ? 'text-white' : 'text-gray-800'
-                      }`}>
-                        ****
+                      <p className={`font-mono font-bold tracking-[4px] mb-2 ${config.temaFondo === 'dark' ? 'text-white' : 'text-gray-800'}`}>
+                        {emp.activo ? '****' : '----'}
                       </p>
-                      {/* ✅ Botón Editar corregido: siempre visible, hover con color primario */}
-                      <button 
-                        className="text-xs font-bold mt-2 transition-colors duration-200"
-                        style={{
-                          color: config.temaFondo === 'dark' ? '#ffffff' : '#1f2937'
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.color = config.colorPrimario}
-                        onMouseLeave={(e) => e.currentTarget.style.color = config.temaFondo === 'dark' ? '#ffffff' : '#1f2937'}
-                      >
-                        Editar
-                      </button>
+                      
+                      {/* BOTONES DE ACCIÓN */}
+                      <div className="flex gap-3">
+                        <button 
+                          onClick={() => abrirModalEdicion(emp)} // <-- Descomenta esto cuando tengas la función
+                          className="text-xs font-bold transition-colors hover:scale-105"
+                          style={{ color: config.colorPrimario }}
+                        >
+                          Editar
+                        </button>
+                        <button 
+                          onClick={() => toggleActivo(emp)} // <-- Descomenta esto cuando hagas la función
+                          className={`text-xs font-bold transition-colors hover:scale-105 ${emp.activo ? 'text-red-500 hover:text-red-400' : 'text-green-500 hover:text-green-400'}`}
+                        >
+                          {emp.activo ? 'Desactivar' : 'Reactivar'}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}
               </div>
 
-              {/* ========== MATRIZ DE PERMISOS ========== */}
+              {/* ========== TABLA DE RENDIMIENTO (Reemplaza a la Matriz) ========== */}
               <div className={`rounded-3xl p-6 mt-8 border transition-all ${
-                config.temaFondo === 'dark'
-                  ? 'bg-[#111] border-[#222]'
-                  : 'bg-white border-gray-200 shadow-sm'
+                config.temaFondo === 'dark' ? 'bg-[#111] border-[#222]' : 'bg-white border-gray-200 shadow-sm'
               }`}>
-                <h4 className={`font-bold mb-4 flex items-center gap-2 ${
-                  config.temaFondo === 'dark' ? 'text-white' : 'text-gray-900'
-                }`}>
-                  <span className="text-xl">🛡️</span> Matriz de Permisos
-                </h4>
+                <div className="flex justify-between items-center mb-6">
+                  <h4 className={`font-black flex items-center gap-2 text-lg ${config.temaFondo === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                    <span className="text-2xl">🏆</span> Rendimiento del Equipo (Este Mes)
+                  </h4>
+                  <span className={`text-xs font-bold px-3 py-1 rounded-full ${config.temaFondo === 'dark' ? 'bg-[#222] text-neutral-400' : 'bg-gray-100 text-gray-500'}`}>
+                    Datos Simulados
+                  </span>
+                </div>
+                
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm">
                     <thead>
-                      <tr className={`border-b ${
-                        config.temaFondo === 'dark' ? 'text-neutral-500 border-[#222]' : 'text-gray-500 border-gray-200'
-                      }`}>
-                        <th className="pb-4 font-black uppercase tracking-widest text-[10px]">Módulo</th>
-                        <th className="pb-4 text-center">Admin</th>
-                        <th className="pb-4 text-center">Cajero</th>
-                        <th className="pb-4 text-center">Mesero</th>
-                        <th className="pb-4 text-center">Chef</th>
+                      <tr className={`border-b ${config.temaFondo === 'dark' ? 'text-neutral-500 border-[#222]' : 'text-gray-500 border-gray-200'}`}>
+                        <th className="pb-4 font-black uppercase tracking-widest text-[10px]">Empleado</th>
+                        <th className="pb-4 font-black uppercase tracking-widest text-[10px] text-center">Rol</th>
+                        <th className="pb-4 font-black uppercase tracking-widest text-[10px] text-center">Órdenes Atendidas</th>
+                        <th className="pb-4 font-black uppercase tracking-widest text-[10px] text-right">Total Vendido</th>
                       </tr>
                     </thead>
                     <tbody className={config.temaFondo === 'dark' ? 'text-neutral-300' : 'text-gray-700'}>
                       {[
-                        { mod: 'Ventas y Dashboard', p: ['✅','✅','❌','❌'] },
-                        { mod: 'Apertura/Cierre Caja', p: ['✅','✅','❌','❌'] },
-                        { mod: 'Toma de Pedidos (POS)', p: ['✅','✅','✅','❌'] },
-                        { mod: 'Pantalla Cocina (KDS)', p: ['✅','❌','✅','✅'] },
-                        { mod: 'Editar Precios/Menú', p: ['✅','❌','❌','❌'] },
+                        { nom: 'Carlos M.', rol: 'Mesero', ord: 142, total: 'S/ 3,450.00' },
+                        { nom: 'Ana V.', rol: 'Cajera', ord: 320, total: 'S/ 8,200.00' },
+                        { nom: 'Luis R.', rol: 'Cocinero', ord: 280, total: '-' },
                       ].map((row, i) => (
-                        <tr key={i} className={`border-b ${
-                          config.temaFondo === 'dark' ? 'border-[#1a1a1a]' : 'border-gray-100'
-                        }`}>
-                          <td className="py-4 font-semibold">{row.mod}</td>
-                          {row.p.map((perm, idx) => (
-                            <td key={idx} className="py-4 text-center">{perm}</td>
-                          ))}
+                        <tr key={i} className={`border-b hover:bg-black/5 transition-colors ${config.temaFondo === 'dark' ? 'border-[#1a1a1a] hover:bg-white/5' : 'border-gray-100 hover:bg-gray-50'}`}>
+                          <td className="py-4 font-bold flex items-center gap-2">
+                            {i === 0 && <span className="text-yellow-500 text-xs">⭐</span>}
+                            {row.nom}
+                          </td>
+                          <td className="py-4 text-center">
+                            <span className={`text-[10px] px-2 py-1 rounded uppercase font-bold ${config.temaFondo === 'dark' ? 'bg-[#222] text-neutral-400' : 'bg-gray-100 text-gray-500'}`}>
+                              {row.rol}
+                            </span>
+                          </td>
+                          <td className="py-4 text-center font-mono">{row.ord}</td>
+                          <td className="py-4 text-right font-bold text-green-500">{row.total}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1925,64 +1998,99 @@ export default function ErpDashboard({ onVolverAlPos }) {
 
         </main>
       </div>
-      {/* MODAL PARA AGREGAR EMPLEADO REAL */}
+      {/* MODAL PARA AGREGAR / EDITAR EMPLEADO */}
       {modalEmpleado && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <div className="bg-[#121212] border border-[#333] rounded-3xl w-full max-w-md overflow-hidden animate-fadeIn">
-            <div className="p-6 border-b border-[#222] bg-[#1a1a1a] flex justify-between items-center">
-              <h3 className="text-xl font-black text-white">Nuevo Empleado</h3>
-              <button onClick={() => setModalEmpleado(false)} className="text-neutral-500 font-bold">✕</button>
+          <div className={`border rounded-3xl w-full max-w-md overflow-hidden animate-fadeIn shadow-2xl ${
+            config.temaFondo === 'dark' ? 'bg-[#121212] border-[#333]' : 'bg-white border-gray-200'
+          }`}>
+            <div className={`p-6 border-b flex justify-between items-center ${
+              config.temaFondo === 'dark' ? 'border-[#222] bg-[#1a1a1a]' : 'border-gray-200 bg-gray-50'
+            }`}>
+              <h3 className={`text-xl font-black ${config.temaFondo === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                {formEmpleado.id ? '✏️ Editar Empleado' : '✨ Nuevo Empleado'}
+              </h3>
+              <button 
+                onClick={() => {
+                  setModalEmpleado(false);
+                  setFormEmpleado({ id: null, nombre: '', pin: '', rol: rolesReales[0]?.id || '', sede: sedesReales[0]?.id || '' });
+                }} 
+                className="text-neutral-500 font-bold hover:text-red-500 transition-colors"
+              >✕</button>
             </div>
+            
             <div className="p-6 space-y-4">
               <div>
-                <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest mb-2 block">Nombre Completo</label>
+                <label className={`text-[10px] font-black uppercase tracking-widest mb-2 block ${config.temaFondo === 'dark' ? 'text-neutral-500' : 'text-gray-500'}`}>
+                  Nombre Completo
+                </label>
                 <input 
                   type="text" 
                   value={formEmpleado.nombre}
                   onChange={(e) => setFormEmpleado({...formEmpleado, nombre: e.target.value})}
-                  className="w-full bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3 text-white focus:border-[#ff5a1f] outline-none" 
+                  className={`w-full border rounded-xl px-4 py-3 outline-none transition-colors ${
+                    config.temaFondo === 'dark' ? 'bg-[#1a1a1a] border-[#333] text-white focus:border-[#ff5a1f]' : 'bg-gray-50 border-gray-200 text-gray-900 focus:border-[#ff5a1f]'
+                  }`}
+                  style={{ '--tw-ring-color': config.colorPrimario }} // Para el foco
                   placeholder="Ej. Juan Pérez" 
                 />
               </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest mb-2 block">Rol</label>
+                  <label className={`text-[10px] font-black uppercase tracking-widest mb-2 block ${config.temaFondo === 'dark' ? 'text-neutral-500' : 'text-gray-500'}`}>
+                    Rol Asignado
+                  </label>
                   <select 
                     value={formEmpleado.rol}
                     onChange={(e) => setFormEmpleado({...formEmpleado, rol: e.target.value})}
-                    className="w-full bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3 text-white focus:border-[#ff5a1f] outline-none"
+                    className={`w-full border rounded-xl px-4 py-3 outline-none transition-colors ${
+                      config.temaFondo === 'dark' ? 'bg-[#1a1a1a] border-[#333] text-white focus:border-[#ff5a1f]' : 'bg-gray-50 border-gray-200 text-gray-900 focus:border-[#ff5a1f]'
+                    }`}
                   >
-                    {rolesReales.map(r => <option key={r.id} value={r.id}>{r.nombre}</option>)}
+                    {/* ✨ MAGIA: Usamos rolesFiltrados, si no hay KDS, no hay cocineros */}
+                    {rolesFiltrados.map(r => <option key={r.id} value={r.id}>{r.nombre}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest mb-2 block">PIN (4 Dígitos)</label>
+                  <label className={`text-[10px] font-black uppercase tracking-widest mb-2 block ${config.temaFondo === 'dark' ? 'text-neutral-500' : 'text-gray-500'}`}>
+                    {formEmpleado.id ? 'NUEVO PIN (Opcional)' : 'PIN (4 Dígitos)'}
+                  </label>
                   <input 
                     type="password" 
                     maxLength="4" 
                     value={formEmpleado.pin}
-                    onChange={(e) => setFormEmpleado({...formEmpleado, pin: e.target.value.replace(/\D/g, '')})} // Solo números
-                    className="w-full bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3 text-white text-center font-mono text-xl tracking-[10px] focus:border-[#ff5a1f] outline-none" 
-                    placeholder="0000" 
+                    onChange={(e) => setFormEmpleado({...formEmpleado, pin: e.target.value.replace(/\D/g, '')})} 
+                    className={`w-full border rounded-xl px-4 py-3 text-center font-mono text-xl tracking-[10px] outline-none transition-colors ${
+                      config.temaFondo === 'dark' ? 'bg-[#1a1a1a] border-[#333] text-white focus:border-[#ff5a1f]' : 'bg-gray-50 border-gray-200 text-gray-900 focus:border-[#ff5a1f]'
+                    }`}
+                    placeholder={formEmpleado.id ? "****" : "0000"} 
                   />
                 </div>
               </div>
+
               <div>
-                <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest mb-2 block">Sede Asignada</label>
+                <label className={`text-[10px] font-black uppercase tracking-widest mb-2 block ${config.temaFondo === 'dark' ? 'text-neutral-500' : 'text-gray-500'}`}>
+                  Sede Autorizada
+                </label>
                 <select 
                   value={formEmpleado.sede}
                   onChange={(e) => setFormEmpleado({...formEmpleado, sede: e.target.value})}
-                  className="w-full bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3 text-white focus:border-[#ff5a1f] outline-none"
+                  className={`w-full border rounded-xl px-4 py-3 outline-none transition-colors ${
+                    config.temaFondo === 'dark' ? 'bg-[#1a1a1a] border-[#333] text-white focus:border-[#ff5a1f]' : 'bg-gray-50 border-gray-200 text-gray-900 focus:border-[#ff5a1f]'
+                  }`}
                 >
                   {sedesReales.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
                 </select>
               </div>
+
               <button 
-                onClick={manejarCrearEmpleado}
-                disabled={!formEmpleado.nombre || formEmpleado.pin.length !== 4}
-                className="w-full bg-[#ff5a1f] text-white py-4 rounded-xl font-black mt-4 shadow-lg active:scale-95 transition-all disabled:opacity-50"
+                onClick={manejarGuardarEmpleado}
+                disabled={!formEmpleado.nombre || (!formEmpleado.id && formEmpleado.pin.length !== 4)}
+                style={{ backgroundColor: config.colorPrimario }}
+                className="w-full text-white py-4 rounded-xl font-black mt-4 shadow-lg active:scale-95 transition-all hover:brightness-110 disabled:opacity-50 disabled:grayscale"
               >
-                CREAR ACCESO
+                {formEmpleado.id ? 'GUARDAR CAMBIOS' : 'CREAR ACCESO'}
               </button>
             </div>
           </div>

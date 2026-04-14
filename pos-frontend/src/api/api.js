@@ -88,5 +88,6 @@ export const crearCategoria = (data) => api.post('/categorias/', data);
 export const parchearCategoria = (id, data) => api.patch(`/categorias/${id}/`, data);
 export const actualizarNegocio = (id, data) => api.patch(`/negocios/${id}/`, data);
 export const getNegocio = (id) => api.get(`/negocios/${id}/`);
+export const actualizarEmpleado = (id, data) => api.patch(`/empleados/${id}/`, data);
 // (Ajusta la URL si en tu Django la llamaste diferente)
 export default api;
