@@ -2,15 +2,22 @@ from django.db import models
 from django.contrib.auth.models import User
 from django.contrib.auth.hashers import make_password, is_password_usable
 from django.core.exceptions import ValidationError
+
 class ActivoManager(models.Manager):
     def get_queryset(self):
         return super().get_queryset().filter(activo=True)
+    
 class PlanSaaS(models.Model):
     nombre = models.CharField(max_length=50)
     precio_mensual = models.DecimalField(max_digits=8, decimal_places=2)
+    
+    # ✨ PERMISOS DEL PLAN (Lo que el cliente compró)
     modulo_kds = models.BooleanField(default=False, help_text="¿Tiene pantalla de cocina?")
     modulo_inventario = models.BooleanField(default=False)
     modulo_delivery = models.BooleanField(default=False)
+    modulo_carta_qr = models.BooleanField(default=False)      # ✨ Nuevo: Menú QR
+    modulo_bot_wsp = models.BooleanField(default=False)       # ✨ Nuevo: Pedidos WhatsApp
+    modulo_ml = models.BooleanField(default=False)            # ✨ Nuevo: Machine Learning
     max_sedes = models.IntegerField(default=1)
 
     def __str__(self):
@@ -19,16 +26,28 @@ class PlanSaaS(models.Model):
 class Negocio(models.Model):
     propietario = models.OneToOneField(User, on_delete=models.CASCADE)
     nombre = models.CharField(max_length=100)
+
+    plan = models.ForeignKey(PlanSaaS, on_delete=models.PROTECT, related_name='negocios', null=True, blank=True)
+
     fecha_registro = models.DateTimeField(auto_now_add=True)
     fin_prueba = models.DateTimeField() # Para el demo de 15 días
     activo = models.BooleanField(default=True)
-    
-    # Switches de los módulos (Controlados por el ERP)
-    mod_cocina_activo = models.BooleanField(default=False)
-    mod_inventario_activo = models.BooleanField(default=False)
-    mod_analiticas_activo = models.BooleanField(default=False)
     numero_yape = models.CharField(max_length=15, blank=True, null=True)
+    
+    # 🛡️ MÓDULOS DEL SISTEMA (Feature Flags)
+    mod_salon_activo = models.BooleanField(default=True) # Activa/Desactiva el mapa de mesas
+    mod_cocina_activo = models.BooleanField(default=False) # KDS
+    mod_inventario_activo = models.BooleanField(default=False)
     mod_delivery_activo = models.BooleanField(default=False)
+    mod_clientes_activo = models.BooleanField(default=False) # CRM (Base de datos de clientes)
+    mod_facturacion_activo = models.BooleanField(default=False) # Boletas/Facturas Sunat
+    mod_carta_qr_activo = models.BooleanField(default=False) # Carta digital con QR para mesas y delivery
+    mod_bot_wsp_activo = models.BooleanField(default=False) # Bot de WhatsApp para tomar pedidos y consultas automáticas
+    mod_ml_activo = models.BooleanField(default=False) # Módulo de Machine Learning para recomendaciones y predicciones de ventas
+    
+    # 🎨 PERSONALIZACIÓN VISUAL
+    color_primario = models.CharField(max_length=7, default='#ff5a1f') # Naranja Brava por defecto
+    tema_fondo = models.CharField(max_length=10, default='dark') # 'dark' o 'light'
     
     def __str__(self):
         return self.nombre

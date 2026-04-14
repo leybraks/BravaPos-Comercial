@@ -25,12 +25,11 @@ api.interceptors.request.use(
       config.headers['X-Empleado-ID'] = empleadoId; 
     }
 
-    // 3. Inyección automática para GETs
-    if (sedeId && config.method === 'get' && !config.url.includes('sede_id')) {
+    // 3. Inyección automática para GETs (Ignorando las rutas globales como Negocios)
+    if (sedeId && config.method === 'get' && !config.url.includes('sede_id') && !config.url.includes('negocios')) {
        const separador = config.url.includes('?') ? '&' : '?';
        config.url = `${config.url}${separador}sede_id=${sedeId}`;
     }
-
     return config;
   },
   (error) => Promise.reject(error)
@@ -87,5 +86,6 @@ export const registrarMovimientoCaja = (data) => api.post('/movimientos-caja/', 
 export const getCategorias = () => api.get('/categorias/'); 
 export const crearCategoria = (data) => api.post('/categorias/', data);
 export const parchearCategoria = (id, data) => api.patch(`/categorias/${id}/`, data);
+export const actualizarNegocio = (id, data) => api.patch(`/negocios/${id}/`, data);
 // (Ajusta la URL si en tu Django la llamaste diferente)
 export default api;

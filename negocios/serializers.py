@@ -1,11 +1,16 @@
 from rest_framework import serializers
 from .models import (
-    Negocio, Sede, Mesa, Producto, Orden, DetalleOrden, Pago,
+    Negocio, PlanSaaS, Sede, Mesa, Producto, Orden, DetalleOrden, Pago,
     ModificadorRapido, GrupoVariacion, OpcionVariacion, Rol, Empleado, SesionCaja,
     DetalleOrdenOpcion , Categoria
 )
-
+class PlanSaaSSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PlanSaaS
+        fields = '__all__'
+        
 class NegocioSerializer(serializers.ModelSerializer):
+    plan_detalles = PlanSaaSSerializer(source='plan', read_only=True)
     class Meta:
         model = Negocio
         fields = '__all__'
