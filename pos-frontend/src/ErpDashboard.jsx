@@ -84,6 +84,15 @@ export default function ErpDashboard({ onVolverAlPos }) {
   const [hayCambiosPendientes, setHayCambiosPendientes] = useState(false);
   const [modalCambiosPendientes, setModalCambiosPendientes] = useState(false);
   const [vistaPendiente, setVistaPendiente] = useState(null); // guarda a qué vista quería ir
+  // Reiniciar la copia original cada vez que entramos a la pantalla de configuración
+  useEffect(() => {
+    if (vistaActiva === 'config' && config) {
+      // Guardamos una copia exacta del estado actual de config
+      setConfigOriginal(JSON.parse(JSON.stringify(config)));
+      // Aseguramos que no haya cambios pendientes al entrar
+      setHayCambiosPendientes(false);
+    }
+  }, [vistaActiva]); // Solo depende de que se active la vista 'config'
   // ==========================================
   // 📊 EFECTO 1: MÉTRICAS DINÁMICAS
   // ==========================================
@@ -260,6 +269,14 @@ export default function ErpDashboard({ onVolverAlPos }) {
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [vistaActiva, hayCambiosPendientes]);
+
+  // Reiniciar la copia original cada vez que entramos a la pantalla de configuración
+  useEffect(() => {
+    if (vistaActiva === 'config' && config) {
+      setConfigOriginal(JSON.parse(JSON.stringify(config)));
+      setHayCambiosPendientes(false);
+    }
+  }, [vistaActiva]);
   // Manejador de cambio de sede ✨
   const cambiarSedeFiltro = (sede) => {
     if (sede === 'Todas') {
@@ -423,7 +440,8 @@ export default function ErpDashboard({ onVolverAlPos }) {
           machineLearning: config.modMl
         }
       });
-
+      setConfigOriginal(JSON.parse(JSON.stringify(config)));
+      setHayCambiosPendientes(false);
       alert("✅ ¡Configuración guardada y aplicada al instante!");
       
     } catch (error) {
