@@ -17,7 +17,7 @@ api.interceptors.request.use(
 
     // 1. Pase VIP
     if (token) {
-      config.headers.Authorization = `Token ${token}`;
+      config.headers.Authorization = `Bearer ${token}`; // ✅ LA PALABRA MÁGICA
     }
     
     // 2. Firma del Empleado
@@ -47,8 +47,7 @@ const getNegocioId = () => localStorage.getItem('negocio_id');
 // ==========================================
 
 // --- LOGIN INICIAL DE LA TABLET ---
-export const loginAdministrador = (credenciales) => axios.post(`${API_URL}/login-tablet/`, credenciales);
-
+export const loginAdministrador = (credenciales) => axios.post(`${API_URL}/login-admin/`, credenciales);
 // --- CAJA Y LOGIN DE EMPLEADOS ---
 // Inyectamos la sede dinámicamente en el payload (cuerpo) de los POST
 export const validarPinEmpleado = (payload) => api.post(`/empleados/validar_pin/`, { ...payload, sede_id: getSedeId() });

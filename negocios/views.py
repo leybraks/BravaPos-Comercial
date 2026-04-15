@@ -8,7 +8,8 @@ from django.db import models
 from django.contrib.auth import authenticate
 from django.db import transaction
 from decimal import Decimal
-
+from rest_framework.views import APIView
+from rest_framework_simplejwt.tokens import RefreshToken
 from django.db.models import Sum
 from django.contrib.auth.hashers import check_password
 from rest_framework.permissions import AllowAny
@@ -467,3 +468,44 @@ def registrar_movimiento_caja(request):
         return Response({'error': 'La sesión de caja no existe.'}, status=404)
     except Exception as e:
         return Response({'error': str(e)}, status=400)
+    
+
+class LoginAdministradorView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        # 1. Recibimos el usuario y contraseña desde React
+        username = request.data.get('username')
+        password = request.data.get('password')
+
+        # 2. Le preguntamos a Django si son correctos
+        user = authenticate(username=username, password=password)
+
+        if user is not None:
+            # 3. Buscamos si este usuario es dueño de algún negocio
+            negocio = Negocio.objects.filter(propietario=user).first()
+            
+            if not negocio:
+                return Response(
+                    {'error': 'Este usuario no tiene un negocio asociado.'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # 4. ¡Magia! Generamos el Token de SimpleJWT
+            refresh = RefreshToken.for_user(user)
+
+            # 5. Se lo enviamos a React
+            return Response({
+                'token': str(refresh.access_token),
+                'refresh': str(refresh),
+                'rol': 'Dueño',
+                'negocio_id': negocio.id,
+                'negocio_nombre': negocio.nombre
+            }, status=status.HTTP_200_OK)
+            
+        else:
+            # Si se equivoca de contraseña
+            return Response(
+                {'error': 'Credenciales incorrectas.'}, 
+                status=status.HTTP_401_UNAUTHORIZED
+            )

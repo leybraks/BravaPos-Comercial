@@ -44,8 +44,10 @@ export default function LoginView({ onAccesoConcedido }) {
     setLoadingAuth(true);
     try {
       const res = await loginAdministrador({ username: email, password: password });
+      console.log("🔥 RESPUESTA DE DJANGO:", res.data);
       localStorage.setItem('tablet_token', res.data.token);
       localStorage.setItem('rol_usuario', res.data.rol || 'Dueño'); 
+      localStorage.setItem('negocio_id', res.data.negocio_id);
 
       if (destino === 'erp') {
          onAccesoConcedido('erp_admin'); 
@@ -239,7 +241,7 @@ export default function LoginView({ onAccesoConcedido }) {
               </div>
 
               <form onSubmit={(e) => handleLoginSubmit(e, modo === 'login_erp' ? 'erp' : 'pos')} className="space-y-5">
-                <input type="email" required value={email} onChange={e => setEmail(e.target.value)} className="w-full bg-[#111] border border-[#222] p-4 rounded-xl text-white focus:outline-none focus:border-[#ff5a1f] transition-all text-sm" placeholder="User Name or Email" />
+                <input type="text" required value={email} onChange={e => setEmail(e.target.value)} className="w-full bg-[#111] border border-[#222] p-4 rounded-xl text-white focus:outline-none focus:border-[#ff5a1f] transition-all text-sm" placeholder="Nombre de usuario o Correo" />
                 <input type="password" required value={password} onChange={e => setPassword(e.target.value)} className="w-full bg-[#111] border border-[#222] p-4 rounded-xl text-white focus:outline-none focus:border-[#ff5a1f] transition-all text-sm" placeholder="Password" />
                 
                 <div className="flex justify-between items-center text-xs mt-2">
