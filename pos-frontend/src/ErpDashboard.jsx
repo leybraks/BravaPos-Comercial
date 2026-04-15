@@ -22,6 +22,7 @@ export default function ErpDashboard({ onVolverAlPos }) {
   const { configuracionGlobal } = usePosStore();
   const tema = configuracionGlobal?.temaFondo || 'dark';
   const setConfiguracionGlobal = usePosStore((state) => state.setConfiguracionGlobal);
+  const colorPrimario = configuracionGlobal?.colorPrimario || '#ff5a1f';
   const [vistaActiva, setVistaActiva] = useState('dashboard');
   const [sedeFiltro, setSedeFiltro] = useState('Todas');
   const [dropdownAbierto, setDropdownAbierto] = useState(false);
@@ -2096,26 +2097,25 @@ export default function ErpDashboard({ onVolverAlPos }) {
           </div>
         </div>
       )}
-      {/* MODAL PARA AGREGAR/EDITAR PLATO */}
-      {/* MODAL PARA AGREGAR/EDITAR PLATO (VERSIÓN WIZARD) */}
+      {/* ======================= MODAL DE AÑADIR/EDITAR PLATO ======================= */}
       {modalPlato && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <div className="bg-[#121212] border border-[#333] rounded-3xl w-full max-w-xl max-h-[90vh] overflow-y-auto animate-fadeIn relative">
+          <div className={`border rounded-3xl w-full max-w-xl max-h-[90vh] overflow-y-auto animate-fadeIn relative transition-colors ${tema === 'dark' ? 'bg-[#121212] border-[#333]' : 'bg-white border-gray-200'}`}>
             
             {/* Cabecera Fija */}
-            <div className="p-6 border-b border-[#222] bg-[#1a1a1a] flex justify-between items-center sticky top-0 z-10">
+            <div className={`p-6 border-b flex justify-between items-center sticky top-0 z-10 transition-colors ${tema === 'dark' ? 'border-[#222] bg-[#1a1a1a]' : 'border-gray-200 bg-gray-50'}`}>
               <div className="flex items-center gap-3">
                 {pasoModal === 2 && (
-                  <button onClick={() => setPasoModal(1)} className="text-neutral-500 hover:text-white bg-[#222] w-8 h-8 rounded-full flex items-center justify-center font-bold transition-colors">
+                  <button onClick={() => setPasoModal(1)} className={`w-8 h-8 rounded-full flex items-center justify-center font-bold transition-colors ${tema === 'dark' ? 'text-neutral-500 hover:text-white bg-[#222]' : 'text-gray-500 hover:text-gray-900 bg-gray-200'}`}>
                     ←
                   </button>
                 )}
-                <h3 className="text-xl font-black text-white">
+                <h3 className={`text-xl font-black ${tema === 'dark' ? 'text-white' : 'text-gray-900'}`}>
                   {formPlato.id ? 'Editar Plato' : 'Nuevo Plato'} 
-                  {pasoModal === 2 && <span className="text-[#ff5a1f]"> - Presentaciones</span>}
+                  {pasoModal === 2 && <span style={{ color: colorPrimario }}> - Presentaciones</span>}
                 </h3>
               </div>
-              <button onClick={cerrarModalPlato} className="text-neutral-500 hover:text-white font-bold text-xl">✕</button>
+              <button onClick={cerrarModalPlato} className={`font-bold text-xl transition-colors ${tema === 'dark' ? 'text-neutral-500 hover:text-white' : 'text-gray-400 hover:text-gray-900'}`}>✕</button>
             </div>
             
             <div className="p-6 space-y-6">
@@ -2126,51 +2126,58 @@ export default function ErpDashboard({ onVolverAlPos }) {
                   {/* Nombre, Precio y Categoría */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="col-span-1 md:col-span-2">
-                      <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest mb-2 block">Nombre del Plato</label>
+                      <label className={`text-[10px] font-black uppercase tracking-widest mb-2 block ${tema === 'dark' ? 'text-neutral-500' : 'text-gray-500'}`}>Nombre del Plato</label>
                       <input 
                         type="text" 
                         value={formPlato.nombre}
                         onChange={(e) => setFormPlato({...formPlato, nombre: e.target.value})}
-                        className="w-full bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3 text-white focus:border-[#ff5a1f] outline-none" 
+                        className={`w-full border rounded-xl px-4 py-3 outline-none transition-colors ${tema === 'dark' ? 'bg-[#1a1a1a] border-[#333] text-white focus:border-[#ff5a1f]' : 'bg-white border-gray-300 text-gray-900 focus:border-[#ff5a1f]'}`}
+                        style={{ '--tw-ring-color': colorPrimario }}
+                        onFocus={(e) => e.target.style.borderColor = colorPrimario}
+                        onBlur={(e) => e.target.style.borderColor = tema === 'dark' ? '#333' : '#d1d5db'}
                         placeholder="Ej. Pizza Hawaiana" 
                       />
                     </div>
                     <div>
-                      <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest mb-2 block">Precio Base (S/)</label>
+                      <label className={`text-[10px] font-black uppercase tracking-widest mb-2 block ${tema === 'dark' ? 'text-neutral-500' : 'text-gray-500'}`}>Precio Base (S/)</label>
                       <input 
                         type="number" 
                         step="0.10"
                         value={formPlato.precio_base}
                         onChange={(e) => setFormPlato({...formPlato, precio_base: e.target.value})}
                         disabled={formPlato.requiere_seleccion} 
-                        className="w-full bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3 text-white focus:border-[#ff5a1f] outline-none disabled:opacity-30 disabled:cursor-not-allowed transition-all" 
+                        className={`w-full border rounded-xl px-4 py-3 outline-none disabled:opacity-30 disabled:cursor-not-allowed transition-all ${tema === 'dark' ? 'bg-[#1a1a1a] border-[#333] text-white focus:border-[#ff5a1f]' : 'bg-white border-gray-300 text-gray-900 focus:border-[#ff5a1f]'}`}
+                        style={{ '--tw-ring-color': colorPrimario }}
+                        onFocus={(e) => e.target.style.borderColor = colorPrimario}
+                        onBlur={(e) => e.target.style.borderColor = tema === 'dark' ? '#333' : '#d1d5db'}
                         placeholder="0.00" 
                       />
                     </div>
                     {/* SELECT PERSONALIZADO DE CATEGORÍAS */}
                     <div className="col-span-1 md:col-span-3 relative">
-                      <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest mb-2 block">Categoría</label>
+                      <label className={`text-[10px] font-black uppercase tracking-widest mb-2 block ${tema === 'dark' ? 'text-neutral-500' : 'text-gray-500'}`}>Categoría</label>
                       
                       {/* Botón del Select */}
                       <button
                         type="button"
                         onClick={() => setDropdownCatModalAbierto(!dropdownCatModalAbierto)}
-                        className="w-full flex items-center justify-between bg-[#1a1a1a] border border-[#333] hover:border-[#444] rounded-xl px-4 py-3 text-white focus:border-[#ff5a1f] outline-none transition-all text-left"
+                        className={`w-full flex items-center justify-between border rounded-xl px-4 py-3 outline-none transition-all text-left ${tema === 'dark' ? 'bg-[#1a1a1a] border-[#333] hover:border-[#444] text-white focus:border-[#ff5a1f]' : 'bg-white border-gray-300 hover:border-gray-400 text-gray-900 focus:border-[#ff5a1f]'}`}
+                        onFocus={(e) => e.target.style.borderColor = colorPrimario}
+                        onBlur={(e) => e.target.style.borderColor = tema === 'dark' ? '#333' : '#d1d5db'}
                       >
-                        {/* Buscamos el nombre de la categoría porque el formulario solo guarda el ID */}
-                        <span className={!formPlato.categoria_id ? "text-neutral-500" : "text-white font-bold"}>
+                        <span className={!formPlato.categoria_id ? (tema === 'dark' ? "text-neutral-500" : "text-gray-400") : (tema === 'dark' ? "text-white font-bold" : "text-gray-900 font-bold")}>
                           {formPlato.categoria_id 
                             ? (categorias.find(c => String(c.id) === String(formPlato.categoria_id))?.nombre || "Categoría desconocida")
                             : "Seleccione una categoría..."}
                         </span>
-                        <span className={`text-neutral-500 transition-transform duration-300 ${dropdownCatModalAbierto ? 'rotate-180' : ''}`}>
+                        <span className={`transition-transform duration-300 ${dropdownCatModalAbierto ? 'rotate-180' : ''} ${tema === 'dark' ? 'text-neutral-500' : 'text-gray-400'}`}>
                           ▼
                         </span>
                       </button>
 
                       {/* Lista Desplegable Flotante */}
                       {dropdownCatModalAbierto && (
-                        <div className="absolute z-[60] mt-2 w-full bg-[#1a1a1a] border border-[#333] rounded-xl shadow-2xl overflow-hidden animate-fadeIn">
+                        <div className={`absolute z-[60] mt-2 w-full border rounded-xl shadow-2xl overflow-hidden animate-fadeIn ${tema === 'dark' ? 'bg-[#1a1a1a] border-[#333]' : 'bg-white border-gray-200'}`}>
                           <div className="max-h-48 overflow-y-auto">
                             
                             <button
@@ -2179,8 +2186,8 @@ export default function ErpDashboard({ onVolverAlPos }) {
                                 setFormPlato({...formPlato, categoria_id: ''});
                                 setDropdownCatModalAbierto(false);
                               }}
-                              className={`w-full text-left px-4 py-3 text-sm font-bold transition-all border-b border-[#222] 
-                                ${!formPlato.categoria_id ? 'bg-[#ff5a1f]/10 text-[#ff5a1f]' : 'text-neutral-400 hover:bg-[#222] hover:text-white'}`}
+                              className={`w-full text-left px-4 py-3 text-sm font-bold transition-all border-b ${!formPlato.categoria_id ? '' : (tema === 'dark' ? 'text-neutral-400 hover:bg-[#222] hover:text-white border-[#222]' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900 border-gray-100')}`}
+                              style={!formPlato.categoria_id ? { backgroundColor: colorPrimario + '1A', color: colorPrimario, borderColor: tema === 'dark' ? '#222' : '#f3f4f6' } : {}}
                             >
                               Ninguna / Quitar selección
                             </button>
@@ -2193,8 +2200,8 @@ export default function ErpDashboard({ onVolverAlPos }) {
                                   setFormPlato({...formPlato, categoria_id: cat.id});
                                   setDropdownCatModalAbierto(false);
                                 }}
-                                className={`w-full text-left px-4 py-3 text-sm font-bold transition-all border-b border-[#222] last:border-0 
-                                  ${String(formPlato.categoria_id) === String(cat.id) ? 'bg-[#ff5a1f]/10 text-[#ff5a1f]' : 'text-neutral-300 hover:bg-[#222] hover:text-white'}`}
+                                className={`w-full text-left px-4 py-3 text-sm font-bold transition-all border-b last:border-0 ${String(formPlato.categoria_id) === String(cat.id) ? '' : (tema === 'dark' ? 'text-neutral-300 hover:bg-[#222] hover:text-white border-[#222]' : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900 border-gray-100')}`}
+                                style={String(formPlato.categoria_id) === String(cat.id) ? { backgroundColor: colorPrimario + '1A', color: colorPrimario, borderColor: tema === 'dark' ? '#222' : '#f3f4f6' } : {}}
                               >
                                 {cat.nombre}
                               </button>
@@ -2207,26 +2214,28 @@ export default function ErpDashboard({ onVolverAlPos }) {
                   </div>
 
                   {/* Comportamiento (Switches) */}
-                  <div className="bg-[#1a1a1a] border border-[#333] rounded-2xl p-4 space-y-4">
-                    <h4 className="text-white font-bold text-sm mb-2 border-b border-[#333] pb-2">Comportamiento en POS</h4>
+                  <div className={`border rounded-2xl p-4 space-y-4 ${tema === 'dark' ? 'bg-[#1a1a1a] border-[#333]' : 'bg-gray-50 border-gray-200'}`}>
+                    <h4 className={`font-bold text-sm mb-2 border-b pb-2 ${tema === 'dark' ? 'text-white border-[#333]' : 'text-gray-900 border-gray-200'}`}>Comportamiento en POS</h4>
                     
                     {/* 1. Venta Rápida */}
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-white font-bold text-sm">Venta Rápida (Directo al carrito)</p>
-                        <p className="text-neutral-500 text-[11px]">Sin ventanas extra. Ideal para gaseosas.</p>
+                        <p className={`font-bold text-sm ${tema === 'dark' ? 'text-white' : 'text-gray-900'}`}>Venta Rápida (Directo al carrito)</p>
+                        <p className={`text-[11px] ${tema === 'dark' ? 'text-neutral-500' : 'text-gray-500'}`}>Sin ventanas extra. Ideal para gaseosas.</p>
                       </div>
                       <label className="relative inline-flex items-center cursor-pointer">
                         <input type="checkbox" className="sr-only peer" checked={formPlato.es_venta_rapida} onChange={(e) => setFormPlato({...formPlato, es_venta_rapida: e.target.checked, requiere_seleccion: false, tiene_variaciones: false})} />
-                        <div className="w-11 h-6 bg-[#333] peer-focus:outline-none rounded-full peer peer-checked:bg-[#ff5a1f] transition-colors"><div className={`absolute top-[2px] left-[2px] bg-white rounded-full h-5 w-5 transition-transform ${formPlato.es_venta_rapida ? 'translate-x-full' : ''}`}></div></div>
+                        <div className={`w-11 h-6 rounded-full peer peer-focus:outline-none transition-colors ${tema === 'dark' ? 'bg-[#333]' : 'bg-gray-300'}`} style={formPlato.es_venta_rapida ? { backgroundColor: colorPrimario } : {}}>
+                          <div className={`absolute top-[2px] left-[2px] bg-white rounded-full h-5 w-5 transition-transform ${formPlato.es_venta_rapida ? 'translate-x-full' : ''}`}></div>
+                        </div>
                       </label>
                     </div>
 
                     {/* 2. Requiere Selección */}
                     <div className="flex items-center justify-between opacity-100 transition-opacity">
                       <div>
-                        <p className="text-white font-bold text-sm">Requiere Selección (Presentaciones)</p>
-                        <p className="text-neutral-500 text-[11px]">Ej. Personal o Familiar. Obliga a elegir.</p>
+                        <p className={`font-bold text-sm ${tema === 'dark' ? 'text-white' : 'text-gray-900'}`}>Requiere Selección (Presentaciones)</p>
+                        <p className={`text-[11px] ${tema === 'dark' ? 'text-neutral-500' : 'text-gray-500'}`}>Ej. Personal o Familiar. Obliga a elegir.</p>
                       </div>
                       <label className="relative inline-flex items-center cursor-pointer">
                         <input type="checkbox" className="sr-only peer" checked={formPlato.requiere_seleccion} 
@@ -2235,21 +2244,25 @@ export default function ErpDashboard({ onVolverAlPos }) {
                             setFormPlato({...formPlato, requiere_seleccion: checked, es_venta_rapida: false, precio_base: checked ? '0.00' : formPlato.precio_base});
                           }} 
                         />
-                        <div className="w-11 h-6 bg-[#333] peer-focus:outline-none rounded-full peer peer-checked:bg-[#ff5a1f] transition-colors"><div className={`absolute top-[2px] left-[2px] bg-white rounded-full h-5 w-5 transition-transform ${formPlato.requiere_seleccion ? 'translate-x-full' : ''}`}></div></div>
+                        <div className={`w-11 h-6 rounded-full peer peer-focus:outline-none transition-colors ${tema === 'dark' ? 'bg-[#333]' : 'bg-gray-300'}`} style={formPlato.requiere_seleccion ? { backgroundColor: colorPrimario } : {}}>
+                          <div className={`absolute top-[2px] left-[2px] bg-white rounded-full h-5 w-5 transition-transform ${formPlato.requiere_seleccion ? 'translate-x-full' : ''}`}></div>
+                        </div>
                       </label>
                     </div>
 
                     {/* 3. Tiene Variaciones */}
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-white font-bold text-sm">Tiene Variaciones (Extras Opcionales)</p>
-                        <p className="text-neutral-500 text-[11px]">Ej. Sin cebolla, Extra Queso. Abre modal.</p>
+                        <p className={`font-bold text-sm ${tema === 'dark' ? 'text-white' : 'text-gray-900'}`}>Tiene Variaciones (Extras Opcionales)</p>
+                        <p className={`text-[11px] ${tema === 'dark' ? 'text-neutral-500' : 'text-gray-500'}`}>Ej. Sin cebolla, Extra Queso. Abre modal.</p>
                       </div>
                       <label className="relative inline-flex items-center cursor-pointer">
                         <input type="checkbox" className="sr-only peer" checked={formPlato.tiene_variaciones} 
                           onChange={(e) => setFormPlato({...formPlato, tiene_variaciones: e.target.checked, es_venta_rapida: false})} 
                         />
-                        <div className="w-11 h-6 bg-[#333] peer-focus:outline-none rounded-full peer peer-checked:bg-[#ff5a1f] transition-colors"><div className={`absolute top-[2px] left-[2px] bg-white rounded-full h-5 w-5 transition-transform ${formPlato.tiene_variaciones ? 'translate-x-full' : ''}`}></div></div>
+                        <div className={`w-11 h-6 rounded-full peer peer-focus:outline-none transition-colors ${tema === 'dark' ? 'bg-[#333]' : 'bg-gray-300'}`} style={formPlato.tiene_variaciones ? { backgroundColor: colorPrimario } : {}}>
+                          <div className={`absolute top-[2px] left-[2px] bg-white rounded-full h-5 w-5 transition-transform ${formPlato.tiene_variaciones ? 'translate-x-full' : ''}`}></div>
+                        </div>
                       </label>
                     </div>
                   </div>
@@ -2257,16 +2270,15 @@ export default function ErpDashboard({ onVolverAlPos }) {
                   {/* BOTONES DEL PASO 1 */}
                   {(formPlato.requiere_seleccion || formPlato.tiene_variaciones) ? (
                     <button onClick={() => {
-                      // Si no hay grupos, creamos uno por defecto al pasar al Paso 2
                       if (formPlato.grupos_variacion.length === 0) {
                         setFormPlato({...formPlato, grupos_variacion: [{ nombre: 'Opciones', obligatorio: formPlato.requiere_seleccion, seleccion_multiple: false, opciones: [] }]});
                       }
                       setPasoModal(2);
-                    }} className="w-full bg-[#2463EB] hover:bg-blue-500 text-white py-4 rounded-xl font-black shadow-lg transition-all flex justify-center items-center gap-2">
+                    }} className="w-full bg-[#2463EB] hover:bg-blue-500 text-white py-4 rounded-xl font-black shadow-lg transition-all flex justify-center items-center gap-2 active:scale-[0.98]">
                       {formPlato.id ? 'EDITAR OPCIONES / PRECIOS →' : 'SIGUIENTE: DEFINIR OPCIONES →'}
                     </button>
                   ) : (
-                    <button onClick={manejarGuardarPlato} disabled={!formPlato.nombre || !formPlato.precio_base} className="w-full bg-[#ff5a1f] hover:bg-[#e04a15] text-white py-4 rounded-xl font-black shadow-lg disabled:opacity-50 transition-all">
+                    <button onClick={manejarGuardarPlato} disabled={!formPlato.nombre || !formPlato.precio_base} className="w-full text-white py-4 rounded-xl font-black shadow-lg disabled:opacity-50 transition-all active:scale-[0.98]" style={{ backgroundColor: colorPrimario, boxShadow: `0 4px 15px ${colorPrimario}4D` }}>
                       {formPlato.id ? 'ACTUALIZAR PLATO' : 'GUARDAR PLATO'}
                     </button>
                   )}
@@ -2278,33 +2290,33 @@ export default function ErpDashboard({ onVolverAlPos }) {
                 <div className="space-y-6 animate-fadeIn">
                   
                   <div className="flex justify-between items-center mb-2">
-                    <h4 className="text-white font-bold text-sm">Grupos de Opciones</h4>
+                    <h4 className={`font-bold text-sm ${tema === 'dark' ? 'text-white' : 'text-gray-900'}`}>Grupos de Opciones</h4>
                     <button onClick={() => {
                       setFormPlato({...formPlato, grupos_variacion: [...formPlato.grupos_variacion, { nombre: 'Nuevo Grupo', obligatorio: false, seleccion_multiple: true, opciones: [] }]});
-                    }} className="text-[#ff5a1f] text-xs font-bold bg-[#ff5a1f]/10 px-3 py-1.5 rounded-lg hover:bg-[#ff5a1f]/20 transition-colors">
+                    }} className="text-xs font-bold px-3 py-1.5 rounded-lg transition-colors hover:brightness-110" style={{ color: colorPrimario, backgroundColor: colorPrimario + '1A' }}>
                       + Añadir Grupo
                     </button>
                   </div>
 
                   <div className="space-y-6 max-h-[50vh] overflow-y-auto pr-2">
                     {formPlato.grupos_variacion.map((grupo, gIndex) => (
-                      <div key={gIndex} className="bg-[#1a1a1a] border border-[#333] rounded-2xl p-4 relative">
+                      <div key={gIndex} className={`border rounded-2xl p-4 relative ${tema === 'dark' ? 'bg-[#1a1a1a] border-[#333]' : 'bg-gray-50 border-gray-200'}`}>
                         
                         {/* Botón eliminar grupo */}
                         <button onClick={() => {
                           const nuevos = formPlato.grupos_variacion.filter((_, i) => i !== gIndex);
                           setFormPlato({...formPlato, grupos_variacion: nuevos});
-                        }} className="absolute top-4 right-4 text-neutral-500 hover:text-red-500 transition-colors">🗑️</button>
+                        }} className={`absolute top-4 right-4 transition-colors ${tema === 'dark' ? 'text-neutral-500 hover:text-red-500' : 'text-gray-400 hover:text-red-500'}`}>🗑️</button>
 
                         {/* Nombre y Reglas del Grupo */}
                         <div className="space-y-3 mb-4 pr-8">
                           <div>
-                            <label className="text-[10px] font-black text-[#ff5a1f] uppercase tracking-widest block mb-1">Nombre del Grupo</label>
+                            <label className="text-[10px] font-black uppercase tracking-widest block mb-1" style={{ color: colorPrimario }}>Nombre del Grupo</label>
                             <input type="text" value={grupo.nombre} onChange={(e) => {
                               const nuevosGrupos = [...formPlato.grupos_variacion];
                               nuevosGrupos[gIndex].nombre = e.target.value;
                               setFormPlato({...formPlato, grupos_variacion: nuevosGrupos});
-                            }} className="w-full bg-[#111] border border-[#ff5a1f]/30 focus:border-[#ff5a1f] rounded-xl px-4 py-2 text-white font-bold outline-none text-sm" placeholder="Ej. Elige tu crema" />
+                            }} className={`w-full border rounded-xl px-4 py-2 font-bold outline-none text-sm transition-colors ${tema === 'dark' ? 'bg-[#111] text-white' : 'bg-white text-gray-900'}`} style={{ borderColor: colorPrimario + '4D' }} onFocus={(e) => e.target.style.borderColor = colorPrimario} onBlur={(e) => e.target.style.borderColor = colorPrimario + '4D'} placeholder="Ej. Elige tu crema" />
                           </div>
                           
                           <div className="flex gap-6">
@@ -2313,31 +2325,31 @@ export default function ErpDashboard({ onVolverAlPos }) {
                                 const nuevosGrupos = [...formPlato.grupos_variacion];
                                 nuevosGrupos[gIndex].obligatorio = e.target.checked;
                                 setFormPlato({...formPlato, grupos_variacion: nuevosGrupos});
-                              }} className="accent-[#ff5a1f] w-4 h-4" />
-                              <span className="text-white text-xs font-bold">Es Obligatorio</span>
+                              }} className="w-4 h-4" style={{ accentColor: colorPrimario }} />
+                              <span className={`text-xs font-bold ${tema === 'dark' ? 'text-white' : 'text-gray-900'}`}>Es Obligatorio</span>
                             </label>
                             <label className="flex items-center gap-2 cursor-pointer">
                               <input type="checkbox" checked={grupo.seleccion_multiple} onChange={(e) => {
                                 const nuevosGrupos = [...formPlato.grupos_variacion];
                                 nuevosGrupos[gIndex].seleccion_multiple = e.target.checked;
                                 setFormPlato({...formPlato, grupos_variacion: nuevosGrupos});
-                              }} className="accent-[#ff5a1f] w-4 h-4" />
-                              <span className="text-white text-xs font-bold">Selección Múltiple</span>
+                              }} className="w-4 h-4" style={{ accentColor: colorPrimario }} />
+                              <span className={`text-xs font-bold ${tema === 'dark' ? 'text-white' : 'text-gray-900'}`}>Selección Múltiple</span>
                             </label>
                           </div>
                         </div>
 
-                        <div className="h-px w-full bg-[#333] mb-4"></div>
+                        <div className={`h-px w-full mb-4 ${tema === 'dark' ? 'bg-[#333]' : 'bg-gray-200'}`}></div>
 
                         {/* Lista de Opciones (Familiar, Personal, Sin Cebolla) */}
                         <div>
                           <div className="flex justify-between items-center mb-3">
-                            <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest">Opciones y Precios (+S/)</label>
+                            <label className={`text-[10px] font-black uppercase tracking-widest ${tema === 'dark' ? 'text-neutral-500' : 'text-gray-500'}`}>Opciones y Precios (+S/)</label>
                             <button onClick={() => {
                               const nuevosGrupos = [...formPlato.grupos_variacion];
                               nuevosGrupos[gIndex].opciones.push({ nombre: '', precio_adicional: '' });
                               setFormPlato({...formPlato, grupos_variacion: nuevosGrupos});
-                            }} className="text-[#ff5a1f] text-xs font-bold hover:underline">
+                            }} className="text-xs font-bold hover:underline" style={{ color: colorPrimario }}>
                               + Añadir Opción
                             </button>
                           </div>
@@ -2349,13 +2361,13 @@ export default function ErpDashboard({ onVolverAlPos }) {
                                   const nuevosGrupos = [...formPlato.grupos_variacion];
                                   nuevosGrupos[gIndex].opciones[oIndex].nombre = e.target.value;
                                   setFormPlato({...formPlato, grupos_variacion: nuevosGrupos});
-                                }} className="w-full bg-[#111] border border-[#333] rounded-xl px-3 py-2.5 text-white outline-none focus:border-white text-sm" />
+                                }} className={`w-full border rounded-xl px-3 py-2.5 outline-none text-sm transition-colors ${tema === 'dark' ? 'bg-[#111] border-[#333] text-white focus:border-white' : 'bg-white border-gray-300 text-gray-900 focus:border-gray-500'}`} />
                                 
                                 <input type="number" placeholder="0.00" value={opcion.precio_adicional} onChange={(e) => {
                                   const nuevosGrupos = [...formPlato.grupos_variacion];
                                   nuevosGrupos[gIndex].opciones[oIndex].precio_adicional = e.target.value;
                                   setFormPlato({...formPlato, grupos_variacion: nuevosGrupos});
-                                }} className="w-full bg-[#111] border border-[#333] rounded-xl px-3 py-2.5 text-white outline-none focus:border-white text-right text-sm" />
+                                }} className={`w-full border rounded-xl px-3 py-2.5 outline-none text-right text-sm transition-colors ${tema === 'dark' ? 'bg-[#111] border-[#333] text-white focus:border-white' : 'bg-white border-gray-300 text-gray-900 focus:border-gray-500'}`} />
                                 
                                 <button onClick={() => {
                                   const nuevosGrupos = [...formPlato.grupos_variacion];
@@ -2365,7 +2377,7 @@ export default function ErpDashboard({ onVolverAlPos }) {
                               </div>
                             ))}
                             {grupo.opciones.length === 0 && (
-                              <p className="text-neutral-500 text-xs italic">Añade opciones para este grupo.</p>
+                              <p className={`text-xs italic ${tema === 'dark' ? 'text-neutral-500' : 'text-gray-400'}`}>Añade opciones para este grupo.</p>
                             )}
                           </div>
                         </div>
@@ -2375,7 +2387,7 @@ export default function ErpDashboard({ onVolverAlPos }) {
                   </div>
 
                   {/* BOTÓN FINAL DE GUARDAR */}
-                  <button onClick={manejarGuardarPlato} className="w-full bg-[#ff5a1f] hover:bg-[#e04a15] text-white py-4 rounded-xl font-black shadow-lg shadow-[#ff5a1f]/20 mt-8 transition-all">
+                  <button onClick={manejarGuardarPlato} className="w-full text-white py-4 rounded-xl font-black shadow-lg mt-8 transition-all active:scale-[0.98]" style={{ backgroundColor: colorPrimario, boxShadow: `0 4px 15px ${colorPrimario}4D` }}>
                     TERMINAR Y GUARDAR
                   </button>
                 </div>
@@ -2385,14 +2397,15 @@ export default function ErpDashboard({ onVolverAlPos }) {
           </div>
         </div>
       )}
-      {/* MODAL DE ADMINISTRACIÓN DE CATEGORÍAS */}
+      {/* ======================= MODAL DE CATEGORÍAS ======================= */}
       {modalCategorias && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <div className="bg-[#121212] border border-[#333] rounded-3xl w-full max-w-md animate-fadeIn relative overflow-hidden">
+          <div className={`border rounded-3xl w-full max-w-md animate-fadeIn relative overflow-hidden transition-colors ${tema === 'dark' ? 'bg-[#121212] border-[#333]' : 'bg-white border-gray-200'}`}>
             
-            <div className="p-6 border-b border-[#222] bg-[#1a1a1a] flex justify-between items-center">
-              <h3 className="text-xl font-black text-white">Categorías del Menú</h3>
-              <button onClick={() => setModalCategorias(false)} className="text-neutral-500 hover:text-white font-bold text-xl">✕</button>
+            {/* Cabecera */}
+            <div className={`p-6 border-b flex justify-between items-center transition-colors ${tema === 'dark' ? 'border-[#222] bg-[#1a1a1a]' : 'border-gray-200 bg-gray-50'}`}>
+              <h3 className={`text-xl font-black ${tema === 'dark' ? 'text-white' : 'text-gray-900'}`}>Categorías del Menú</h3>
+              <button onClick={() => setModalCategorias(false)} className={`font-bold text-xl transition-colors ${tema === 'dark' ? 'text-neutral-500 hover:text-white' : 'text-gray-400 hover:text-gray-900'}`}>✕</button>
             </div>
             
             <div className="p-6 space-y-6">
@@ -2404,31 +2417,35 @@ export default function ErpDashboard({ onVolverAlPos }) {
                   value={nombreNuevaCat}
                   onChange={(e) => setNombreNuevaCat(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && manejarCrearCategoria()}
-                  className="flex-1 bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3 text-white focus:border-[#ff5a1f] outline-none" 
+                  className={`flex-1 border rounded-xl px-4 py-3 outline-none transition-colors ${tema === 'dark' ? 'bg-[#1a1a1a] border-[#333] text-white focus:border-[#ff5a1f]' : 'bg-white border-gray-300 text-gray-900 focus:border-[#ff5a1f]'}`} 
+                  style={{ '--tw-ring-color': colorPrimario }}
+                  onFocus={(e) => e.target.style.borderColor = colorPrimario}
+                  onBlur={(e) => e.target.style.borderColor = tema === 'dark' ? '#333' : '#d1d5db'}
                   placeholder="Ej. Bebidas, Postres..." 
                 />
                 <button 
                   onClick={manejarCrearCategoria}
                   disabled={!nombreNuevaCat.trim()}
-                  className="bg-[#ff5a1f] hover:bg-[#e04a15] text-white px-6 font-bold rounded-xl disabled:opacity-50 transition-all"
+                  className="text-white px-6 font-bold rounded-xl disabled:opacity-50 transition-all hover:brightness-110 active:scale-95 shadow-md"
+                  style={{ backgroundColor: colorPrimario }}
                 >
                   Agregar
                 </button>
               </div>
 
-              <div className="h-px w-full bg-[#222]"></div>
+              <div className={`h-px w-full ${tema === 'dark' ? 'bg-[#222]' : 'bg-gray-200'}`}></div>
 
               {/* LISTA DE CATEGORÍAS ACTUALES */}
               <div className="max-h-[40vh] overflow-y-auto space-y-2 pr-2">
                 {categorias.length === 0 ? (
-                  <p className="text-neutral-500 text-center text-sm py-4">No hay categorías creadas aún.</p>
+                  <p className={`text-center text-sm py-4 ${tema === 'dark' ? 'text-neutral-500' : 'text-gray-500'}`}>No hay categorías creadas aún.</p>
                 ) : (
                   categorias.map(cat => (
-                    <div key={cat.id} className="flex justify-between items-center bg-[#1a1a1a] p-3 rounded-xl border border-[#222]">
-                      <span className="text-white font-bold">{cat.nombre}</span>
+                    <div key={cat.id} className={`flex justify-between items-center p-3 rounded-xl border transition-colors ${tema === 'dark' ? 'bg-[#1a1a1a] border-[#222]' : 'bg-gray-50 border-gray-200'}`}>
+                      <span className={`font-bold ${tema === 'dark' ? 'text-white' : 'text-gray-800'}`}>{cat.nombre}</span>
                       <button 
                         onClick={() => eliminarCategoriaLocal(cat.id)}
-                        className="text-neutral-500 hover:text-red-500 hover:bg-red-500/10 w-8 h-8 rounded-lg flex items-center justify-center transition-all"
+                        className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all hover:text-red-500 hover:bg-red-500/10 ${tema === 'dark' ? 'text-neutral-500' : 'text-gray-400'}`}
                         title="Eliminar categoría"
                       >
                         🗑️
