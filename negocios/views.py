@@ -8,14 +8,15 @@ from django.db import models
 from django.contrib.auth import authenticate
 from django.db import transaction
 from decimal import Decimal
-
+from rest_framework.views import APIView
+from rest_framework_simplejwt.tokens import RefreshToken
 from django.db.models import Sum
 from django.contrib.auth.hashers import check_password
 from rest_framework.permissions import AllowAny
 from rest_framework.decorators import action , permission_classes,api_view
 import time 
 from .models import (GrupoVariacion, Negocio, Sede, Mesa, Producto, Orden, DetalleOrden, Pago, ModificadorRapido,DetalleOrdenOpcion, 
-GrupoVariacion, OpcionVariacion, Rol, Empleado, SesionCaja, Categoria)
+GrupoVariacion, OpcionVariacion,MovimientoCaja, Rol, Empleado, SesionCaja, Categoria)
 from .serializers import (
     NegocioSerializer, SedeSerializer, MesaSerializer,
     ProductoSerializer, ModificadorRapidoSerializer, GrupoVariacionSerializer, OpcionVariacionSerializer,
@@ -27,8 +28,14 @@ class NegocioViewSet(viewsets.ModelViewSet):
     serializer_class = NegocioSerializer
 
 class SedeViewSet(viewsets.ModelViewSet):
-    queryset = Sede.objects.all()
     serializer_class = SedeSerializer
+
+    def get_queryset(self):
+        queryset = Sede.objects.all()
+        negocio_id = self.request.query_params.get('negocio_id')
+        if negocio_id:
+            queryset = queryset.filter(negocio_id=negocio_id)
+        return queryset
 
 class MesaViewSet(viewsets.ModelViewSet):
     serializer_class = MesaSerializer
@@ -206,18 +213,26 @@ class RolViewSet(viewsets.ModelViewSet):
 class EmpleadoViewSet(viewsets.ModelViewSet):
     serializer_class = EmpleadoSerializer
     def get_queryset(self):
-        queryset = Empleado.objects.filter(activo=True)
+        # ✨ EL ARREGLO: Traemos a TODOS por defecto (activos e inactivos)
+        queryset = Empleado.objects.all()
         
         # Filtramos los empleados por Sede o por Negocio
         sede_id = self.request.query_params.get('sede_id')
         negocio_id = self.request.query_params.get('negocio_id')
+        solo_activos = self.request.query_params.get('solo_activos')
         
         if sede_id:
             queryset = queryset.filter(sede_id=sede_id)
         elif negocio_id:
             queryset = queryset.filter(negocio_id=negocio_id)
             
+        # Si desde React mandas ?solo_activos=true, los filtramos
+        if solo_activos == 'true':
+            queryset = queryset.filter(activo=True)
+            
         return queryset
+    
+
     @action(detail=False, methods=['POST'], permission_classes=[AllowAny], url_path='validar_pin')
     def validar_pin(self, request):
         pin_ingresado = request.data.get('pin')
@@ -267,7 +282,7 @@ class SesionCajaViewSet(viewsets.ModelViewSet):
             
         sesion = SesionCaja.objects.filter(sede_id=sede_id, estado='abierta').first()
         if sesion:
-            return Response({'estado': 'abierto', 'fondo': sesion.fondo_inicial})
+            return Response({'estado': 'abierto', 'fondo': sesion.fondo_inicial, 'id': sesion.id})
         return Response({'estado': 'cerrado'})
 
     # ✨ PERMISO AÑADIDO
@@ -286,7 +301,7 @@ class SesionCajaViewSet(viewsets.ModelViewSet):
             fondo_inicial=fondo,
             estado='abierta'
         )
-        return Response({'mensaje': 'Caja abierta con éxito'})
+        return Response({'mensaje': 'Caja abierta con éxito', 'id': sesion.id})
     
     # ✨ CÁLCULO DE DIFERENCIAS DIGITALES
     @action(detail=False, methods=['post'], permission_classes=[AllowAny])
@@ -305,19 +320,21 @@ class SesionCajaViewSet(viewsets.ModelViewSet):
                 return Response({'error': 'No hay caja abierta en esta sede o ya fue cerrada.'}, status=status.HTTP_400_BAD_REQUEST)
 
             pagos_turno = Pago.objects.filter(sesion_caja=sesion)
-            
+            movimientos_turno = MovimientoCaja.objects.filter(sesion_caja=sesion) # ✨ Obtenemos la caja chica
             # ✨ MATEMÁTICA PURA: Usamos Decimal estricto para evitar errores de redondeo de Python
             total_efectivo = pagos_turno.filter(metodo='efectivo').aggregate(Sum('monto'))['monto__sum'] or Decimal('0.00')
             total_yape = pagos_turno.filter(metodo='yape_plin').aggregate(Sum('monto'))['monto__sum'] or Decimal('0.00')
             total_tarjeta = pagos_turno.filter(metodo='tarjeta').aggregate(Sum('monto'))['monto__sum'] or Decimal('0.00')
             total_digital = total_yape + total_tarjeta
 
+            ingresos_caja_chica = movimientos_turno.filter(tipo='ingreso').aggregate(Sum('monto'))['monto__sum'] or Decimal('0.00')
+            egresos_caja_chica = movimientos_turno.filter(tipo='egreso').aggregate(Sum('monto'))['monto__sum'] or Decimal('0.00')
             # Convertimos lo que mandó React a Decimal seguro
             conteo_efectivo = Decimal(str(request.data.get('conteo_efectivo', '0.00')))
             conteo_yape = Decimal(str(request.data.get('conteo_yape', '0.00')))
             conteo_tarjeta = Decimal(str(request.data.get('conteo_tarjeta', '0.00')))
             
-            esperado_efectivo = Decimal(str(sesion.fondo_inicial)) + total_efectivo
+            esperado_efectivo = Decimal(str(sesion.fondo_inicial)) + total_efectivo + ingresos_caja_chica - egresos_caja_chica
             
             diferencia_efectivo = conteo_efectivo - esperado_efectivo
             diferencia_yape = conteo_yape - total_yape
@@ -419,3 +436,76 @@ def configuracion_negocio(request):
     except Negocio.DoesNotExist:
         return Response({'error': 'Negocio no encontrado o inactivo'}, status=status.HTTP_404_NOT_FOUND)
 
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny]) # Para que el POS funcione sin trabas de tokens por ahora
+def registrar_movimiento_caja(request):
+    try:
+        data = request.data
+        sesion_id = data.get('sesion_caja_id')
+        empleado_id = data.get('empleado_id')
+        
+        # Validamos que la sesión exista
+        sesion = SesionCaja.objects.get(id=sesion_id)
+        
+        # Creamos el movimiento (Gasto o Ingreso)
+        movimiento = MovimientoCaja.objects.create(
+            sede=sesion.sede,
+            sesion_caja=sesion,
+            empleado_id=empleado_id,
+            tipo=data.get('tipo'),
+            monto=data.get('monto'),
+            concepto=data.get('concepto')
+        )
+        
+        return Response({
+            'mensaje': 'Movimiento registrado con éxito', 
+            'id': movimiento.id
+        }, status=201)
+        
+    except SesionCaja.DoesNotExist:
+        return Response({'error': 'La sesión de caja no existe.'}, status=404)
+    except Exception as e:
+        return Response({'error': str(e)}, status=400)
+    
+
+class LoginAdministradorView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        # 1. Recibimos el usuario y contraseña desde React
+        username = request.data.get('username')
+        password = request.data.get('password')
+
+        # 2. Le preguntamos a Django si son correctos
+        user = authenticate(username=username, password=password)
+
+        if user is not None:
+            # 3. Buscamos si este usuario es dueño de algún negocio
+            negocio = Negocio.objects.filter(propietario=user).first()
+            
+            if not negocio:
+                return Response(
+                    {'error': 'Este usuario no tiene un negocio asociado.'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # 4. ¡Magia! Generamos el Token de SimpleJWT
+            refresh = RefreshToken.for_user(user)
+
+            # 5. Se lo enviamos a React
+            return Response({
+                'token': str(refresh.access_token),
+                'refresh': str(refresh),
+                'rol': 'Dueño',
+                'negocio_id': negocio.id,
+                'negocio_nombre': negocio.nombre
+            }, status=status.HTTP_200_OK)
+            
+        else:
+            # Si se equivoca de contraseña
+            return Response(
+                {'error': 'Credenciales incorrectas.'}, 
+                status=status.HTTP_401_UNAUTHORIZED
+            )

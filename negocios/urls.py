@@ -7,7 +7,8 @@ router = DefaultRouter()
 
 # Rutas normales (mantienen su queryset original)
 router.register(r'negocios', views.NegocioViewSet)
-router.register(r'sedes', views.SedeViewSet)
+router.register(r'sedes', views.SedeViewSet, basename='sede')
+
 router.register(r'detalles', views.DetalleOrdenViewSet)
 router.register(r'pagos', views.PagoViewSet)
 router.register(r'roles', views.RolViewSet)
@@ -25,4 +26,6 @@ urlpatterns = [
     
     path('negocio/configuracion/', views.configuracion_negocio, name='configuracion_negocio'),
     path('dashboard/metricas/', views.metricas_dashboard, name='metricas_dashboard'),
+    path('movimientos-caja/', views.registrar_movimiento_caja, name='registrar_movimiento_caja'),
+    path('login-admin/', views.LoginAdministradorView.as_view(), name='login-admin'),
 ]

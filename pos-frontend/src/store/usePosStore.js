@@ -1,14 +1,46 @@
 import { create } from 'zustand';
 
 const usePosStore = create((set, get) => ({
-  // 1. ESTADO GLOBAL
+  // ==========================================
+  // ⚙️ 0. CONFIGURACIÓN GLOBAL (EL CEREBRO DEL SAAS)
+  // ==========================================
+  configuracionGlobal: {
+    // Apariencia
+    colorPrimario: '#ff5a1f', 
+    temaFondo: 'dark',
+    numeroYape: '',
+    
+    // Módulos Básicos
+    modulos: {
+      salon: true,       // Mapa de mesas
+      cocina: false,     // KDS
+      delivery: false,   // Pestaña Para Llevar/Delivery
+      inventario: false, // Control de stock
+      clientes: false,   // CRM
+      facturacion: false,// Boletas Sunat
+      
+      // 🚀 MÓDULOS AVANZADOS (Planes Premium)
+      cartaQr: false,    // Menú QR + Cuenta en Vivo
+      botWsp: false,     // Pedidos automáticos por WhatsApp
+      machineLearning: false // Sugerencias inteligentes (Próximamente)
+    }
+  },
+
+  // Acción para sobrescribir la configuración completa al hacer Login o recargar
+  setConfiguracionGlobal: (nuevaConfig) => set({ configuracionGlobal: nuevaConfig }),
+
+
+  // ==========================================
+  // 🛒 1. ESTADO DE OPERACIÓN (CAJA Y CARRITO)
+  // ==========================================
   carrito: [],
-  estadoCaja: 'abierto', // ✨ NUEVO: Para controlar el bloqueo de pantalla si el turno cierra
+  estadoCaja: 'abierto', // Para controlar el bloqueo de pantalla si el turno cierra
 
-  // 2. ACCIONES DE CAJA
-  setEstadoCaja: (nuevoEstado) => set({ estadoCaja: nuevoEstado }), // ✨ NUEVO
+  setEstadoCaja: (nuevoEstado) => set({ estadoCaja: nuevoEstado }),
 
-  // 3. ACCIONES DEL CARRITO (Tu lógica original intacta)
+  // ==========================================
+  // 🍔 2. ACCIONES DEL CARRITO (Toda tu lógica intacta)
+  // ==========================================
   sumarUnidad: (identificadorUnique) => set((state) => {
     const nuevoCarrito = state.carrito.map(item => {
       if (item.cart_id === identificadorUnique) {
@@ -29,7 +61,6 @@ const usePosStore = create((set, get) => ({
       if (notas === '' && (opciones === '' || opciones === '[]')) {
         cartIdUnico = `base_${producto.id}`;
       } else {
-        // ✨ Mantenemos tu lógica de "Firma Única" para agrupar modificados iguales[cite: 14]
         cartIdUnico = `mod_${producto.id}_${notas}_${opciones}`;
       }
     }
@@ -99,7 +130,7 @@ const usePosStore = create((set, get) => ({
           item.cart_id === itemCompleto.cart_id ? itemCompleto : item
       )
   })),
-  // ✨ NUEVA FUNCIÓN: Para editar notas sin clonar el producto
+
   editarNotaItem: (cartIdOriginal, nuevaNota) => set((state) => {
     const index = state.carrito.findIndex(item => item.cart_id === cartIdOriginal);
     if (index === -1) return state;
@@ -107,11 +138,9 @@ const usePosStore = create((set, get) => ({
     const nuevoCarrito = [...state.carrito];
     const itemEditado = { ...nuevoCarrito[index] };
 
-    // 1. Actualizamos la nota
     const notasLimpias = (nuevaNota || '').trim();
     itemEditado.notas_cocina = notasLimpias;
 
-    // 2. Recalculamos su Firma Única para que el sistema no se confunda a futuro
     const opciones = itemEditado.opciones_seleccionadas ? JSON.stringify(itemEditado.opciones_seleccionadas) : '';
     if (notasLimpias === '' && (opciones === '' || opciones === '[]')) {
       itemEditado.cart_id = `base_${itemEditado.id}`;
@@ -119,11 +148,7 @@ const usePosStore = create((set, get) => ({
       itemEditado.cart_id = `mod_${itemEditado.id}_${notasLimpias}_${opciones}`;
     }
 
-    // 3. Reemplazamos el viejo por el nuevo en la misma posición
     nuevoCarrito[index] = itemEditado;
-
-    // (Opcional) Si al cambiar el nombre resulta que ahora es idéntico a OTRO producto 
-    // que ya estaba en el carrito, se quedarán en filas separadas. Para tu TC2, esto está perfecto y funcional.
 
     return { carrito: nuevoCarrito };
   }),
@@ -134,7 +159,9 @@ const usePosStore = create((set, get) => ({
 
   vaciarCarrito: () => set({ carrito: [] }),
 
-  // 4. CÁLCULOS AUTOMÁTICOS[cite: 14]
+  // ==========================================
+  // 🧮 3. CÁLCULOS AUTOMÁTICOS
+  // ==========================================
   obtenerTotalItems: () => {
     const state = get();
     return state.carrito.reduce((total, item) => total + item.cantidad, 0);
@@ -143,7 +170,6 @@ const usePosStore = create((set, get) => ({
   obtenerTotalDinero: () => {
     const state = get();
     return state.carrito.reduce((total, item) => {
-      // Sumamos el precio calculado (con extras) o el base según corresponda[cite: 14]
       const precioParaSumar = item.precio_unitario_calculado !== undefined ? item.precio_unitario_calculado : item.precio;
       return total + (precioParaSumar * item.cantidad);
     }, 0);
