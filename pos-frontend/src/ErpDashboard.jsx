@@ -15,9 +15,11 @@ import {
   crearCategoria,
   actualizarNegocio,
   actualizarEmpleado,
+  
 } from './api/api';
 import api from './api/api';
 import usePosStore from './store/usePosStore';
+import EditorPlanos from './EditorPlanos';
 export default function ErpDashboard({ onVolverAlPos }) {
   const { configuracionGlobal } = usePosStore();
   const tema = configuracionGlobal?.temaFondo || 'dark';
@@ -312,6 +314,7 @@ export default function ErpDashboard({ onVolverAlPos }) {
     const menuItems = [
       { id: 'dashboard', icono: '📊', nombre: 'Ventas en Vivo', show: true },
       { id: 'personal', icono: '👥', nombre: 'Personal y Roles', show: true },
+      { id: 'diseno_salon', icono: '🗺️', nombre: 'Diseño del Salón', show: true },
       // 👇 Estos botones dependen de los interruptores de configuración
       { id: 'crm', icono: '💬', nombre: 'Marketing & CRM', show: modulos.clientes },
       { id: 'inventario', icono: '📦', nombre: 'Inventario (Stock)', show: modulos.inventario },
@@ -444,6 +447,7 @@ export default function ErpDashboard({ onVolverAlPos }) {
           cartaQr: config.modCartaQr,
           botWsp: config.modBotWsp,
           machineLearning: config.modMl
+
         }
       });
       setConfigOriginal(JSON.parse(JSON.stringify(config)));
@@ -1994,6 +1998,11 @@ export default function ErpDashboard({ onVolverAlPos }) {
                 </div>
               </div>
             </div>
+          )}
+
+          {/* ✨ NUEVA VISTA: El Editor de Planos */}
+          {vistaActiva === 'diseno_salon' && (
+            <EditorPlanos />
           )}
 
 

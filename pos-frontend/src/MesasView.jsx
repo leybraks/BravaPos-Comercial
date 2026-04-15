@@ -11,7 +11,6 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
   const { estadoCaja, configuracionGlobal, setConfiguracionGlobal } = usePosStore();
   const tema = configuracionGlobal?.temaFondo || 'dark';
   const colorPrimario = configuracionGlobal?.colorPrimario || '#ff5a1f';
-
   // ✨ 2. LEEMOS LOS TOGGLES (Si no hay config aún, los dejamos undefined para no tomar decisiones apresuradas)
   const modSalonActivo = configuracionGlobal?.modulos?.salon;
   const modLlevarActivo = configuracionGlobal?.modulos?.delivery;
@@ -20,7 +19,10 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
   const [ordenesLlevar, setOrdenesLlevar] = useState([]);
   
   // ✨ 3. LA VISTA INICIAL EMPIEZA VACÍA HASTA SABER QUÉ MODULOS HAY
-  const [vistaLocal, setVistaLocal] = useState(null); 
+  const [vistaLocal, setVistaLocal] = useState('salon'); 
+  const [mostrarPuertaMovil, setMostrarPuertaMovil] = useState(false);
+  const sedeActualId = localStorage.getItem('sede_id');
+  const columnasGrid = parseInt(localStorage.getItem(`columnas_salon_${sedeActualId}`)) || 3;
   const [modoUnir, setModoUnir] = useState(false);
   const [mesaPrincipal, setMesaPrincipal] = useState(null);
   const [triggerRecarga, setTriggerRecarga] = useState(false);
@@ -36,7 +38,6 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
   const [totalVentaRapida, setTotalVentaRapida] = useState(0);
   const [ordenACobrar, setOrdenACobrar] = useState(null);
 
-  const sedeActualId = localStorage.getItem('sede_id');
 
   useEffect(() => {
     async function cargarSalón() {
@@ -74,7 +75,9 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
             estado: estadoFinal,
             unida_a: mesaDB.mesa_principal || null,
             capacidad: mesaDB.capacidad || 4,
-            totalConsumido: ordenDeEstaMesa ? parseFloat(ordenDeEstaMesa.total) : 0 
+            totalConsumido: ordenDeEstaMesa ? parseFloat(ordenDeEstaMesa.total) : 0 ,
+            posicion_x: mesaDB.posicion_x, 
+            posicion_y: mesaDB.posicion_y
           };
         });
 
@@ -160,6 +163,35 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
       setTriggerRecarga(prev => !prev); 
     } catch (error) {
       alert("Hubo un error al intentar entregar el pedido.");
+    }
+  };
+
+  const manejarCierreCajaSeguro = async () => {
+    // 1. Verificamos si hay mesas ocupadas o pedidos para llevar sin pagar
+    const hayMesasOcupadas = mesas.some(mesa => mesa.estado === 'ocupada' || mesa.orden_activa);
+    const hayLlevarPendientes = ordenesLlevar.some(orden => orden.estado_pago !== 'pagado'); 
+
+    if (hayMesasOcupadas || hayLlevarPendientes) {
+      alert("⚠️ ALTO AHÍ: No puedes cerrar el turno. Aún hay mesas ocupadas o pedidos pendientes de cobro.");
+      return;
+    }
+
+    // 2. Pedimos el PIN de seguridad
+    const pinIngresado = window.prompt("Ingrese PIN autorizado para cerrar caja:");
+    if (!pinIngresado) return;
+
+    try {
+      const respuesta = await validarPinEmpleado({ pin: pinIngresado, accion: 'entrar' });
+      const rolIngresado = respuesta.data.rol_nombre;
+      
+      // 3. Verificamos que tenga el rol correcto
+      if (['Cajero', 'Administrador', 'Admin'].includes(rolIngresado)) {
+        setModalCierreAbierto(true); // Abrimos el modal si todo está OK
+      } else {
+        alert("🚫 Tu rol no tiene permisos para cerrar la caja.");
+      }
+    } catch (error) { 
+      alert("❌ PIN incorrecto o empleado inactivo."); 
     }
   };
   // ✨ EL MOTOR DE ARRANQUE ÚNICO Y DEFINITIVO
@@ -344,7 +376,11 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
                 </button>
 
                 {/* BOTÓN CERRAR TURNO (Admin o Cajero) */}
-                <button onClick={() => setModalCierreAbierto(true)} className="w-9 h-9 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl flex items-center justify-center border border-red-500/30 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-all active:scale-95 shrink-0" title="Cerrar Turno">
+                <button 
+                  onClick={manejarCierreCajaSeguro} 
+                  className="w-9 h-9 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl flex items-center justify-center border border-red-500/30 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-all active:scale-95 shrink-0" 
+                  title="Cerrar Turno"
+                >
                   <span className="text-base sm:text-lg">🔒</span>
                 </button>
               </div>
@@ -354,81 +390,177 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
         </div>
       </header>
 
-      {/* VISTA: SALÓN PRINCIPAL */}
-      {vistaLocal === 'salon' && modSalonActivo && (
-        <div className="p-5 flex-1">
-          {modoUnir && (
-            <div className="p-4 rounded-2xl mb-6 text-sm flex items-center gap-3 animate-pulse border" style={{ backgroundColor: `${colorPrimario}1A`, borderColor: `${colorPrimario}4D`, color: colorPrimario }}>
-              <span className="text-xl">🔗</span>
-              <span className="font-semibold">
-                {mesaPrincipal ? `Selecciona la mesa que se unirá a la Mesa ${mesaPrincipal}...` : 'Paso 1: Selecciona la Mesa Principal (la que recibirá la cuenta)...'}
-              </span>
-            </div>
-          )}
-          
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-            {mesasAgrupadas.map((mesa) => {
-              const esOcupada = mesa.estado === 'ocupada';
+      {/* ========================================================= */}
+      {/* VISTA: SALÓN PRINCIPAL (HÍBRIDO: MÓVIL + DESKTOP)           */}
+      {/* ========================================================= */}
+      {vistaLocal === 'salon' && modSalonActivo && (() => {
+        
+        // 🧠 LÓGICA PARA MÓVIL (Con huecos y posiciones exactas)
+        let maxPos = 0;
+        const mapaMesas = {};
+        mesasAgrupadas.forEach((mesa) => {
+          let pos = mesa.posicion_x;
+          if (pos === undefined || pos === null || mapaMesas[pos]) {
+             pos = 0;
+             while(mapaMesas[pos]) pos++; 
+          }
+          mapaMesas[pos] = mesa;
+          if (pos > maxPos) maxPos = pos;
+        });
+
+        const totalCasillas = maxPos + 1;
+        const casillasArray = Array.from({ length: totalCasillas });
+
+        // 🧠 LÓGICA PARA PC (Solo mesas ordenadas, sin huecos)
+        const mesasOrdenadasPC = [...mesasAgrupadas].sort((a, b) => (a.posicion_x || 0) - (b.posicion_x || 0));
+
+        return (
+          <div className="p-4 md:p-5 flex-1 flex flex-col animate-fadeIn">
+            
+            {/* AVISO MODO UNIR MESAS */}
+            {modoUnir && (
+              <div className="p-4 rounded-2xl mb-6 text-sm flex items-center gap-3 animate-pulse border shadow-md" style={{ backgroundColor: `${colorPrimario}1A`, borderColor: `${colorPrimario}4D`, color: colorPrimario }}>
+                <span className="text-xl">🔗</span>
+                <span className="font-bold">
+                  {mesaPrincipal ? `Selecciona la mesa que se unirá a la Mesa ${mesaPrincipal}...` : 'Paso 1: Selecciona la Mesa Principal (la que recibirá la cuenta)...'}
+                </span>
+              </div>
+            )}
+
+            {/* CONTROLES DE LA CUADRÍCULA Y ORIENTACIÓN */}
+            <div className="flex justify-end items-center mb-5">
               
-              // ESTILOS DINÁMICOS POR TEMA
-              let cardStyle = tema === 'dark' ? "bg-[#161616] border-[#2a2a2a] hover:bg-[#1a1a1a]" : "bg-white border-gray-200 shadow-sm hover:shadow-md"; 
-              let badgeStyle = tema === 'dark' ? "bg-[#222222] text-neutral-400" : "bg-gray-100 text-gray-500";
-              let titleStyle = tema === 'dark' ? "text-white" : "text-gray-900";
-              let inlineCardStyle = {};
+              {/* Botón de Puerta (Visible en todas las pantallas) */}
+              <button 
+                onClick={() => setMostrarPuertaMovil(!mostrarPuertaMovil)}
+                className="text-[10px] font-black uppercase tracking-widest px-4 py-2.5 rounded-lg border transition-all active:scale-95 w-full sm:w-auto shadow-sm"
+                style={mostrarPuertaMovil 
+                  ? { backgroundColor: colorPrimario, color: 'white', borderColor: colorPrimario } 
+                  : { backgroundColor: `${colorPrimario}1A`, color: colorPrimario, borderColor: `${colorPrimario}40` }
+                }
+              >
+                {mostrarPuertaMovil ? 'Ocultar Orientación' : '📍 Activar Orientación'}
+              </button>
+            </div>
 
-              if (esOcupada) {
-                cardStyle = ""; // Se limpia para usar estilos inline con tu color
-                inlineCardStyle = {
-                  backgroundColor: tema === 'dark' ? `${colorPrimario}0D` : `${colorPrimario}0A`, // Opacidad baja
-                  borderColor: `${colorPrimario}60`, // Borde semi-transparente
-                  boxShadow: `0 4px 20px ${colorPrimario}10`
-                };
-                badgeStyle = "";
-              }
-              if (modoUnir && mesaPrincipal === mesa.id) {
-                cardStyle = "scale-105 z-10 text-white";
-                inlineCardStyle = { backgroundColor: colorPrimario, borderColor: colorPrimario, boxShadow: `0 10px 30px ${colorPrimario}60` };
-                badgeStyle = "bg-white/20 text-white";
-                titleStyle = "text-white";
-              }
+            {/* Marcador de Puerta (Visible en todas las pantallas) */}
+            {mostrarPuertaMovil && (
+              <div className={`w-full py-3 rounded-xl mb-4 text-[10px] font-black text-center uppercase tracking-[0.2em] shadow-inner border border-dashed ${tema === 'dark' ? 'bg-[#1a1a1a] text-neutral-500 border-[#333]' : 'bg-gray-100 text-gray-400 border-gray-300'}`}>
+                Entrada Principal 🚪
+              </div>
+            )}
 
-              return (
-                <button 
-                  key={mesa.id} 
-                  onClick={() => manejarClickMesa(mesa)} 
-                  style={inlineCardStyle}
-                  className={`border-[1.5px] rounded-3xl p-4 flex flex-col transition-all active:scale-95 text-left h-44 relative ${cardStyle} ${mesa.esGigante ? 'col-span-2' : ''}`}
-                >
-                  <div className="flex justify-between items-start w-full mb-2">
-                    <div className="flex gap-2">
-                      <span className={`text-[10px] font-black px-2.5 py-1.5 rounded-lg uppercase tracking-widest ${badgeStyle}`} style={esOcupada && !modoUnir ? { backgroundColor: `${colorPrimario}20`, color: colorPrimario } : {}}>
-                        {mesa.esGigante ? 'GRUPO' : mesa.estado}
-                      </span>
-                      
-                      {mesa.esGigante && !modoUnir && (
-                        <button onClick={(e) => { e.stopPropagation(); separarMesas(mesa.id); }} className="text-[10px] font-black px-2 py-1.5 rounded-lg bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500 hover:text-white transition-colors z-20">
-                          SEPARAR ✂️
-                        </button>
-                      )}
+            {/* ========================================== */}
+            {/* 📱 GRID MÓVIL (Con Huecos)                   */}
+            {/* ========================================== */}
+            <div 
+              className="grid gap-3 pb-10 md:hidden" 
+              style={{ gridTemplateColumns: `repeat(${columnasGrid}, minmax(0, 1fr))` }}
+            >
+              {casillasArray.map((_, index) => {
+                const mesa = mapaMesas[index];
+
+                // Hueco invisible
+                if (!mesa) return <div key={`hueco-${index}`} className="h-32 sm:h-36 rounded-2xl border-2 border-dashed border-transparent"></div>;
+
+                const esOcupada = mesa.estado === 'ocupada';
+                let cardStyle = tema === 'dark' ? "bg-[#161616] border-[#2a2a2a] active:bg-[#1a1a1a]" : "bg-white border-gray-200 shadow-sm active:bg-gray-50"; 
+                let badgeStyle = tema === 'dark' ? "bg-[#222222] text-neutral-400" : "bg-gray-100 text-gray-500";
+                let titleStyle = tema === 'dark' ? "text-white" : "text-gray-900";
+                let inlineCardStyle = {};
+
+                if (esOcupada) {
+                  cardStyle = ""; 
+                  inlineCardStyle = { backgroundColor: tema === 'dark' ? `${colorPrimario}0D` : `${colorPrimario}0A`, borderColor: `${colorPrimario}60` };
+                  badgeStyle = "";
+                }
+                if (modoUnir && mesaPrincipal === mesa.id) {
+                  cardStyle = "text-white scale-[1.02] z-10";
+                  inlineCardStyle = { backgroundColor: colorPrimario, borderColor: colorPrimario, boxShadow: `0 4px 15px ${colorPrimario}4D` };
+                  badgeStyle = "bg-white/20 text-white";
+                  titleStyle = "text-white";
+                }
+
+                return (
+                  <button key={`movil-${mesa.id}`} onClick={() => manejarClickMesa(mesa)} style={inlineCardStyle} className={`border-[1.5px] rounded-3xl p-3.5 flex flex-col active:scale-95 text-left h-32 sm:h-36 relative transition-all ${cardStyle} ${mesa.esGigante ? 'col-span-2' : ''}`}>
+                    <div className="flex justify-between items-start w-full mb-1">
+                      <div className="flex gap-1.5 flex-wrap">
+                        <span className={`text-[9px] font-black px-2 py-1 rounded-md uppercase tracking-widest ${badgeStyle}`} style={esOcupada && !modoUnir ? { backgroundColor: `${colorPrimario}20`, color: colorPrimario } : {}}>
+                          {mesa.esGigante ? 'GRUPO' : mesa.estado}
+                        </span>
+                        {mesa.esGigante && !modoUnir && (
+                          <button onClick={(e) => { e.stopPropagation(); separarMesas(mesa.id); }} className="text-[9px] font-black px-2 py-1 rounded-md bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500 hover:text-white transition-colors z-20">✂️</button>
+                        )}
+                      </div>
+                      {esOcupada && !modoUnir && <span style={{ color: colorPrimario }} className="opacity-70 text-sm">🍴</span>}
                     </div>
-                    {esOcupada && !modoUnir && <span style={{ color: colorPrimario }} className="opacity-50 text-sm">🍴</span>}
-                  </div>
-                  
-                  <div className="flex-1 flex items-center justify-center w-full">
-                    <h3 className={`font-black tracking-tight ${mesa.esGigante ? 'text-4xl' : 'text-3xl'} ${titleStyle}`}>
-                      {mesa.esGigante ? mesa.mesasInvolucradas.join(' + ') : `Mesa ${mesa.numero}`}
-                    </h3>
-                  </div>
-                  <div className={`w-full flex justify-center items-center gap-1.5 mt-2 ${modoUnir && mesaPrincipal === mesa.id ? 'text-white/80' : (tema === 'dark' ? 'text-neutral-500' : 'text-gray-400')}`}>
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
-                    <span className="text-[11px] font-bold">{mesa.capacidadTotal || mesa.capacidad} personas</span>
-                  </div>
-                </button>
-              );
-            })}
+                    <div className="flex-1 flex items-center justify-center w-full">
+                      <h3 className={`font-black tracking-tight leading-none ${mesa.esGigante ? 'text-2xl' : 'text-xl'} ${titleStyle}`}>
+                        {mesa.esGigante ? mesa.mesasInvolucradas.join(' + ') : mesa.numero}
+                      </h3>
+                    </div>
+                    <div className={`w-full flex justify-center items-center gap-1 mt-1 ${modoUnir && mesaPrincipal === mesa.id ? 'text-white/80' : (tema === 'dark' ? 'text-neutral-500' : 'text-gray-400')}`}>
+                      <span className="text-[10px] font-bold">👥 {mesa.capacidadTotal || mesa.capacidad} pax</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* ========================================== */}
+            {/* 💻 GRID PC (Lineal, sin huecos)              */}
+            {/* ========================================== */}
+            <div className="hidden md:grid grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 pb-10">
+              {mesasOrdenadasPC.map((mesa) => {
+                const esOcupada = mesa.estado === 'ocupada';
+                let cardStyle = tema === 'dark' ? "bg-[#161616] border-[#2a2a2a] hover:bg-[#1a1a1a]" : "bg-white border-gray-200 shadow-sm hover:shadow-md"; 
+                let badgeStyle = tema === 'dark' ? "bg-[#222222] text-neutral-400" : "bg-gray-100 text-gray-500";
+                let titleStyle = tema === 'dark' ? "text-white" : "text-gray-900";
+                let inlineCardStyle = {};
+
+                if (esOcupada) {
+                  cardStyle = ""; 
+                  inlineCardStyle = { backgroundColor: tema === 'dark' ? `${colorPrimario}0D` : `${colorPrimario}0A`, borderColor: `${colorPrimario}60`, boxShadow: `0 4px 20px ${colorPrimario}10` };
+                  badgeStyle = "";
+                }
+
+                if (modoUnir && mesaPrincipal === mesa.id) {
+                  cardStyle = "scale-105 z-10 text-white";
+                  inlineCardStyle = { backgroundColor: colorPrimario, borderColor: colorPrimario, boxShadow: `0 10px 30px ${colorPrimario}60` };
+                  badgeStyle = "bg-white/20 text-white";
+                  titleStyle = "text-white";
+                }
+
+                return (
+                  <button key={`pc-${mesa.id}`} onClick={() => manejarClickMesa(mesa)} style={inlineCardStyle} className={`border-[1.5px] rounded-3xl p-4 flex flex-col transition-all active:scale-95 text-left h-40 relative ${cardStyle} ${mesa.esGigante ? 'col-span-2' : ''}`}>
+                    <div className="flex justify-between items-start w-full mb-2">
+                      <div className="flex gap-2 flex-wrap">
+                        <span className={`text-[10px] font-black px-2.5 py-1.5 rounded-lg uppercase tracking-widest ${badgeStyle}`} style={esOcupada && !modoUnir ? { backgroundColor: `${colorPrimario}20`, color: colorPrimario } : {}}>
+                          {mesa.esGigante ? 'GRUPO' : mesa.estado}
+                        </span>
+                        {mesa.esGigante && !modoUnir && (
+                          <button onClick={(e) => { e.stopPropagation(); separarMesas(mesa.id); }} className="text-[10px] font-black px-2 py-1.5 rounded-lg bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500 hover:text-white transition-colors z-20">✂️</button>
+                        )}
+                      </div>
+                      {esOcupada && !modoUnir && <span style={{ color: colorPrimario }} className="opacity-50 text-sm">🍴</span>}
+                    </div>
+                    <div className="flex-1 flex items-center justify-center w-full">
+                      <h3 className={`font-black tracking-tight ${mesa.esGigante ? 'text-4xl' : 'text-3xl'} ${titleStyle}`}>
+                        {mesa.esGigante ? mesa.mesasInvolucradas.join(' + ') : `Mesa ${mesa.numero}`}
+                      </h3>
+                    </div>
+                    <div className={`w-full flex justify-center items-center gap-1.5 mt-2 ${modoUnir && mesaPrincipal === mesa.id ? 'text-white/80' : (tema === 'dark' ? 'text-neutral-500' : 'text-gray-400')}`}>
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                      <span className="text-[11px] font-bold">{mesa.capacidadTotal || mesa.capacidad} pax</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* VISTA: PARA LLEVAR */}
       {vistaLocal === 'llevar' && modLlevarActivo && (

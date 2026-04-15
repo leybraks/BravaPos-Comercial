@@ -73,6 +73,14 @@ class Mesa(models.Model):
     activo = models.BooleanField(default=True)
     objects = ActivoManager()
     all_objects = models.Manager()
+
+    posicion_x = models.IntegerField(default=0)
+    posicion_y = models.IntegerField(default=0)
+    
+    # Opcional: Para distinguir formas
+    ESQUEMA_CHOICES = [('circular', 'Circular'), ('cuadrada', 'Cuadrada')]
+    forma = models.CharField(max_length=20, choices=ESQUEMA_CHOICES, default='cuadrada')
+
     class Meta:
         unique_together = ('sede', 'numero_o_nombre')
     def __str__(self):

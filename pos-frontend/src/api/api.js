@@ -58,7 +58,14 @@ export const cerrarCaja = (data) => api.post('/sesiones_caja/cerrar_caja/', { ..
 
 // --- VISTAS PRINCIPALES ---
 export const getProductos = () => api.get(`/productos/?negocio_id=${getNegocioId()}`);
-export const getMesas = () => api.get(`/mesas/?sede_id=${getSedeId()}`);
+// ✨ API INTELIGENTE: Prioriza el parámetro, sino usa la memoria
+export const getMesas = (params = {}) => {
+    // Si la función recibe un sede_id (como en el Editor), usa ese. 
+    // Si no recibe nada (como en el POS), saca el de la tablet.
+    const sedeIdFinal = params.sede_id || localStorage.getItem('sede_id');
+    
+    return api.get(`/mesas/?sede_id=${sedeIdFinal}`);
+};
 export const getOrdenes = () => api.get(`/ordenes/?sede_id=${getSedeId()}`);
 
 // --- OPERACIONES CON ORDEN Y MESA ---
@@ -89,5 +96,6 @@ export const parchearCategoria = (id, data) => api.patch(`/categorias/${id}/`, d
 export const actualizarNegocio = (id, data) => api.patch(`/negocios/${id}/`, data);
 export const getNegocio = (id) => api.get(`/negocios/${id}/`);
 export const actualizarEmpleado = (id, data) => api.patch(`/empleados/${id}/`, data);
+export const crearMesa = (data) => api.post('/mesas/', data);
 // (Ajusta la URL si en tu Django la llamaste diferente)
 export default api;
