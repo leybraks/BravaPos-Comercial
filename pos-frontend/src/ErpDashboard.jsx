@@ -309,7 +309,8 @@ export default function ErpDashboard({ onVolverAlPos }) {
     const { configuracionGlobal } = usePosStore();
     const colorPrimario = configuracionGlobal?.colorPrimario || '#ff5a1f';
     const modulos = configuracionGlobal?.modulos || {};
-
+    const rolUsuario = localStorage.getItem('rol_usuario'); 
+    const esDueño = rolUsuario === 'Dueño';
     // 2. Creamos la lista y la filtramos mágicamente
     const menuItems = [
       { id: 'dashboard', icono: '📊', nombre: 'Ventas en Vivo', show: true },
@@ -322,7 +323,7 @@ export default function ErpDashboard({ onVolverAlPos }) {
       { id: 'carta_qr', icono: '📱', nombre: 'Carta QR + Cuenta en Vivo', show: modulos.cartaQr },
       { id: 'bot_wsp', icono: '🤖', nombre: 'Bot de WhatsApp', show: modulos.botWsp},
       { id: 'facturacion', icono: '🧾', nombre: 'Facturación Electrónica', show: modulos.facturacion },
-      { id: 'config', icono: '⚙️', nombre: 'Configuraciones', show: true },
+      ...(esDueño ? [{ id: 'config', nombre: 'Configuración Global', icono: '⚙️' }] : [])
     ].filter(item => item.show); // <--- Esto elimina los ocultos
 
     return (

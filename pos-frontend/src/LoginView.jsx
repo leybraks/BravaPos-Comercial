@@ -85,7 +85,7 @@ export default function LoginView({ onAccesoConcedido }) {
       const empleado = respuesta.data;
       localStorage.setItem('empleado_id', empleado.id);
       localStorage.setItem('empleado_nombre', empleado.nombre);
-
+      localStorage.setItem('rol_usuario', empleado.rol_nombre); // ✨ ¡Agrega esta línea vital!
       if (accion === 'asistencia') {
         alert(`🕒 Asistencia: ${empleado.nombre}`); setPin(''); return;
       }

@@ -14,7 +14,7 @@ export default function EditorPlanos() {
   const [columnas, setColumnas] = useState(3);
   const [guardando, setGuardando] = useState(false);
   const [mesaArrastradaId, setMesaArrastradaId] = useState(null);
-  
+  const rolUsuario = localStorage.getItem('rol_usuario');
   const [modalNuevaMesa, setModalNuevaMesa] = useState(false);
   const [formMesa, setFormMesa] = useState({ numero: '', capacidad: 4 });
   const [creando, setCreando] = useState(false);
@@ -163,37 +163,33 @@ export default function EditorPlanos() {
     <div className="flex flex-col h-full animate-fadeIn max-w-2xl mx-auto p-4 md:p-0">
       
       {/* 🏢 SELECTOR DE SEDES */}
-      {sedes.length > 1 && (
-        <div className="mb-6 flex items-center gap-3">
-          <span className={`text-[10px] font-black uppercase tracking-widest ${tema === 'dark' ? 'text-neutral-500' : 'text-gray-500'}`}>Editando Sede:</span>
-          <select 
-            value={sedeActivaId} 
-            onChange={(e) => setSedeActivaId(e.target.value)}
-            className={`border rounded-xl px-4 py-2 text-sm font-bold outline-none transition-colors ${tema === 'dark' ? 'bg-[#1a1a1a] border-[#333] text-white focus:border-[#ff5a1f]' : 'bg-white border-gray-300 text-gray-900 focus:border-[#ff5a1f]'}`}
-          >
-            {sedes.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
-          </select>
-        </div>
-      )}
+
 
       {/* 📋 CABECERA */}
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end mb-6 gap-4">
-        <div>
-          <h2 className={`text-2xl font-black uppercase tracking-tighter ${tema === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-            Diseño de <span style={{ color: colorPrimario }}>Local</span>
-          </h2>
-          <p className={`text-[10px] sm:text-xs font-bold uppercase tracking-widest mt-1 ${tema === 'dark' ? 'text-neutral-500' : 'text-gray-500'}`}>
-            Arrastra para crear pasillos y ordenar
-          </p>
-        </div>
-        <div className="flex gap-2 w-full sm:w-auto">
-          <button onClick={() => setModalNuevaMesa(true)} className={`flex-1 sm:flex-none px-4 py-3 rounded-xl font-black text-sm uppercase shadow-sm active:scale-95 transition-all border ${tema === 'dark' ? 'bg-[#1a1a1a] text-neutral-300 border-[#333] hover:text-white' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}>
-            + Mesa
-          </button>
-          <button onClick={guardarCambios} disabled={guardando} style={{ backgroundColor: colorPrimario }} className="flex-1 sm:flex-none px-6 py-3 rounded-xl text-white font-black text-sm uppercase shadow-lg active:scale-95 disabled:opacity-50">
-            {guardando ? '...' : 'Guardar'}
-          </button>
-        </div>
+      {/* 🏢 SELECTOR DE SEDES & MODO LECTURA */}
+      <div className="mb-6 flex items-center gap-3">
+        <span className={`text-[10px] font-black uppercase tracking-widest ${tema === 'dark' ? 'text-neutral-500' : 'text-gray-500'}`}>
+          {rolUsuario === 'Dueño' ? 'Editando Sede:' : 'Sede Asignada:'}
+        </span>
+        
+        {rolUsuario === 'Dueño' ? (
+          sedes.length > 1 ? (
+            <select 
+              value={sedeActivaId} 
+              onChange={(e) => setSedeActivaId(e.target.value)} // ✨ Bug corregido (antes decía cambiarSede)
+              className={`border p-2 rounded-xl focus:outline-none font-bold transition-colors ${tema === 'dark' ? 'bg-[#111] text-white border-[#333] focus:border-[#ff5a1f]' : 'bg-white text-gray-900 border-gray-300 focus:border-[#ff5a1f]'}`}
+            >
+              {sedes.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+            </select>
+          ) : (
+            <span className={`font-black text-sm ${tema === 'dark' ? 'text-white' : 'text-gray-900'}`}>{sedes[0]?.nombre || 'Principal'}</span>
+          )
+        ) : (
+          <div className={`border px-4 py-2 rounded-xl text-sm font-black shadow-inner flex items-center gap-2 ${tema === 'dark' ? 'bg-[#111] text-white border-[#222]' : 'bg-gray-100 text-gray-800 border-gray-200'}`}>
+            📍 {localStorage.getItem('sede_nombre') || 'Sede Actual'}
+            <span className="text-[8px] bg-[#e0155b] text-white px-2 py-0.5 rounded-full uppercase tracking-widest ml-2">Bloqueado</span>
+          </div>
+        )}
       </div>
 
       {/* ⚙️ CONTROLES */}
