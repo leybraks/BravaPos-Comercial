@@ -42,24 +42,39 @@ export default function LoginView({ onAccesoConcedido }) {
   const handleLoginSubmit = async (e, destino) => {
     e.preventDefault();
     setLoadingAuth(true);
+    
     try {
       const res = await loginAdministrador({ username: email, password: password });
       console.log("🔥 RESPUESTA DE DJANGO:", res.data);
+      
+      // 1. Guardamos solo los datos globales de conexión
       localStorage.setItem('tablet_token', res.data.token);
-      localStorage.setItem('rol_usuario', res.data.rol || 'Dueño'); 
       localStorage.setItem('negocio_id', res.data.negocio_id);
 
       if (destino === 'erp') {
-         onAccesoConcedido('erp_admin'); 
+         // 👑 CAMINO A: El Jefe va a su oficina
+         // Aquí SÍ guardamos el rol para que App.jsx te deje pasar
+         const rolAsignado = res.data.rol || 'Dueño';
+         localStorage.setItem('rol_usuario', rolAsignado); 
+         onAccesoConcedido(rolAsignado); 
+         
       } else {
+         // 🔒 CAMINO B: Vinculando tablet para el local
+         // Borramos cualquier rastro de poderes especiales
+         localStorage.removeItem('rol_usuario'); 
+         localStorage.removeItem('empleado_id');
+
          const sedesRes = await getSedes();
          setSedesDisponibles(sedesRes.data);
          if (sedesRes.data.length > 0) setSedeSeleccionada(sedesRes.data[0].id); 
          setModo('setup_sede');
       }
+      
     } catch (error) {
       alert('❌ Error: Credenciales incorrectas.');
-    } finally { setLoadingAuth(false); }
+    } finally { 
+      setLoadingAuth(false); 
+    }
   };
 
   const handleGoogleLogin = (destino) => alert("🚀 Google Sign-In Próximamente...");

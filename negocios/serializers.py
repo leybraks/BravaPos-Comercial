@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from .models import (
-    Negocio, PlanSaaS, Sede, Mesa, Producto, Orden, DetalleOrden, Pago,
+    InsumoBase, InsumoSede, Negocio, PlanSaaS, Sede, Mesa, Producto, Orden, DetalleOrden, Pago,
     ModificadorRapido, GrupoVariacion, OpcionVariacion, Rol, Empleado, SesionCaja,
     DetalleOrdenOpcion , Categoria
 )
@@ -168,4 +168,20 @@ class SesionCajaSerializer(serializers.ModelSerializer):
 class CategoriaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Categoria
+        fields = '__all__'
+
+
+# En serializers.py
+class InsumoBaseSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = InsumoBase
+        fields = '__all__'
+
+class InsumoSedeSerializer(serializers.ModelSerializer):
+    # Traemos el nombre del insumo base para que React lo vea fácil
+    nombre_insumo = serializers.ReadOnlyField(source='insumo_base.nombre')
+    unidad_medida = serializers.ReadOnlyField(source='insumo_base.unidad_medida')
+
+    class Meta:
+        model = InsumoSede
         fields = '__all__'

@@ -8,6 +8,7 @@ from django.db import models
 from django.contrib.auth import authenticate
 from django.db import transaction
 from decimal import Decimal
+from django.db.models import F
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.db.models import Sum
@@ -17,10 +18,10 @@ from rest_framework.decorators import action , permission_classes,api_view
 import time 
 from rest_framework.permissions import IsAuthenticated
 from .permissions import EsDuenioOsoloLectura
-from .models import (GrupoVariacion, Negocio, Sede, Mesa, Producto, Orden, DetalleOrden, Pago, ModificadorRapido,DetalleOrdenOpcion, 
+from .models import (GrupoVariacion, InsumoBase, InsumoSede, Negocio, Sede, Mesa, Producto, Orden, DetalleOrden, Pago, ModificadorRapido,DetalleOrdenOpcion, 
 GrupoVariacion, OpcionVariacion,MovimientoCaja, Rol, Empleado, SesionCaja, Categoria)
 from .serializers import (
-    NegocioSerializer, SedeSerializer, MesaSerializer,
+    InsumoBaseSerializer, InsumoSedeSerializer, NegocioSerializer, SedeSerializer, MesaSerializer,
     ProductoSerializer, ModificadorRapidoSerializer, GrupoVariacionSerializer, OpcionVariacionSerializer,
     OrdenSerializer, DetalleOrdenSerializer, PagoSerializer, RolSerializer, EmpleadoSerializer, SesionCajaSerializer, CategoriaSerializer
 )
@@ -595,3 +596,104 @@ class LoginAdministradorView(APIView):
                 {'error': 'Credenciales incorrectas.'}, 
                 status=status.HTTP_401_UNAUTHORIZED
             )
+        
+
+class InsumoBaseViewSet(viewsets.ModelViewSet):
+    queryset = InsumoBase.objects.all()
+    serializer_class = InsumoBaseSerializer
+
+class InsumoSedeViewSet(viewsets.ModelViewSet):
+    serializer_class = InsumoSedeSerializer
+
+    def get_queryset(self):
+        sede_id = self.request.query_params.get('sede_id')
+        if sede_id:
+            return InsumoSede.objects.filter(sede_id=sede_id)
+        return InsumoSede.objects.none()
+
+
+# negocios/views.py o un archivo de servicios
+
+def registrar_ingreso_maestro(insumo_base_id, reparticion):
+    """
+    'reparticion' es un objeto como: { 1: 50, 2: 50 } 
+    donde la clave es la sede_id y el valor es la cantidad.
+    """
+    insumo_base = InsumoBase.objects.get(id=insumo_base_id)
+    
+    for sede_id, cantidad in reparticion.items():
+        # ✨ get_or_create: Si no existe en la sede, lo crea. Si existe, lo trae.
+        obj, created = InsumoSede.objects.get_or_create(
+            insumo_base=insumo_base,
+            sede_id=sede_id,
+            defaults={'stock_actual': 0, 'stock_minimo': 5}
+        )
+        
+        # Actualizamos el stock (usando F para evitar errores de concurrencia)
+        from django.db.models import F
+        InsumoSede.objects.filter(id=obj.id).update(
+            stock_actual=F('stock_actual') + cantidad
+        )
+
+class InsumoSedeViewSet(viewsets.ModelViewSet):
+    serializer_class = InsumoSedeSerializer
+
+    def get_queryset(self):
+        sede_id = self.request.query_params.get('sede_id')
+        if sede_id:
+            return InsumoSede.objects.filter(sede_id=sede_id)
+        return InsumoSede.objects.none()
+
+    @action(detail=False, methods=['post'])
+    def ingreso_masivo(self, request):
+        try:
+            insumo_base_id = request.data.get('insumo_base_id')
+            if not insumo_base_id:
+                return Response({"error": "Falta el ID del insumo."}, status=400)
+
+            # 1. Obtenemos el insumo
+            insumo_base = InsumoBase.objects.get(id=insumo_base_id)
+            
+            # 2. Hacemos la matemática en Python (números reales, nada de fórmulas aún)
+            stock_actual_matriz = float(insumo_base.stock_general)
+            nuevo_ingreso = float(request.data.get('ingreso_global', 0) or 0)
+            
+            # Proyectamos cuánto habría en la Matriz antes de repartir
+            stock_proyectado_matriz = stock_actual_matriz + nuevo_ingreso
+            
+            # Calculamos cuánto queremos repartir a los locales
+            distribucion = request.data.get('distribucion', {})
+            total_a_repartir = sum(float(v) for v in distribucion.values() if v and float(v) > 0)
+
+            # 3. Seguro de Vida: ¿Nos alcanza? (Aquí comparamos Float vs Float, 100% seguro)
+            if total_a_repartir > stock_proyectado_matriz:
+                raise ValueError(f"No hay suficiente stock. Quieres repartir {total_a_repartir}, pero solo tendrás {stock_proyectado_matriz} en Matriz.")
+
+            # 4. Transacción atómica (Guardamos todo a la vez)
+            with transaction.atomic():
+                
+                # Actualizamos la Matriz (Lo que había + lo nuevo - lo repartido)
+                insumo_base.stock_general = stock_proyectado_matriz - total_a_repartir
+                insumo_base.save()
+
+                # Repartimos a las sedes (Aquí sí usamos F() porque no necesitamos leer el valor inmediatamente)
+                for sede_id_str, cantidad in distribucion.items():
+                    cant_float = float(cantidad) if cantidad else 0.0
+                    if cant_float > 0:
+                        obj, created = InsumoSede.objects.get_or_create(
+                            insumo_base=insumo_base,
+                            sede_id=int(sede_id_str),
+                            defaults={'stock_actual': 0, 'stock_minimo': 5, 'costo_unitario': 0}
+                        )
+                        InsumoSede.objects.filter(id=obj.id).update(
+                            stock_actual=F('stock_actual') + cant_float
+                        )
+            
+            return Response({"mensaje": "Operación logística completada."})
+            
+        except InsumoBase.DoesNotExist:
+            return Response({"error": "El insumo maestro no existe."}, status=400)
+        except ValueError as e:
+            return Response({"error": str(e)}, status=400)
+        except Exception as e:
+            return Response({"error": str(e)}, status=400)

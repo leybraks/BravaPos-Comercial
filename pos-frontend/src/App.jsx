@@ -33,16 +33,22 @@ export default function App() {
       {/* 1. LOGIN / VINCULACIÓN */}
       {vista === 'login' && (
         <LoginView 
-          onAccesoConcedido={(rol) => {
-            setRolUsuario(rol);
+          onAccesoConcedido={(rolDesdeLogin) => {
+            // 🕵️‍♂️ EL TRUCO: Leemos directamente de la memoria por si el componente olvidó mandarlo
+            const rolReal = localStorage.getItem('rol_usuario') || rolDesdeLogin || '';
             
-            // 🚦 EL NUEVO SEMÁFORO DE RUTAS 🚦
-            if (rol === 'Dueño') {
-              setVista('erp'); // 👑 El Dueño va directo a su panel
-            } else if (rol === 'Cocinero' || rol === 'Cocina') {
-              setVista('cocina'); // 🍳 La cocina va a sus comandas
+            setRolUsuario(rolReal);
+            
+            // Lo limpiamos para evitar errores de espacios o mayúsculas
+            const rolLimpio = rolReal.toLowerCase().trim();
+            
+            // 🚦 EL SEMÁFORO BLINDADO 🚦
+            if (rolLimpio === 'dueño') {
+              setVista('erp'); // 👑 Pasa directo a su oficina
+            } else if (rolLimpio === 'cocinero' || rolLimpio === 'cocina') {
+              setVista('cocina');
             } else {
-              setVista('mesas'); // 🤵 Meseros y Admins van al salón
+              setVista('mesas');
             }
           }} 
         />

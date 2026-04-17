@@ -20,6 +20,7 @@ import {
 import api from './api/api';
 import usePosStore from './store/usePosStore';
 import EditorPlanos from './EditorPlanos';
+import InventarioView from './InventarioView';
 export default function ErpDashboard({ onVolverAlPos }) {
   const { configuracionGlobal } = usePosStore();
   const tema = configuracionGlobal?.temaFondo || 'dark';
@@ -712,6 +713,43 @@ export default function ErpDashboard({ onVolverAlPos }) {
     });
   };
   
+  function SedeSelector({ alCambiarSede }) {
+    const [sedes, setSedes] = useState([]);
+    const [sedeActual, setSedeActual] = useState(localStorage.getItem('sede_id') || '');
+
+    useEffect(() => {
+      async function cargarSedes() {
+        const res = await getSedes();
+        setSedes(res.data);
+        if (!localStorage.getItem('sede_id') && res.data.length > 0) {
+          cambiarSede(res.data[0].id);
+        }
+      }
+      cargarSedes();
+    }, []);
+
+    const cambiarSede = (id) => {
+      localStorage.setItem('sede_id', id);
+      setSedeActual(id);
+      if (alCambiarSede) alCambiarSede(id);
+      window.location.reload(); 
+    };
+
+    return (
+      <div className="flex items-center gap-3 bg-[#111] p-2 rounded-2xl border border-[#222]">
+        <span className="text-xs font-black text-neutral-500 uppercase ml-2">Sede:</span>
+        <select 
+          value={sedeActual} 
+          onChange={(e) => cambiarSede(e.target.value)}
+          className="bg-transparent text-white font-bold text-sm focus:outline-none cursor-pointer"
+        >
+          {sedes.map(s => (
+            <option key={s.id} value={s.id} className="bg-[#111]">{s.nombre}</option>
+          ))}
+        </select>
+      </div>
+    );
+  }
   return (
     
     <div className={`min-h-screen font-sans flex transition-colors duration-500 ${config.temaFondo === 'dark' ? 'bg-[#0a0a0a] text-neutral-100' : 'bg-[#f0f0f0] text-neutral-900'}`}>
@@ -1830,98 +1868,7 @@ export default function ErpDashboard({ onVolverAlPos }) {
 
           {/* ======================= VISTA: INVENTARIO ======================= */}
           {vistaActiva === 'inventario' && (
-            <div className="animate-fadeIn space-y-6 max-w-5xl mx-auto">
-              
-              {/* CABECERA */}
-              <div className="flex justify-between items-end">
-                <div>
-                  <h3 className={`text-2xl font-black ${
-                    config.temaFondo === 'dark' ? 'text-white' : 'text-gray-900'
-                  }`}>
-                    Insumos y Stock
-                  </h3>
-                  <p className={`text-sm ${
-                    config.temaFondo === 'dark' ? 'text-neutral-500' : 'text-gray-500'
-                  }`}>
-                    Controla las mermas y asegura que no falte mercancía.
-                  </p>
-                </div>
-                <button 
-                  style={{ backgroundColor: config.colorPrimario }}
-                  className="text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:brightness-110 transition-colors"
-                >
-                  + Ingresar Compra (Factura)
-                </button>
-              </div>
-
-              {/* TARJETAS DE INSUMOS */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {[
-                  { n: 'Pan de Hamburguesa', q: '12 Unidades', st: 'Bajo', color: 'red' },
-                  { n: 'Carne Molida (Res)', q: '15.5 Kg', st: 'Óptimo', color: 'gray' },
-                  { n: 'Cerveza Pilsen', q: '4 Cajas', st: 'Alerta', color: 'yellow' },
-                ].map((ins, i) => (
-                  <div 
-                    key={i} 
-                    className={`p-6 rounded-3xl border relative overflow-hidden transition-all ${
-                      config.temaFondo === 'dark'
-                        ? `border-${ins.color}-500/50 bg-${ins.color}-500/5`
-                        : 'border-gray-200 bg-white shadow-sm'
-                    }`}
-                  >
-                    <p className={`text-xs font-bold uppercase tracking-widest mb-1 ${
-                      config.temaFondo === 'dark' ? 'text-neutral-500' : 'text-gray-500'
-                    }`}>
-                      {ins.st}
-                    </p>
-                    <h4 className={`text-xl font-black ${
-                      config.temaFondo === 'dark' ? 'text-white' : 'text-gray-900'
-                    }`}>
-                      {ins.n}
-                    </h4>
-                    <p className={`text-3xl font-mono mt-3 font-bold ${
-                      config.temaFondo === 'dark' ? 'text-white' : 'text-gray-800'
-                    }`}>
-                      {ins.q}
-                    </p>
-                  </div>
-                ))}
-              </div>
-
-              {/* INFO ESCANDALLO */}
-              <div className={`rounded-3xl p-6 flex items-start gap-4 border ${
-                config.temaFondo === 'dark'
-                  ? 'bg-[#111] border-[#222]'
-                  : 'bg-white border-gray-200 shadow-sm'
-              }`}>
-                <span className="text-4xl">💡</span>
-                <div>
-                  <h4 className={`font-bold text-lg ${
-                    config.temaFondo === 'dark' ? 'text-white' : 'text-gray-900'
-                  }`}>
-                    ¿Cómo funciona el escandallo automático?
-                  </h4>
-                  <p className={`text-sm mt-1 leading-relaxed ${
-                    config.temaFondo === 'dark' ? 'text-neutral-400' : 'text-gray-600'
-                  }`}>
-                    Cuando vincules una receta a un plato, el sistema hará el trabajo por ti. Si vendes una "Hamburguesa Simple", el sistema descontará automáticamente <strong className={config.temaFondo === 'dark' ? 'text-white' : 'text-gray-800'}>1 Pan</strong> y <strong className={config.temaFondo === 'dark' ? 'text-white' : 'text-gray-800'}>0.15 Kg de Carne</strong> de tu stock sin que el mesero tenga que hacer nada.
-                  </p>
-                  <button 
-                    style={{ borderColor: config.colorPrimario, color: config.colorPrimario }}
-                    className={`mt-4 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${
-                      config.temaFondo === 'dark'
-                        ? 'border hover:bg-[#222] hover:text-white'
-                        : 'border hover:bg-gray-100'
-                    }`}
-                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = config.colorPrimario; e.currentTarget.style.color = 'white'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = config.colorPrimario; }}
-                  >
-                    Configurar Recetas →
-                  </button>
-                </div>
-              </div>
-
-            </div>
+            <InventarioView />
           )}
           {/* ======================= VISTA: CARTA QR + CUENTA EN VIVO ======================= */}
           {vistaActiva === 'carta_qr' && (

@@ -2,6 +2,7 @@ from django.db import models
 from django.contrib.auth.models import User
 from django.contrib.auth.hashers import make_password, is_password_usable
 from django.core.exceptions import ValidationError
+from django.core.validators import MinValueValidator
 
 class ActivoManager(models.Manager):
     def get_queryset(self):
@@ -367,8 +368,59 @@ class MovimientoCaja(models.Model):
     def __str__(self):
         return f"{self.get_tipo_display()} - S/ {self.monto} - {self.concepto[:20]}"
 
+class InsumoBase(models.Model):
+    """
+    EL CATÁLOGO GLOBAL (Sede 0 / Matriz)
+    Aquí el Dueño define qué ingredientes existen en todo el negocio.
+    """
+    UNIDADES_MEDIDA = [
+        ('g', 'Gramos'), ('kg', 'Kilogramos'),
+        ('ml', 'Mililitros'), ('l', 'Litros'),
+        ('unidades', 'Unidades'),
+    ]
 
+    nombre = models.CharField(max_length=100)
+    negocio = models.ForeignKey('Negocio', on_delete=models.CASCADE, related_name='catalogo_insumos')
+    unidad_medida = models.CharField(max_length=20, choices=UNIDADES_MEDIDA)
+    imagen = models.ImageField(upload_to='insumos/', null=True, blank=True)
+    activo = models.BooleanField(default=True)
+    
+    # ✨ CORRECCIÓN: Aquí es donde vive el stock de la Matriz
+    stock_general = models.DecimalField(max_digits=10, decimal_places=3, default=0)
 
+    def __str__(self):
+        return f"{self.nombre} ({self.unidad_medida})"
 
+class InsumoSede(models.Model):
+    """
+    EL STOCK LOCAL
+    Representa cuánta cantidad de un InsumoBase hay en una Sede específica.
+    """
+    insumo_base = models.ForeignKey(InsumoBase, on_delete=models.CASCADE, related_name='stocks_locales')
+    sede = models.ForeignKey('Sede', on_delete=models.CASCADE, related_name='inventario')
+    
+    stock_actual = models.DecimalField(max_digits=10, decimal_places=3, default=0)
+    stock_minimo = models.DecimalField(max_digits=10, decimal_places=3, default=0)
+    costo_unitario = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    
+    # ❌ (Borramos el stock_general de aquí porque este es el local)
 
+    class Meta:
+        unique_together = ('insumo_base', 'sede')
 
+    def __str__(self):
+        return f"{self.insumo_base.nombre} en {self.sede.nombre}"
+
+class RecetaDetalle(models.Model):
+    """
+    LA RECETA GLOBAL
+    Ahora conectamos el Plato con el InsumoBase. 
+    Así, la receta es la misma para todas las sedes.
+    """
+    producto = models.ForeignKey('Producto', on_delete=models.CASCADE, related_name='ingredientes')
+    insumo = models.ForeignKey(InsumoBase, on_delete=models.CASCADE)
+    
+    cantidad_necesaria = models.DecimalField(max_digits=10, decimal_places=3, validators=[MinValueValidator(0)])
+
+    def __str__(self):
+        return f"{self.cantidad_necesaria} {self.insumo.unidad_medida} de {self.insumo.nombre} para {self.producto.nombre}"
