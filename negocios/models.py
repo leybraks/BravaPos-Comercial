@@ -218,8 +218,16 @@ class Empleado(models.Model):
     
     def save(self, *args, **kwargs):
         # Si el PIN no empieza con la firma del hasher de Django, significa que es un PIN nuevo en texto plano. Lo encriptamos.
-        if not is_password_usable(self.pin):
-            self.pin = make_password(self.pin)
+        if self.pin:
+            self.pin = self.pin.strip()
+            
+        # 2. EL ESCUDO: Solo evaluamos si REALMENTE hay un texto.
+        # Si self.pin está vacío (""), esta condición se salta y no arruina la contraseña.
+        if self.pin and not is_password_usable(self.pin):
+            # Además, verificamos que sea cortito (un PIN real) para evitar doble encriptación
+            if len(self.pin) < 30:
+                self.pin = make_password(self.pin)
+                
         super().save(*args, **kwargs)
 
     def __str__(self):

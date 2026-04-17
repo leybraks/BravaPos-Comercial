@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import MesasView from './MesasView';
 import KdsView from './KdsView';
 import ErpDashboard from './ErpDashboard';
@@ -6,30 +6,43 @@ import LoginView from './LoginView';
 import PosView from './PosView';
 
 export default function App() {
-  // ✨ LoginView ahora es un "Súper Componente" que sabe si la tablet
-  // está configurada o no. Así que siempre arrancamos en 'login'.
   const [vista, setVista] = useState('login');
-  
-  // Guardamos qué mesa tocó el cajero para pasársela al POS
   const [mesaActual, setMesaActual] = useState(null);
-  
-  // Guardamos quién entró para saber qué botones mostrarle
   const [rolUsuario, setRolUsuario] = useState(null);
+
+  // ✨ AUTO-LOGIN: Si recargas la página, leemos la memoria para dejarte donde estabas
+  useEffect(() => {
+    const token = localStorage.getItem('tablet_token');
+    const rol = localStorage.getItem('rol_usuario');
+    
+    if (token && rol) {
+      setRolUsuario(rol);
+      if (rol === 'Dueño') {
+        setVista('erp');
+      } else if (rol === 'Cocinero' || rol === 'Cocina') {
+        setVista('cocina');
+      } else {
+        setVista('login'); // Los mortales (meseros) siempre deben poner su PIN al recargar
+      }
+    }
+  }, []);
 
   return (
     <div className="bg-[#121212] min-h-screen text-neutral-100 font-sans flex flex-col relative pb-28 overflow-hidden">
       
-      {/* 1. LOGIN / VINCULACIÓN (El Guardián Multi-Sede) */}
+      {/* 1. LOGIN / VINCULACIÓN */}
       {vista === 'login' && (
         <LoginView 
           onAccesoConcedido={(rol) => {
-            setRolUsuario(rol); // Guardamos su rol
+            setRolUsuario(rol);
             
-            // Verificamos ambas formas en las que pudiste haber escrito el rol en Django
-            if (rol === 'Cocinero' || rol === 'Cocina') {
-              setVista('cocina'); // La cocina va directo a sus comandas (KDS)
+            // 🚦 EL NUEVO SEMÁFORO DE RUTAS 🚦
+            if (rol === 'Dueño') {
+              setVista('erp'); // 👑 El Dueño va directo a su panel
+            } else if (rol === 'Cocinero' || rol === 'Cocina') {
+              setVista('cocina'); // 🍳 La cocina va a sus comandas
             } else {
-              setVista('mesas'); // Admin, Cajero y Meseros van al salón
+              setVista('mesas'); // 🤵 Meseros y Admins van al salón
             }
           }} 
         />
@@ -62,7 +75,10 @@ export default function App() {
 
       {/* 5. ERP (PANEL DE ADMINISTRADOR) */}
       {vista === 'erp' && (
-         <ErpDashboard onVolverAlPos={() => setVista('mesas')} />
+        <ErpDashboard 
+          rolUsuario={rolUsuario} // ✨ ¡Vital para que el botón aparezca!
+          onVolverAlPos={() => setVista('mesas')} 
+        />
       )}
       
     </div>

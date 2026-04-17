@@ -15,6 +15,8 @@ from django.contrib.auth.hashers import check_password
 from rest_framework.permissions import AllowAny
 from rest_framework.decorators import action , permission_classes,api_view
 import time 
+from rest_framework.permissions import IsAuthenticated
+from .permissions import EsDuenioOsoloLectura
 from .models import (GrupoVariacion, Negocio, Sede, Mesa, Producto, Orden, DetalleOrden, Pago, ModificadorRapido,DetalleOrdenOpcion, 
 GrupoVariacion, OpcionVariacion,MovimientoCaja, Rol, Empleado, SesionCaja, Categoria)
 from .serializers import (
@@ -42,41 +44,72 @@ class MesaViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = Mesa.objects.filter(activo=True)
+        empleado_id = self.request.headers.get('X-Empleado-Id')
         
-        # Si React manda "?sede_id=2", solo devolvemos las mesas de ese local
-        sede_id = self.request.query_params.get('sede_id')
-        if sede_id:
-            queryset = queryset.filter(sede_id=sede_id)
+        if empleado_id:
+            try:
+                empleado = Empleado.objects.get(id=empleado_id)
+                return queryset.filter(sede=empleado.sede)
+            except Empleado.DoesNotExist:
+                return queryset.none()
+        
+        else:
+            sede_id = self.request.query_params.get('sede_id')
             
-        return queryset
-
+            # ✨ AQUÍ ESTÁ LA MAGIA ANTI-NULL ✨
+            if sede_id and str(sede_id).lower() not in ['null', 'undefined', '']:
+                queryset = queryset.filter(sede_id=sede_id)
+                
+            return queryset
 class ProductoViewSet(viewsets.ModelViewSet):
     serializer_class = ProductoSerializer
+    
+    # 🛡️ ¡LA MAGIA OCURRE AQUÍ! Le ponemos el escudo al ViewSet entero
+    permission_classes = [EsDuenioOsoloLectura]
 
     def get_queryset(self):
         queryset = Producto.objects.filter(activo=True) 
         
         negocio_id = self.request.query_params.get('negocio_id')
-        if negocio_id:
+        
+        # 💉 Vacuna anti-null aplicada para el ERP del Dueño
+        if negocio_id and str(negocio_id).lower() not in ['null', 'undefined', '']:
             queryset = queryset.filter(negocio_id=negocio_id)
             
         return queryset
 
 class OrdenViewSet(viewsets.ModelViewSet):
     serializer_class = OrdenSerializer
+
     def get_queryset(self):
-        # 🛡️ Seguridad y Velocidad: Precargamos las relaciones
+        # Precargamos las relaciones para que sea rapidísimo
         queryset = Orden.objects.prefetch_related('detalles__producto', 'detalles__opciones_seleccionadas').all()
         
-        # El POS solo debe cargar las órdenes activas de SU sede
-        sede_id = self.request.query_params.get('sede_id')
-        if sede_id:
-            # Traemos las pendientes, cocinando, y las pagadas/completadas DE HOY (para que no colapse la app con historial viejo)
+        # 🛡️ EL DETECTOR DE MORTALES
+        empleado_id = self.request.headers.get('X-Empleado-Id')
+        sede_id_filtrar = None
+
+        if empleado_id:
+            # 🛑 ES UN EMPLEADO: Le imponemos SU sede, sin importar qué pida React
+            try:
+                empleado = Empleado.objects.get(id=empleado_id)
+                sede_id_filtrar = empleado.sede_id
+            except Empleado.DoesNotExist:
+                return queryset.none() # Hacker bloqueado
+        else:
+            # 👑 ES EL DUEÑO: Confiamos en el menú desplegable del ERP
+            sede_id_filtrar = self.request.query_params.get('sede_id')
+
+            if not sede_id_filtrar or str(sede_id_filtrar).lower() in ['null', 'undefined', '']:
+                sede_id_filtrar = None
+
+        # Aplicamos los filtros de fecha y estado SOLO a la sede permitida
+        if sede_id_filtrar:
             hoy = timezone.now().date()
             queryset = queryset.filter(
-                sede_id=sede_id
+                sede_id=sede_id_filtrar
             ).exclude(
-                estado='cancelado' # Quitamos las canceladas de la vista principal
+                estado='cancelado'
             ).filter(
                 models.Q(estado_pago='pendiente') | models.Q(creado_en__date=hoy)
             ).order_by('-creado_en')
@@ -212,21 +245,32 @@ class RolViewSet(viewsets.ModelViewSet):
 
 class EmpleadoViewSet(viewsets.ModelViewSet):
     serializer_class = EmpleadoSerializer
+
     def get_queryset(self):
-        # ✨ EL ARREGLO: Traemos a TODOS por defecto (activos e inactivos)
         queryset = Empleado.objects.all()
         
-        # Filtramos los empleados por Sede o por Negocio
-        sede_id = self.request.query_params.get('sede_id')
-        negocio_id = self.request.query_params.get('negocio_id')
-        solo_activos = self.request.query_params.get('solo_activos')
-        
-        if sede_id:
-            queryset = queryset.filter(sede_id=sede_id)
-        elif negocio_id:
-            queryset = queryset.filter(negocio_id=negocio_id)
+        # 🛡️ EL DETECTOR DE MORTALES
+        empleado_solicitante_id = self.request.headers.get('X-Empleado-Id')
+
+        if empleado_solicitante_id:
+            # 🛑 ES UN EMPLEADO: Solo ve a sus compañeros de la misma sede
+            try:
+                empleado_actual = Empleado.objects.get(id=empleado_solicitante_id)
+                queryset = queryset.filter(sede=empleado_actual.sede)
+            except Empleado.DoesNotExist:
+                return queryset.none()
+        else:
+            # 👑 ES EL DUEÑO: Puede filtrar por la Sede que elija o ver todo el Negocio
+            sede_id = self.request.query_params.get('sede_id')
+            negocio_id = self.request.query_params.get('negocio_id')
             
-        # Si desde React mandas ?solo_activos=true, los filtramos
+            if sede_id and str(sede_id).lower() not in ['null', 'undefined', '']:
+                queryset = queryset.filter(sede_id=sede_id)
+            elif negocio_id and str(negocio_id).lower() not in ['null', 'undefined', '']:
+                queryset = queryset.filter(negocio_id=negocio_id)
+
+        # Filtro opcional de activos (lo mantienes igual)
+        solo_activos = self.request.query_params.get('solo_activos')
         if solo_activos == 'true':
             queryset = queryset.filter(activo=True)
             
@@ -270,15 +314,45 @@ class EmpleadoViewSet(viewsets.ModelViewSet):
         }, status=status.HTTP_200_OK)
     
 class SesionCajaViewSet(viewsets.ModelViewSet):
-    queryset = SesionCaja.objects.all()
+    queryset = SesionCaja.objects.none()
     serializer_class = SesionCajaSerializer
+    permission_classes = [IsAuthenticated] # 🔒 Adiós AllowAny
 
-    # ✨ PERMISO AÑADIDO: AllowAny para que React pueda consultar sin token
-    @action(detail=False, methods=['get'], permission_classes=[AllowAny])
+    def get_queryset(self):
+        queryset = SesionCaja.objects.all().order_by('-fecha_apertura')
+        empleado_id = self.request.headers.get('X-Empleado-Id')
+
+        if empleado_id:
+            # 🛑 MODO MORTAL: Solo ve las cajas de su propia sede
+            try:
+                empleado = Empleado.objects.get(id=empleado_id)
+                return queryset.filter(sede=empleado.sede)
+            except Empleado.DoesNotExist:
+                return queryset.none()
+        else:
+            # 👑 MODO DUEÑO: Panel ERP
+            sede_id_raw = self.request.query_params.get('sede_id')
+            if sede_id_raw and str(sede_id_raw).lower() not in ['null', 'undefined', '']:
+                queryset = queryset.filter(sede_id=sede_id_raw)
+            return queryset
+
+    @action(detail=False, methods=['get'])
     def estado_actual(self, request):
-        sede_id = request.query_params.get('sede_id')
+        # 💉 Vacuna Anti-Null para la sede
+        sede_id_raw = request.query_params.get('sede_id')
+        
+        # Si es empleado, forzamos su sede real desde la cabecera
+        empleado_id = request.headers.get('X-Empleado-Id')
+        if empleado_id:
+            try:
+                sede_id = Empleado.objects.get(id=empleado_id).sede_id
+            except Empleado.DoesNotExist:
+                return Response({'error': 'Empleado inválido'}, status=403)
+        else:
+            sede_id = sede_id_raw if str(sede_id_raw).lower() not in ['null', 'undefined', ''] else None
+
         if not sede_id:
-            return Response({'error': 'Falta sede_id'}, status=400)
+            return Response({'error': 'Se requiere sede_id válida'}, status=400)
             
         sesion = SesionCaja.objects.filter(sede_id=sede_id, estado='abierta').first()
         if sesion:
@@ -376,21 +450,31 @@ class CategoriaViewSet(viewsets.ModelViewSet):
 # ==========================================
 
 @api_view(['GET'])
-@permission_classes([AllowAny]) 
+@permission_classes([IsAuthenticated]) # 🔒 1. LA BOVEDA CERRADA: Solo usuarios logueados
 def metricas_dashboard(request):
-    sede_id = request.query_params.get('sede_id')
+    # 2. Atrapamos lo que manda React
+    sede_id_raw = request.query_params.get('sede_id')
+    sede_id = None
     
-    if not sede_id:
-        return Response({'error': 'Falta el parámetro sede_id'}, status=400)
+    # 💉 3. LA VACUNA: Solo asignamos la sede si NO es la palabra basura "null"
+    if sede_id_raw and str(sede_id_raw).lower() not in ['null', 'undefined', '']:
+        sede_id = sede_id_raw
 
     hoy = timezone.now().date()
     
-    # Buscamos ventas de ESA sede, que estén pagadas, y que no estén canceladas
-    ordenes_hoy = Orden.objects.filter(
-        sede_id=sede_id,
+    # 4. Buscamos todas las ventas exitosas de hoy (Base)
+    ordenes_base = Orden.objects.filter(
         creado_en__date=hoy, 
         estado_pago='pagado'
     ).exclude(estado='cancelado').order_by('-creado_en')
+    
+    # 5. EL ESCUDO DUEÑO/ADMINISTRADOR
+    if sede_id:
+        # Si eligió una sede (o es un Administrador de local), filtramos por esa
+        ordenes_hoy = ordenes_base.filter(sede_id=sede_id)
+    else:
+        # Si NO hay sede (El Dueño recién entra al ERP), sumamos TODO el negocio 💰
+        ordenes_hoy = ordenes_base
     
     total_ordenes = ordenes_hoy.count()
     ventas_totales = float(ordenes_hoy.aggregate(Sum('total'))['total__sum'] or 0.00)
@@ -413,7 +497,8 @@ def metricas_dashboard(request):
         'ordenes': total_ordenes,
         'ticketPromedio': ticket_promedio,
         'actividadReciente': actividad_reciente 
-    })
+    }) 
+
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def configuracion_negocio(request):
@@ -439,36 +524,37 @@ def configuracion_negocio(request):
 
 
 @api_view(['POST'])
-@permission_classes([AllowAny]) # Para que el POS funcione sin trabas de tokens por ahora
+@permission_classes([IsAuthenticated]) # 🔒 Seguridad activada
 def registrar_movimiento_caja(request):
     try:
         data = request.data
         sesion_id = data.get('sesion_caja_id')
-        empleado_id = data.get('empleado_id')
+        empleado_id_solicitante = request.headers.get('X-Empleado-Id')
         
-        # Validamos que la sesión exista
+        # 1. Obtenemos la sesión
         sesion = SesionCaja.objects.get(id=sesion_id)
         
-        # Creamos el movimiento (Gasto o Ingreso)
+        # 🛡️ 2. EL ESCUDO MULTI-TENANT
+        if empleado_id_solicitante:
+            empleado = Empleado.objects.get(id=empleado_id_solicitante)
+            # Verificamos que la caja que quiere tocar sea de SU sede
+            if sesion.sede_id != empleado.sede_id:
+                return Response({'error': 'No tienes permiso para registrar movimientos en esta sede.'}, status=403)
+
+        # 3. Si pasó el escudo, creamos el movimiento
         movimiento = MovimientoCaja.objects.create(
             sede=sesion.sede,
             sesion_caja=sesion,
-            empleado_id=empleado_id,
+            empleado_id=data.get('empleado_id'), # El ID del que pone el PIN en el modal
             tipo=data.get('tipo'),
             monto=data.get('monto'),
             concepto=data.get('concepto')
         )
         
-        return Response({
-            'mensaje': 'Movimiento registrado con éxito', 
-            'id': movimiento.id
-        }, status=201)
+        return Response({'mensaje': 'Movimiento registrado con éxito', 'id': movimiento.id}, status=201)
         
     except SesionCaja.DoesNotExist:
         return Response({'error': 'La sesión de caja no existe.'}, status=404)
-    except Exception as e:
-        return Response({'error': str(e)}, status=400)
-    
 
 class LoginAdministradorView(APIView):
     permission_classes = [AllowAny]

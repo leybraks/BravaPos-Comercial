@@ -316,23 +316,23 @@ export default function ErpDashboard({ onVolverAlPos }) {
       { id: 'dashboard', icono: '📊', nombre: 'Ventas en Vivo', show: true },
       { id: 'personal', icono: '👥', nombre: 'Personal y Roles', show: true },
       { id: 'diseno_salon', icono: '🗺️', nombre: 'Diseño del Salón', show: true },
-      // 👇 Estos botones dependen de los interruptores de configuración
       { id: 'crm', icono: '💬', nombre: 'Marketing & CRM', show: modulos.clientes },
       { id: 'inventario', icono: '📦', nombre: 'Inventario (Stock)', show: modulos.inventario },
       { id: 'menu', icono: '🍔', nombre: 'Editor de Menú', show: true },
       { id: 'carta_qr', icono: '📱', nombre: 'Carta QR + Cuenta en Vivo', show: modulos.cartaQr },
       { id: 'bot_wsp', icono: '🤖', nombre: 'Bot de WhatsApp', show: modulos.botWsp},
       { id: 'facturacion', icono: '🧾', nombre: 'Facturación Electrónica', show: modulos.facturacion },
-      ...(esDueño ? [{ id: 'config', nombre: 'Configuración Global', icono: '⚙️' }] : [])
-    ].filter(item => item.show); // <--- Esto elimina los ocultos
+      // ✨ MUCHO MÁS LIMPIO: Usamos la variable esDueño directamente en el "show"
+      { id: 'config', icono: '⚙️', nombre: 'Configuración', show: esDueño } 
+    ].filter(item => item.show); 
 
     return (
       <div className={`fixed inset-y-0 left-0 w-64 bg-[#111] border-r border-[#222] transform ${menuAbierto ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 transition-transform duration-300 z-50 flex flex-col`}>
         
-        {/* LOGO TEMATIZADO */}
+        {/* LOGO TEMATIZADO Y REBRANDING */}
         <div className="p-6">
           <h1 className="text-xl font-black text-white">
-            CAÑA <span style={{ color: colorPrimario }}>BRAVA</span>
+            BRAVA <span style={{ color: colorPrimario }}>POS</span>
           </h1>
           <p className="text-xs text-neutral-500 tracking-widest uppercase mt-1">ERP Cloud</p>
         </div>
@@ -1642,7 +1642,7 @@ export default function ErpDashboard({ onVolverAlPos }) {
                             <span className={`text-[10px] font-black px-2 py-0.5 rounded border uppercase flex items-center gap-1 ${
                               config.temaFondo === 'dark' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 'bg-blue-50 text-blue-600 border-blue-200'
                             }`}>
-                              📍 {sedesReales.find(s => s.id === emp.sede)?.nombre || 'Sede Principal'}
+                              📍 {emp.sede_nombre || 'Sede Principal'}
                             </span>
                           )}
                         </div>

@@ -151,12 +151,15 @@ class RolSerializer(serializers.ModelSerializer):
 
 class EmpleadoSerializer(serializers.ModelSerializer):
     rol_nombre = serializers.CharField(source='rol.nombre', read_only=True)
-
+    sede_nombre = serializers.ReadOnlyField(source='sede.nombre')
     class Meta:
         model = Empleado
         # Ya no mostramos el PIN (hash) en las respuestas de la API por seguridad pura 🔒
-        fields = ['id', 'nombre', 'rol', 'rol_nombre', 'activo', 'ultimo_ingreso']
-
+        fields = ['id', 'nombre', 'rol','pin', 'rol_nombre', 'activo', 'ultimo_ingreso', 'sede', 'sede_nombre']
+        extra_kwargs = {
+            'pin': {'write_only': True}
+        }
+        
 class SesionCajaSerializer(serializers.ModelSerializer):
     class Meta:
         model = SesionCaja

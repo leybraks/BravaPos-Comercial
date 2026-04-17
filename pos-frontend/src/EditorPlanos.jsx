@@ -191,6 +191,34 @@ export default function EditorPlanos() {
           </div>
         )}
       </div>
+      {/* 👇 PEGA ESTO JUSTO DEBAJO 👇 */}
+      {/* 📋 CABECERA Y BOTONES DE ACCIÓN */}
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end mb-6 gap-4">
+        <div>
+          <h2 className={`text-2xl font-black uppercase tracking-tighter ${tema === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+            Diseño de <span style={{ color: colorPrimario }}>Local</span>
+          </h2>
+          <p className={`text-[10px] sm:text-xs font-bold uppercase tracking-widest mt-1 ${tema === 'dark' ? 'text-neutral-500' : 'text-gray-500'}`}>
+            Arrastra para crear pasillos y ordenar
+          </p>
+        </div>
+        <div className="flex gap-2 w-full sm:w-auto">
+          <button 
+            onClick={() => setModalNuevaMesa(true)} 
+            className={`flex-1 sm:flex-none px-4 py-3 rounded-xl font-black text-sm uppercase shadow-sm active:scale-95 transition-all border ${tema === 'dark' ? 'bg-[#1a1a1a] text-neutral-300 border-[#333] hover:text-white' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
+          >
+            + Mesa
+          </button>
+          <button 
+            onClick={guardarCambios} 
+            disabled={guardando} 
+            style={{ backgroundColor: colorPrimario }} 
+            className="flex-1 sm:flex-none px-6 py-3 rounded-xl text-white font-black text-sm uppercase shadow-lg active:scale-95 disabled:opacity-50"
+          >
+            {guardando ? 'Guardando...' : 'Guardar'}
+          </button>
+        </div>
+      </div>
 
       {/* ⚙️ CONTROLES */}
       <div className="flex gap-2 mb-4 justify-center items-center">
