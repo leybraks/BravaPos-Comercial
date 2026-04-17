@@ -424,3 +424,18 @@ class RecetaDetalle(models.Model):
 
     def __str__(self):
         return f"{self.cantidad_necesaria} {self.insumo.unidad_medida} de {self.insumo.nombre} para {self.producto.nombre}"
+
+class RecetaOpcion(models.Model):
+    """
+    LA RECETA DE LA VARIACIÓN
+    Define qué insumos EXACTOS gasta una opción. 
+    Sirve tanto para sumar (Extra Rachi) como para definir un plato completo (Mixto 2).
+    """
+    opcion = models.ForeignKey(OpcionVariacion, on_delete=models.CASCADE, related_name='ingredientes')
+    insumo = models.ForeignKey('InsumoBase', on_delete=models.CASCADE) # Conectamos al Almacén Matriz
+    
+    # Cuánto suma (o resta) esta opción al inventario
+    cantidad_necesaria = models.DecimalField(max_digits=10, decimal_places=3)
+
+    def __str__(self):
+        return f"{self.cantidad_necesaria} {self.insumo.unidad_medida} de {self.insumo.nombre} para opción {self.opcion.nombre}"

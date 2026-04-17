@@ -31,7 +31,7 @@ export default function EditorPlanos() {
       } catch (error) { console.error(error); }
     };
     cargarSedes();
-  }, []);
+  }, [sedeActivaId]);
 
   // 2. Cargar Mesas cada vez que cambie la sede (CON FILTRO ANTI-FANTASMAS MEJORADO)
   useEffect(() => {

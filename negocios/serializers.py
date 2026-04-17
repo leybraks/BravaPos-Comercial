@@ -2,7 +2,7 @@ from rest_framework import serializers
 from .models import (
     InsumoBase, InsumoSede, Negocio, PlanSaaS, Sede, Mesa, Producto, Orden, DetalleOrden, Pago,
     ModificadorRapido, GrupoVariacion, OpcionVariacion, Rol, Empleado, SesionCaja,
-    DetalleOrdenOpcion , Categoria
+    DetalleOrdenOpcion , Categoria, RecetaOpcion
 )
 class PlanSaaSSerializer(serializers.ModelSerializer):
     class Meta:
@@ -30,15 +30,24 @@ class MesaSerializer(serializers.ModelSerializer):
 # ==========================================
 # SERIALIZADORES: MODIFICADORES Y VARIACIONES
 # ==========================================
+class RecetaOpcionSerializer(serializers.ModelSerializer):
+    nombre_insumo = serializers.CharField(source='insumo.nombre', read_only=True)
+    unidad_medida = serializers.CharField(source='insumo.unidad_medida', read_only=True)
+
+    class Meta:
+        model = RecetaOpcion
+        fields = ['id', 'opcion', 'insumo', 'nombre_insumo', 'unidad_medida', 'cantidad_necesaria']
+
 class ModificadorRapidoSerializer(serializers.ModelSerializer):
     class Meta:
         model = ModificadorRapido
         fields = '__all__'
 
 class OpcionVariacionSerializer(serializers.ModelSerializer):
+    ingredientes = RecetaOpcionSerializer(many=True, required=False)
     class Meta:
         model = OpcionVariacion
-        fields = ['id', 'nombre', 'precio_adicional']
+        fields = ['id', 'nombre', 'precio_adicional', 'ingredientes']
         # 👇 Esto evita errores cuando actualizamos opciones que ya existen
         extra_kwargs = {'id': {'read_only': False, 'required': False}}
 
@@ -52,54 +61,71 @@ class GrupoVariacionSerializer(serializers.ModelSerializer):
         extra_kwargs = {'id': {'read_only': False, 'required': False}}
 
 class ProductoSerializer(serializers.ModelSerializer):
-    # 👇 Quitamos el read_only=True para que Django acepte los datos de React
     grupos_variacion = GrupoVariacionSerializer(many=True, required=False)
 
     class Meta:
         model = Producto
         fields = '__all__'
 
-    # 🚀 MAGIA 1: Le enseñamos a Django a CREAR un plato nuevo con sus tamaños
+    # 🚀 MAGIA 1 ACTUALIZADA (Soporta Recetas de Opciones)
     def create(self, validated_data):
         grupos_data = validated_data.pop('grupos_variacion', [])
-        
-        # 1. Creamos el plato base (La Pizza)
         producto = Producto.objects.create(**validated_data)
         
-        # 2. Creamos los Grupos (Tamaños) y sus Opciones (Familiar, Personal)
         for grupo_data in grupos_data:
             opciones_data = grupo_data.pop('opciones', [])
             grupo = GrupoVariacion.objects.create(producto=producto, **grupo_data)
             
             for opcion_data in opciones_data:
-                OpcionVariacion.objects.create(grupo=grupo, **opcion_data)
+                # 👇 Sacamos los ingredientes antes de crear la opción
+                ingredientes_data = opcion_data.pop('ingredientes', []) 
+                opcion = OpcionVariacion.objects.create(grupo=grupo, **opcion_data)
+                
+                # 👇 Guardamos los ingredientes físicos (La carne, el rachi, etc.)
+                for ing_data in ingredientes_data:
+                    # 'insumo' es un objeto en la BD, así que extraemos su ID o la instancia si DRF la resolvió
+                    insumo_obj = ing_data.get('insumo') 
+                    RecetaOpcion.objects.create(
+                        opcion=opcion, 
+                        insumo=insumo_obj, 
+                        cantidad_necesaria=ing_data.get('cantidad_necesaria')
+                    )
                 
         return producto
 
-    # 🚀 MAGIA 2: Le enseñamos a ACTUALIZAR un plato que ya existe
+    # 🚀 MAGIA 2 ACTUALIZADA (Actualización segura)
     def update(self, instance, validated_data):
         grupos_data = validated_data.pop('grupos_variacion', None)
         
-        # 1. Actualizamos nombre, precio_base, etc.
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
 
-        # 2. Si React mandó grupos nuevos, la forma más segura es recrearlos
         if grupos_data is not None:
-            instance.grupos_variacion.all().delete() # Borra los viejos
+            instance.grupos_variacion.all().delete() 
             
             for grupo_data in grupos_data:
                 opciones_data = grupo_data.pop('opciones', [])
-                grupo_data.pop('id', None) # Limpiamos IDs viejos para no chocar
-                
+                grupo_data.pop('id', None) 
                 grupo = GrupoVariacion.objects.create(producto=instance, **grupo_data)
                 
                 for opcion_data in opciones_data:
+                    # 👇 Extraemos los ingredientes
+                    ingredientes_data = opcion_data.pop('ingredientes', [])
                     opcion_data.pop('id', None)
-                    OpcionVariacion.objects.create(grupo=grupo, **opcion_data)
+                    opcion = OpcionVariacion.objects.create(grupo=grupo, **opcion_data)
+                    
+                    # 👇 Recreamos la receta de esta opción
+                    for ing_data in ingredientes_data:
+                        insumo_obj = ing_data.get('insumo')
+                        RecetaOpcion.objects.create(
+                            opcion=opcion, 
+                            insumo=insumo_obj, 
+                            cantidad_necesaria=ing_data.get('cantidad_necesaria')
+                        )
                     
         return instance
+
 # ==========================================
 # ORDEN Y DETALLES (Arquitectura 10/10)
 # ==========================================

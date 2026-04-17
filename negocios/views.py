@@ -19,11 +19,11 @@ import time
 from rest_framework.permissions import IsAuthenticated
 from .permissions import EsDuenioOsoloLectura
 from .models import (GrupoVariacion, InsumoBase, InsumoSede, Negocio, Sede, Mesa, Producto, Orden, DetalleOrden, Pago, ModificadorRapido,DetalleOrdenOpcion, 
-GrupoVariacion, OpcionVariacion,MovimientoCaja, Rol, Empleado, SesionCaja, Categoria)
+GrupoVariacion, OpcionVariacion,MovimientoCaja,RecetaDetalle, Rol, Empleado, SesionCaja, Categoria, RecetaOpcion)
 from .serializers import (
     InsumoBaseSerializer, InsumoSedeSerializer, NegocioSerializer, SedeSerializer, MesaSerializer,
     ProductoSerializer, ModificadorRapidoSerializer, GrupoVariacionSerializer, OpcionVariacionSerializer,
-    OrdenSerializer, DetalleOrdenSerializer, PagoSerializer, RolSerializer, EmpleadoSerializer, SesionCajaSerializer, CategoriaSerializer
+    OrdenSerializer, DetalleOrdenSerializer, PagoSerializer, RolSerializer, EmpleadoSerializer, SesionCajaSerializer, CategoriaSerializer, RecetaOpcionSerializer
 )
 
 class NegocioViewSet(viewsets.ModelViewSet):
@@ -78,6 +78,46 @@ class ProductoViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(negocio_id=negocio_id)
             
         return queryset
+    @action(detail=True, methods=['post'])
+    def configurar_receta(self, request, pk=None):
+        producto = self.get_object() # 1. Atrapamos el plato (Ej: Lomo Saltado)
+        ingredientes_data = request.data.get('ingredientes', []) # 2. Recibimos la lista de ingredientes de React
+
+        try:
+            with transaction.atomic():
+                # 3. Limpiamos la "olla" (borramos la receta vieja si existía para no duplicar)
+                RecetaDetalle.objects.filter(producto=producto).delete()
+
+                # 4. Metemos los ingredientes nuevos uno por uno
+                for ing in ingredientes_data:
+                    insumo_id = ing.get('insumo_id')
+                    cantidad = ing.get('cantidad_necesaria')
+                    
+                    if insumo_id and float(cantidad) > 0:
+                        RecetaDetalle.objects.create(
+                            producto=producto,
+                            insumo_id=insumo_id,
+                            cantidad_necesaria=cantidad
+                        )
+
+            return Response({"mensaje": f"Receta de {producto.nombre} guardada con éxito."})
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=400)
+    
+    @action(detail=True, methods=['get'])
+    def obtener_receta(self, request, pk=None):
+        producto = self.get_object()
+        # Buscamos los ingredientes y los empaquetamos igual a como los lee React
+        ingredientes = RecetaDetalle.objects.filter(producto=producto)
+        data = [{
+            "insumo_id": ing.insumo.id,
+            "nombre": ing.insumo.nombre,
+            "unidad": ing.insumo.unidad_medida,
+            "cantidad_necesaria": float(ing.cantidad_necesaria)
+        } for ing in ingredientes]
+        
+        return Response(data)
 
 class OrdenViewSet(viewsets.ModelViewSet):
     serializer_class = OrdenSerializer
@@ -175,33 +215,23 @@ class OrdenViewSet(viewsets.ModelViewSet):
 
         # ✨ TRANSACCIÓN ATÓMICA TAMBIÉN AQUÍ
         with transaction.atomic():
-            for d in detalles_data:
-                detalle = DetalleOrden.objects.create(
-                    orden=orden,
-                    producto_id=d['producto'],
-                    cantidad=d['cantidad'],
-                    precio_unitario=d['precio_unitario'],
-                    notas_y_modificadores=d.get('notas_y_modificadores', {}),
-                    notas_cocina=d.get('notas_cocina', '')
-                )
+            orden = serializer.save() # Se crea la orden base
+            detalles_data = request.data.get('detalles', [])
+            
+            for detalle_data in detalles_data:
+                # ✨ PASO CLAVE: Sacamos las opciones para que no rompan el modelo DetalleOrden
+                opciones_data = detalle_data.pop('opciones_seleccionadas', [])
                 
-                opciones_ids = d.get('opciones', []) 
-                for opc_id in opciones_ids:
-                    try:
-                        opcion = OpcionVariacion.objects.get(id=opc_id)
-                        DetalleOrdenOpcion.objects.create(
-                            detalle_orden=detalle,
-                            opcion_variacion=opcion,
-                            precio_adicional_aplicado=opcion.precio_adicional
-                        )
-                    except OpcionVariacion.DoesNotExist:
-                        pass 
-
-                detalles_creados.append(detalle)
-                nuevo_total += Decimal(str(d['precio_unitario'])) * int(d['cantidad'])
+                # 1. Creamos el plato
+                nuevo_detalle = DetalleOrden.objects.create(orden=orden, **detalle_data)
                 
-            orden.total += nuevo_total
-            orden.save()
+                # 2. Le colgamos las variaciones que eligió el cliente (Ej: Extra Rachi)
+                for opcion in opciones_data:
+                    DetalleOrdenOpcion.objects.create(
+                        detalle_orden=nuevo_detalle,
+                        opcion_variacion_id=opcion['opcion_variacion'], # Asegúrate de que React mande el ID aquí
+                        precio_adicional_aplicado=opcion.get('precio_adicional_aplicado', 0)
+                    )
 
         nuevos_detalles_json = DetalleOrdenSerializer(detalles_creados, many=True).data
         channel_layer = get_channel_layer()
@@ -239,6 +269,10 @@ class GrupoVariacionViewSet(viewsets.ModelViewSet):
 class OpcionVariacionViewSet(viewsets.ModelViewSet):
     queryset = OpcionVariacion.objects.all()
     serializer_class = OpcionVariacionSerializer
+
+class RecetaOpcionViewSet(viewsets.ModelViewSet):
+    queryset = RecetaOpcion.objects.all()
+    serializer_class = RecetaOpcionSerializer
 
 class RolViewSet(viewsets.ModelViewSet):
     queryset = Rol.objects.all()
@@ -601,15 +635,6 @@ class LoginAdministradorView(APIView):
 class InsumoBaseViewSet(viewsets.ModelViewSet):
     queryset = InsumoBase.objects.all()
     serializer_class = InsumoBaseSerializer
-
-class InsumoSedeViewSet(viewsets.ModelViewSet):
-    serializer_class = InsumoSedeSerializer
-
-    def get_queryset(self):
-        sede_id = self.request.query_params.get('sede_id')
-        if sede_id:
-            return InsumoSede.objects.filter(sede_id=sede_id)
-        return InsumoSede.objects.none()
 
 
 # negocios/views.py o un archivo de servicios
