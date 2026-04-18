@@ -1,27 +1,34 @@
 import React, { useState, useEffect } from 'react';
-import { getMesas, crearOrden, getOrdenes, getNegocio, validarPinEmpleado, actualizarMesa, actualizarOrden, crearPago } from './api/api';
+// ✨ 1. Importamos getSedes
+import { getMesas, crearOrden, getOrdenes, getNegocio, validarPinEmpleado, actualizarMesa, actualizarOrden, crearPago, registrarMovimientoCaja, getSedes } from './api/api';
 import ModalCobro from './ModalCobro';
 import ModalCierreCaja from './ModalCierreCaja';
 import usePosStore from './store/usePosStore';
 import DrawerVentaRapida from './DrawerVentaRapida';
 import ModalMovimientoCaja from './ModalMovimientoCaja';
-import { registrarMovimientoCaja } from './api/api';
 
-function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
+function MesasView({ onSeleccionarMesa, onIrAErp }) {
   const { estadoCaja, configuracionGlobal, setConfiguracionGlobal } = usePosStore();
   const tema = configuracionGlobal?.temaFondo || 'dark';
   const colorPrimario = configuracionGlobal?.colorPrimario || '#ff5a1f';
-  // ✨ 2. LEEMOS LOS TOGGLES (Si no hay config aún, los dejamos undefined para no tomar decisiones apresuradas)
+  
   const modSalonActivo = configuracionGlobal?.modulos?.salon;
   const modLlevarActivo = configuracionGlobal?.modulos?.delivery;
-
+  
+  // ✨ 2. Estado para las sedes
+  const [sedes, setSedes] = useState([]);
+  
   const [modalMovimientosAbierto, setModalMovimientosAbierto] = useState(false);
   const [ordenesLlevar, setOrdenesLlevar] = useState([]);
   
-  // ✨ 3. LA VISTA INICIAL EMPIEZA VACÍA HASTA SABER QUÉ MODULOS HAY
   const [vistaLocal, setVistaLocal] = useState('salon'); 
   const [mostrarPuertaMovil, setMostrarPuertaMovil] = useState(false);
-  const sedeActualId = localStorage.getItem('sede_id');
+  
+  // ✨ 3. Limpiamos las variables duplicadas. Solo definimos estas UNA VEZ:
+  const [sedeActualId, setSedeActualId] = useState(localStorage.getItem('sede_id') || '');
+  const rolUsuario = localStorage.getItem('rol_usuario') || ''; 
+  const esDueño = rolUsuario.trim().toLowerCase() === 'dueño' || rolUsuario.trim().toLowerCase() === 'admin';
+  
   const columnasGrid = parseInt(localStorage.getItem(`columnas_salon_${sedeActualId}`)) || 3;
   const [modoUnir, setModoUnir] = useState(false);
   const [mesaPrincipal, setMesaPrincipal] = useState(null);
@@ -38,13 +45,25 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
   const [totalVentaRapida, setTotalVentaRapida] = useState(0);
   const [ordenACobrar, setOrdenACobrar] = useState(null);
 
+  // ✨ 4. Función para cambiar de sede (el Dueño usa esto)
+  const manejarCambioSede = (nuevaSedeId) => {
+    if (!nuevaSedeId) return;
+    localStorage.setItem('sede_id', nuevaSedeId);
+    setSedeActualId(nuevaSedeId);
+  };
 
   useEffect(() => {
     async function cargarSalón() {
       try {
-        const resMesas = await getMesas({ sede_id: sedeActualId });
-        const resOrdenes = await getOrdenes({ sede_id: sedeActualId });
+        // ✨ 5. Traemos las sedes junto con las mesas
+        const [resMesas, resOrdenes, resSedes] = await Promise.all([
+            getMesas({ sede_id: sedeActualId }),
+            getOrdenes({ sede_id: sedeActualId }),
+            getSedes() // Obtenemos todas las sedes del negocio
+        ]);
         
+        setSedes(resSedes.data); // Guardamos las sedes para el <select>
+
         const ordenesVivas = resOrdenes.data.filter(o => 
           o.estado !== 'completado' && 
           o.estado !== 'cancelado' &&
@@ -99,7 +118,6 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
       capacidadTotal: mesaPadre.capacidad + hijas.reduce((sum, h) => sum + h.capacidad, 0)
     };
   });
-
   const manejarCancelacion = async (id) => {
     const motivo = window.prompt("¿Por qué se cancela el pedido? (Ej: Cliente se fue, Error de digitación)");
     if (motivo) {
@@ -307,86 +325,107 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
             </div>
           </div>
           
-          {/* BOTONERA (Dividida en 2 filas lógicas) */}
-          <div className="flex flex-col items-end gap-1.5 sm:gap-2">
+          {/* BOTONERA (Ahora con el Selector de Sedes para el Dueño) */}
+          <div className="flex flex-col items-end gap-2 sm:gap-3">
             
-            {/* FILA 1: Operaciones del POS (Máximo 3 botones) */}
-            <div className="flex items-center gap-1.5 sm:gap-2">
-              {/* BOTÓN UNIR MESAS */}
-              {vistaLocal === 'salon' && (
-                <button 
-                  onClick={() => { setModoUnir(!modoUnir); setMesaPrincipal(null); }}
-                  className={`w-9 h-9 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl flex items-center justify-center border transition-all shrink-0 ${
-                    !modoUnir && 'bg-[#1a1a1a] border-[#333] text-neutral-400 hover:text-white hover:bg-[#222]'
-                  }`}
-                  style={modoUnir ? { backgroundColor: colorPrimario, borderColor: colorPrimario, color: '#fff', boxShadow: `0 0 15px ${colorPrimario}60` } : {}}
-                  title="Unir Mesas"
+            {/* ✨ FILA 0: SELECTOR EXCLUSIVO PARA EL DUEÑO */}
+            {esDueño && sedes?.length > 1 &&(
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-neutral-500">
+                  Modo Dueño:
+                </span>
+                <select 
+                  value={sedeActualId || ''} 
+                  onChange={(e) => manejarCambioSede(e.target.value)}
+                  className="text-xs font-bold px-3 py-1.5 rounded-lg border outline-none cursor-pointer appearance-none text-center shadow-sm transition-colors bg-[#1a1a1a] text-white border-[#333] hover:border-[#ff5a1f] focus:border-[#ff5a1f]"
+                  style={{ color: colorPrimario }}
                 >
-                  <span className="text-base sm:text-lg">🔗</span>
-                </button>
-              )}
-
-              {/* BOTÓN CAMBIO SALÓN/LLEVAR */}
-              {modSalonActivo && modLlevarActivo && (
-                <button 
-                  onClick={() => {
-                    if (vistaLocal === 'salon') { setVistaLocal('llevar'); setModoUnir(false); } 
-                    else { setVistaLocal('salon'); }
-                  }}
-                  className="w-9 h-9 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl flex items-center justify-center border transition-all relative shrink-0 border-[#333] bg-[#1a1a1a] text-neutral-400 hover:text-white hover:bg-[#222] shadow-[0_0_10px_rgba(0,0,0,0.5)]"
-                  title={vistaLocal === 'salon' ? "Ir a Para Llevar" : "Ir al Salón Principal"}
-                >
-                  {vistaLocal === 'salon' ? (
-                    <>
-                      <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path></svg>
-                      <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 sm:w-4 sm:h-4 text-white text-[8px] sm:text-[9px] font-bold flex items-center justify-center rounded-full border border-[#0a0a0a]" style={{ backgroundColor: colorPrimario }}>
-                        {ordenesLlevar.length}
-                      </span>
-                    </>
-                  ) : (
-                    <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg>
-                  )}
-                </button>
-              )}
-
-              {/* BOTÓN VENTA RÁPIDA */}
-              <button 
-                onClick={() => setDrawerVentaRapidaAbierto(true)}
-                className="w-9 h-9 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl flex items-center justify-center border transition-all active:scale-95 shrink-0 hover:brightness-125"
-                style={{ backgroundColor: `${colorPrimario}1A`, borderColor: `${colorPrimario}4D`, color: colorPrimario }}
-                title="Venta Rápida"
-              >
-                <span className="text-base sm:text-lg">⚡</span>
-              </button>
-            </div>
-
-            {/* FILA 2: Acciones Administrativas / Caja (Solo se renderiza si el usuario tiene permisos) */}
-            {['administrador', 'admin', 'cajero', 'dueño'].includes(rolUsuario?.toLowerCase()) && (
-              <div className="flex items-center gap-1.5 sm:gap-2">
-                
-                {/* BOTÓN ERP (Solo Admin y Dueño) */}
-                {['administrador', 'admin', 'dueño'].includes(rolUsuario?.toLowerCase()) && (
-                  <button onClick={onIrAErp} className="w-9 h-9 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl flex items-center justify-center border border-blue-500/30 bg-blue-500/10 text-blue-500 hover:bg-blue-500 hover:text-white transition-all active:scale-95 shrink-0" title="Panel de Control (ERP)">
-                    <span className="text-base sm:text-lg">⚙️</span>
-                  </button>
-                )}
-
-                {/* BOTÓN CAJA CHICA (Admin, Cajero o Dueño) */}
-                <button onClick={() => setModalMovimientosAbierto(true)} className="w-9 h-9 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl flex items-center justify-center border border-green-500/30 bg-green-500/10 text-green-500 hover:bg-green-500 hover:text-white transition-all active:scale-95 shrink-0" title="Caja Chica">
-                  <span className="text-base sm:text-lg">💸</span>
-                </button>
-
-                {/* BOTÓN CERRAR TURNO (Admin, Cajero o Dueño) */}
-                <button 
-                  onClick={manejarCierreCajaSeguro} 
-                  className="w-9 h-9 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl flex items-center justify-center border border-red-500/30 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-all active:scale-95 shrink-0" 
-                  title="Cerrar Turno"
-                >
-                  <span className="text-base sm:text-lg">🔒</span>
-                </button>
+                  <option value="" disabled>Seleccionar Sede...</option>
+                  {sedes?.map(sede => (
+                    <option key={sede.id} value={sede.id}>📍 {sede.nombre}</option>
+                  ))}
+                </select>
               </div>
             )}
 
+            <div className="flex flex-col items-end gap-1.5 sm:gap-2">
+              {/* FILA 1: Operaciones del POS (Máximo 3 botones) */}
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                {/* BOTÓN UNIR MESAS */}
+                {vistaLocal === 'salon' && (
+                  <button 
+                    onClick={() => { setModoUnir(!modoUnir); setMesaPrincipal(null); }}
+                    className={`w-9 h-9 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl flex items-center justify-center border transition-all shrink-0 ${
+                      !modoUnir && 'bg-[#1a1a1a] border-[#333] text-neutral-400 hover:text-white hover:bg-[#222]'
+                    }`}
+                    style={modoUnir ? { backgroundColor: colorPrimario, borderColor: colorPrimario, color: '#fff', boxShadow: `0 0 15px ${colorPrimario}60` } : {}}
+                    title="Unir Mesas"
+                  >
+                    <span className="text-base sm:text-lg">🔗</span>
+                  </button>
+                )}
+
+                {/* BOTÓN CAMBIO SALÓN/LLEVAR */}
+                {modSalonActivo && modLlevarActivo && (
+                  <button 
+                    onClick={() => {
+                      if (vistaLocal === 'salon') { setVistaLocal('llevar'); setModoUnir(false); } 
+                      else { setVistaLocal('salon'); }
+                    }}
+                    className="w-9 h-9 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl flex items-center justify-center border transition-all relative shrink-0 border-[#333] bg-[#1a1a1a] text-neutral-400 hover:text-white hover:bg-[#222] shadow-[0_0_10px_rgba(0,0,0,0.5)]"
+                    title={vistaLocal === 'salon' ? "Ir a Para Llevar" : "Ir al Salón Principal"}
+                  >
+                    {vistaLocal === 'salon' ? (
+                      <>
+                        <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path></svg>
+                        <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 sm:w-4 sm:h-4 text-white text-[8px] sm:text-[9px] font-bold flex items-center justify-center rounded-full border border-[#0a0a0a]" style={{ backgroundColor: colorPrimario }}>
+                          {ordenesLlevar?.length || 0}
+                        </span>
+                      </>
+                    ) : (
+                      <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg>
+                    )}
+                  </button>
+                )}
+
+                {/* BOTÓN VENTA RÁPIDA */}
+                <button 
+                  onClick={() => setDrawerVentaRapidaAbierto(true)}
+                  className="w-9 h-9 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl flex items-center justify-center border transition-all active:scale-95 shrink-0 hover:brightness-125"
+                  style={{ backgroundColor: `${colorPrimario}1A`, borderColor: `${colorPrimario}4D`, color: colorPrimario }}
+                  title="Venta Rápida"
+                >
+                  <span className="text-base sm:text-lg">⚡</span>
+                </button>
+              </div>
+
+              {/* FILA 2: Acciones Administrativas / Caja */}
+              {['administrador', 'admin', 'cajero', 'dueño'].includes(rolUsuario?.toLowerCase()) && (
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  
+                  {/* BOTÓN ERP (Solo Admin y Dueño) */}
+                  {['administrador', 'admin', 'dueño'].includes(rolUsuario?.toLowerCase()) && (
+                    <button onClick={onIrAErp} className="w-9 h-9 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl flex items-center justify-center border border-blue-500/30 bg-blue-500/10 text-blue-500 hover:bg-blue-500 hover:text-white transition-all active:scale-95 shrink-0" title="Panel de Control (ERP)">
+                      <span className="text-base sm:text-lg">⚙️</span>
+                    </button>
+                  )}
+
+                  {/* BOTÓN CAJA CHICA */}
+                  <button onClick={() => setModalMovimientosAbierto(true)} className="w-9 h-9 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl flex items-center justify-center border border-green-500/30 bg-green-500/10 text-green-500 hover:bg-green-500 hover:text-white transition-all active:scale-95 shrink-0" title="Caja Chica">
+                    <span className="text-base sm:text-lg">💸</span>
+                  </button>
+
+                  {/* BOTÓN CERRAR TURNO */}
+                  <button 
+                    onClick={manejarCierreCajaSeguro} 
+                    className="w-9 h-9 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl flex items-center justify-center border border-red-500/30 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-all active:scale-95 shrink-0" 
+                    title="Cerrar Turno"
+                  >
+                    <span className="text-base sm:text-lg">🔒</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </header>

@@ -75,6 +75,13 @@ export default function PosView({ mesaId, onVolver }) {
   const cantItemsMesa = (ordenActiva ? ordenActiva.detalles.reduce((acc, el) => acc + el.cantidad, 0) : 0) + obtenerTotalItems();
 
   const manejarEnviarCocina = async () => {
+    // 🛑 1. EL ESCUDO ANTI-DUEÑOS SIN SEDE
+    // Si la sede no existe o está vacía, bloqueamos la venta para no romper la base de datos.
+    if (!sedeActualId) {
+      alert("⚠️ Modo Dueño: Debes seleccionar o asignarte una Sede activa antes de registrar ventas.");
+      return; 
+    }
+
     setProcesando(true);
     try {
       const detallesNuevos = carrito.map(item => ({
@@ -82,7 +89,10 @@ export default function PosView({ mesaId, onVolver }) {
         cantidad: item.cantidad,
         precio_unitario: item.precio_unitario_calculado || item.precio,
         notas_y_modificadores: item.notas_y_modificadores || "",
-        notas_cocina: item.notas_cocina || ""
+        notas_cocina: item.notas_cocina || "",
+        // ✨ 2. EL PUENTE DE LAS VARIACIONES
+        // Aquí le pasamos a Django el arreglo con los IDs de las opciones que eligió el cliente
+        opciones_seleccionadas: item.opciones_seleccionadas || [] 
       }));
 
       if (ordenActiva) {
@@ -109,8 +119,15 @@ export default function PosView({ mesaId, onVolver }) {
         onVolver(); 
       }, 2000);
     } catch (error) {
-      console.error(error);
-      alert('Error al enviar la orden a Django.');
+      // 🕵️‍♂️ 3. EL CHIVATO DE ERRORES (Modo Senior)
+      // Si Django vuelve a lanzar un 400, esto imprimirá en tu consola EXACTAMENTE qué campo falló.
+      console.error("🔍 Reporte de Django:", error.response?.data || error);
+      
+      // Le mostramos al usuario un resumen del error para no tener que adivinar
+      const mensajeError = error.response?.data 
+        ? JSON.stringify(error.response.data).substring(0, 100) 
+        : 'Desconocido';
+      alert(`Error del servidor: ${mensajeError}...`);
     } finally {
       setProcesando(false); 
     }
@@ -133,7 +150,7 @@ export default function PosView({ mesaId, onVolver }) {
     const nombreCatDelPlato = categoriasReales.find(c => String(c.id) === String(plato.categoria))?.nombre || plato.categoria;
     return nombreCatDelPlato === categoriaActiva;
   });
-
+  
   return (
     <div className={`min-h-screen flex flex-col font-sans transition-colors duration-500 ${tema === 'dark' ? 'bg-[#0a0a0a] text-neutral-100' : 'bg-[#f4f4f5] text-gray-900'}`}>
       

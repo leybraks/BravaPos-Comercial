@@ -4,7 +4,7 @@ import KdsView from './KdsView';
 import ErpDashboard from './ErpDashboard';
 import LoginView from './LoginView';
 import PosView from './PosView';
-
+import PublicMenu from './components/PublicMenu';
 export default function App() {
   const [vista, setVista] = useState('login');
   const [mesaActual, setMesaActual] = useState(null);
@@ -86,7 +86,7 @@ export default function App() {
           onVolverAlPos={() => setVista('mesas')} 
         />
       )}
-      
+      <Route path="/menu/:sedeId/:mesaId" element={<PublicMenu />} />
     </div>
   );
 }
