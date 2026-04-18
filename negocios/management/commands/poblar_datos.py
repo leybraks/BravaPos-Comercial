@@ -1,127 +1,123 @@
-# management/commands/seed_full_data.py
 from django.core.management.base import BaseCommand
 from django.contrib.auth.models import User
 from django.utils import timezone
 from datetime import timedelta
 import random
-from decimal import Decimal
 
-from negocios.models import *
+# Asegúrate de que los imports coincidan con tu app
+from negocios.models import PlanSaaS, Negocio, Sede, Categoria, Producto, Orden, DetalleOrden, Pago
 
 class Command(BaseCommand):
-
     def handle(self, *args, **kwargs):
+        self.stdout.write("🏗️ 1. Preparando el entorno comercial...")
 
-        print("🔥 Creando estructura base...")
+        # --- 1. CASCARÓN BÁSICO ---
+        user, _ = User.objects.get_or_create(username="admin_brava")
+        if _: user.set_password("brava2026"); user.is_superuser = True; user.is_staff = True; user.save()
 
-        # 👤 USER
-        user = User.objects.create(username="admin")
+        plan, _ = PlanSaaS.objects.get_or_create(nombre="Pro", defaults={'precio_mensual': 99, 'modulo_ml': True})
+        negocio, _ = Negocio.objects.get_or_create(propietario=user, defaults={'nombre': "Brava Restobar", 'plan': plan, 'fin_prueba': timezone.now() + timedelta(days=30)})
+        sede, _ = Sede.objects.get_or_create(negocio=negocio, nombre="Sede Principal")
 
-        # 💰 PLAN
-        plan = PlanSaaS.objects.create(
-            nombre="Pro",
-            precio_mensual=99,
-            modulo_inventario=True,
-            modulo_kds=True,
-            max_sedes=3
-        )
+        cat_platos, _ = Categoria.objects.get_or_create(negocio=negocio, nombre="Platos")
+        cat_bebidas, _ = Categoria.objects.get_or_create(negocio=negocio, nombre="Bebidas")
 
-        # 🏪 NEGOCIO
-        negocio = Negocio.objects.create(
-            propietario=user,
-            nombre="Restaurante El Sabor",
-            plan=plan,
-            fin_prueba=timezone.now() + timedelta(days=15)
-        )
-
-        # 📍 SEDE
-        sede = Sede.objects.create(
-            negocio=negocio,
-            nombre="Sede Centro"
-        )
-
-        # 👨‍🍳 ROLES
-        rol_admin = Rol.objects.create(nombre="Admin", puede_configurar=True)
-        rol_cajero = Rol.objects.create(nombre="Cajero", puede_cobrar=True)
-
-        # 👷 EMPLEADO
-        Empleado.objects.create(
-            negocio=negocio,
-            sede=sede,
-            nombre="Juan Perez",
-            pin="1234",
-            rol=rol_admin
-        )
-
-        # 🪑 MESAS
-        mesas = []
-        for i in range(1, 21):
-            mesas.append(
-                Mesa.objects.create(sede=sede, numero_o_nombre=f"M{i}")
-            )
-
-        # 🍽️ CATEGORÍAS
-        cat_platos = Categoria.objects.create(negocio=negocio, nombre="Platos")
-        cat_bebidas = Categoria.objects.create(negocio=negocio, nombre="Bebidas")
-
-        # 🍗 PRODUCTOS REALES
-        productos = [
-            ("Pollo a la Brasa", 18, cat_platos),
-            ("Chaufa", 12, cat_platos),
-            ("Lomo Saltado", 15, cat_platos),
-            ("Menu del Dia", 10, cat_platos),
-            ("Inka Cola", 5, cat_bebidas),
-            ("Coca Cola", 5, cat_bebidas),
-            ("Agua", 3, cat_bebidas),
+        # Menú ampliado para mayor realismo
+        menu = [
+            ("Pollo a la Brasa", 65, cat_platos), ("Chaufa de Carne", 20, cat_platos), 
+            ("Lomo Saltado", 25, cat_platos), ("Porción de Anticuchos", 18, cat_platos),
+            ("Inka Cola 1L", 10, cat_bebidas), ("Chicha Morada 1L", 12, cat_bebidas), ("Agua Mineral", 3, cat_bebidas)
         ]
 
         productos_db = []
-        for nombre, precio, cat in productos:
-            productos_db.append(
-                Producto.objects.create(
-                    negocio=negocio,
-                    nombre=nombre,
-                    precio_base=precio,
-                    categoria=cat
-                )
-            )
+        for nombre, precio, cat in menu:
+            p, _ = Producto.objects.get_or_create(negocio=negocio, nombre=nombre, defaults={'precio_base': precio, 'categoria': cat})
+            productos_db.append(p)
 
-        print("🔥 Generando 50,000 órdenes...")
+        self.stdout.write("🧹 2. Limpiando el historial antiguo...")
+        Orden.objects.all().delete() 
 
-        for i in range(50000):
+        self.stdout.write("⏳ 3. Simulando 6 meses de ventas reales (Día a día)...")
+        fecha_actual = timezone.now()
+        ordenes_crear = []
+        detalles_crear = []
 
-            orden = Orden.objects.create(
-                sede=sede,
-                mesa=random.choice(mesas),
-                estado="completado",
-                estado_pago="pagado"
-            )
+        # --- 2. EL MOTOR DE REALISMO (Recorremos los últimos 180 días) ---
+        for dias_atras in range(180, -1, -1):
+            fecha_base = fecha_actual - timedelta(days=dias_atras)
+            dia_semana = fecha_base.weekday() # 0 = Lunes, 6 = Domingo
 
-            total = Decimal('0')
+            # Volumen de clientes realista por día
+            if dia_semana in [0, 1, 2]:    # Lunes a Miércoles: Días flojos
+                num_ordenes = random.randint(15, 25)
+            elif dia_semana == 3:          # Jueves: Empieza el movimiento
+                num_ordenes = random.randint(25, 40)
+            elif dia_semana == 4:          # Viernes: Salida del trabajo / Noche
+                num_ordenes = random.randint(45, 70)
+            elif dia_semana == 5:          # Sábado: El pico máximo de la semana
+                num_ordenes = random.randint(60, 90)
+            else:                          # Domingo: Fuerte, pero más concentrado en almuerzo
+                num_ordenes = random.randint(50, 75)
 
-            for _ in range(random.randint(1, 3)):
-                prod = random.choice(productos_db)
-                cantidad = random.randint(1, 2)
+            for _ in range(num_ordenes):
+                # 80% de ventas en almuerzo (1-4pm) y cena (7-10pm)
+                if random.random() < 0.5:
+                    hora = random.randint(13, 15) # Almuerzo
+                else:
+                    hora = random.randint(19, 22) # Cena
+                
+                fecha_orden = fecha_base.replace(hour=hora, minute=random.randint(0, 59))
 
-                total += prod.precio_base * cantidad
+                orden = Orden(sede=sede, estado="completado", estado_pago="pagado", creado_en=fecha_orden)
+                ordenes_crear.append(orden)
 
-                DetalleOrden.objects.create(
-                    orden=orden,
-                    producto=prod,
-                    cantidad=cantidad,
-                    precio_unitario=prod.precio_base
-                )
+        # Guardamos las órdenes
+        Orden.objects.bulk_create(ordenes_crear, batch_size=5000)
+        
+        self.stdout.write("🥩 4. Asignando platos a cada mesa (Con preferencias de consumo)...")
+        ordenes_guardadas = Orden.objects.all()
 
-            orden.total = total
-            orden.save()
+        for orden in ordenes_guardadas:
+            dia_orden = orden.creado_en.weekday()
+            es_fin_de_semana = dia_orden >= 4
+            
+            # Grupos más grandes los fines de semana
+            cantidad_platos_diferentes = random.randint(2, 4) if es_fin_de_semana else random.randint(1, 2)
+            total_orden = 0
 
-            Pago.objects.create(
-                orden=orden,
-                metodo="efectivo",
-                monto=total
-            )
+            # Definición de pesos base (Probabilidad de compra)
+            pesos_menu = [
+                30, # Pollo a la Brasa
+                15, # Chaufa
+                20, # Lomo Saltado
+                15, # Anticuchos
+                10, # Inka Cola
+                8,  # Chicha
+                2   # Agua
+            ]
 
-            if i % 1000 == 0:
-                print(f"✔ {i}")
+            # Si es domingo, el Pollo a la Brasa arrasa con todo
+            if dia_orden == 6:
+                pesos_menu[0] = 60 # Sube la probabilidad del pollo a 60%
 
-        print("🚀 TODO LISTO")
+            # Si es de noche (después de las 7pm), suben los anticuchos
+            if orden.creado_en.hour >= 19:
+                pesos_menu[3] = 30 # Anticuchos de noche pegan más
+
+            for _ in range(cantidad_platos_diferentes):
+                # Elegimos el producto usando la probabilidad ponderada
+                prod = random.choices(productos_db, weights=pesos_menu, k=1)[0]
+                
+                # Fines de semana piden más porciones del mismo plato
+                cantidad = random.randint(2, 3) if es_fin_de_semana else random.randint(1, 2)
+                
+                total_orden += prod.precio_base * cantidad
+                detalles_crear.append(DetalleOrden(orden=orden, producto=prod, cantidad=cantidad, precio_unitario=prod.precio_base))
+            
+            orden.total = total_orden
+
+        # Guardamos los detalles y actualizamos los totales en masa
+        DetalleOrden.objects.bulk_create(detalles_crear, batch_size=5000)
+        Orden.objects.bulk_update(ordenes_guardadas, ['total'], batch_size=5000)
+
+        self.stdout.write(self.style.SUCCESS("🚀 ¡Impecable! Base de datos poblada con un modelo comercial 100% realista."))
