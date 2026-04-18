@@ -96,5 +96,28 @@ export const actualizarNegocio = (id, data) => api.patch(`/negocios/${id}/`, dat
 export const getNegocio = (id) => api.get(`/negocios/${id}/`);
 export const actualizarEmpleado = (id, data) => api.patch(`/empleados/${id}/`, data);
 export const crearMesa = (data) => api.post('/mesas/', data);
+export const getInsumos = (params) => api.get('/insumos/', { params });
+export const registrarCompraInsumo = (data) => api.post('/insumos/registrar_compra/', data);
+export const getRecetas = (productoId) => api.get(`/productos/${productoId}/receta/`);
+// En api/api.js
+
+// 🌍 Para el Dueño (Catálogo Global)
+export const getCatalogoGlobal = (params) => api.get('/insumo-base/', { params });
+export const crearInsumoBase = (data) => api.post('/insumo-base/', data);
+export const registrarIngresoMasivo = (data) => api.post('/insumo-sede/ingreso_masivo/', data);
+// 📍 Para el Local (Stock Físico)
+export const getInsumosSede = (params) => api.get('/insumo-sede/', { params });
+export const vincularInsumoASede = (data) => api.post('/insumo-sede/', data);
+export const guardarReceta = async (productoId, datosReceta) => {
+    return await api.post(`/productos/${productoId}/configurar_receta/`, datosReceta);
+};
+export const getReceta = async (productoId) => {
+    return await api.get(`/productos/${productoId}/obtener_receta/`);
+};
+
+export const actualizarVariacionesProducto = async (productoId, gruposData) => {
+    // Usamos PATCH para actualizar solo la parte de las variaciones sin tocar el nombre o el precio base
+    return await api.patch(`/productos/${productoId}/`, { grupos_variacion: gruposData });
+};
 // (Ajusta la URL si en tu Django la llamaste diferente)
 export default api;

@@ -5,8 +5,6 @@ import {
   getRoles, 
   getSedes, 
   crearEmpleado,
-  getNegocioConfig,
-  updateNegocioConfig,
   getProductos,
   crearProducto,
   actualizarProducto,
@@ -15,11 +13,15 @@ import {
   crearCategoria,
   actualizarNegocio,
   actualizarEmpleado,
-  
+  parchearCategoria
 } from './api/api';
 import api from './api/api';
 import usePosStore from './store/usePosStore';
 import EditorPlanos from './EditorPlanos';
+import InventarioView from './InventarioView';
+import EditorMenu from './EditorMenu';
+import ModalConfigurarReceta from './ModalConfigurarReceta';
+import ModalVariaciones from './ModalVariaciones';
 export default function ErpDashboard({ onVolverAlPos }) {
   const { configuracionGlobal } = usePosStore();
   const tema = configuracionGlobal?.temaFondo || 'dark';
@@ -27,11 +29,11 @@ export default function ErpDashboard({ onVolverAlPos }) {
   const colorPrimario = configuracionGlobal?.colorPrimario || '#ff5a1f';
   const [vistaActiva, setVistaActiva] = useState('dashboard');
   const [sedeFiltro, setSedeFiltro] = useState('Todas');
-  const [dropdownAbierto, setDropdownAbierto] = useState(false);
-  const [categoriaSeleccionada, setCategoriaSeleccionada] = useState('Todos');
   const [sedeFiltroId, setSedeFiltroId] = useState(null); // ✨ Nuevo: ID real de la sede
   const [menuAbierto, setMenuAbierto] = useState(false);
   const [modalEmpleado, setModalEmpleado] = useState(false);
+  const [modalVariacionesOpen, setModalVariacionesOpen] = useState(false);
+  const [productoParaVariaciones, setProductoParaVariaciones] = useState(null);
   const [categorias, setCategorias] = useState([]);
   const [config, setConfig] = useState({
     numeroYape: '',
@@ -83,6 +85,9 @@ export default function ErpDashboard({ onVolverAlPos }) {
 
   const [modalCategorias, setModalCategorias] = useState(false);
   const [nombreNuevaCat, setNombreNuevaCat] = useState('');
+  // 🔥 Estados para la Ingeniería de Menú (Recetas)
+  const [modalRecetaOpen, setModalRecetaOpen] = useState(false);
+  const [productoParaReceta, setProductoParaReceta] = useState(null);
   const [dropdownCatModalAbierto, setDropdownCatModalAbierto] = useState(false);
   // Estados para el modal de cambios pendientes
   const [configOriginal, setConfigOriginal] = useState(null); // Copia de la config al entrar
@@ -97,7 +102,7 @@ export default function ErpDashboard({ onVolverAlPos }) {
       // Aseguramos que no haya cambios pendientes al entrar
       setHayCambiosPendientes(false);
     }
-  }, [vistaActiva]); // Solo depende de que se active la vista 'config'
+  }, [config,vistaActiva]); // Solo depende de que se active la vista 'config'
   // ==========================================
   // 📊 EFECTO 1: MÉTRICAS DINÁMICAS
   // ==========================================
@@ -284,7 +289,7 @@ export default function ErpDashboard({ onVolverAlPos }) {
       setConfigOriginal(JSON.parse(JSON.stringify(config)));
       setHayCambiosPendientes(false);
     }
-  }, [vistaActiva]);
+  }, [config ,vistaActiva]);
   // Manejador de cambio de sede ✨
   const cambiarSedeFiltro = (sede) => {
     if (sede === 'Todas') {
@@ -304,75 +309,157 @@ export default function ErpDashboard({ onVolverAlPos }) {
       setMenuAbierto(false);
     }
   };
+
+
+  
   const Sidebar = () => {
-    // 1. Traemos la configuración de nuestra tienda Zustand
     const { configuracionGlobal } = usePosStore();
     const colorPrimario = configuracionGlobal?.colorPrimario || '#ff5a1f';
     const modulos = configuracionGlobal?.modulos || {};
+    const rolUsuario = localStorage.getItem('rol_usuario'); 
+    const esDueño = rolUsuario === 'Dueño';
 
-    // 2. Creamos la lista y la filtramos mágicamente
-    const menuItems = [
-      { id: 'dashboard', icono: '📊', nombre: 'Ventas en Vivo', show: true },
-      { id: 'personal', icono: '👥', nombre: 'Personal y Roles', show: true },
-      { id: 'diseno_salon', icono: '🗺️', nombre: 'Diseño del Salón', show: true },
-      // 👇 Estos botones dependen de los interruptores de configuración
-      { id: 'crm', icono: '💬', nombre: 'Marketing & CRM', show: modulos.clientes },
-      { id: 'inventario', icono: '📦', nombre: 'Inventario (Stock)', show: modulos.inventario },
-      { id: 'menu', icono: '🍔', nombre: 'Editor de Menú', show: true },
-      { id: 'carta_qr', icono: '📱', nombre: 'Carta QR + Cuenta en Vivo', show: modulos.cartaQr },
-      { id: 'bot_wsp', icono: '🤖', nombre: 'Bot de WhatsApp', show: modulos.botWsp},
-      { id: 'facturacion', icono: '🧾', nombre: 'Facturación Electrónica', show: modulos.facturacion },
-      { id: 'config', icono: '⚙️', nombre: 'Configuraciones', show: true },
-    ].filter(item => item.show); // <--- Esto elimina los ocultos
+    // ✨ NUEVO: Estado para saber qué grupo está abierto. (Por defecto abrimos "Operaciones")
+    const [grupoExpandido, setGrupoExpandido] = useState("Operaciones");
+
+    const gruposMenu = [
+      {
+        titulo: "Operaciones",
+        iconoGrupo: "⚡",
+        items: [
+          { id: 'dashboard', icono: '📊', nombre: 'Ventas en Vivo', show: true },
+          { id: 'menu', icono: '🍔', nombre: 'Editor de Menú', show: true },
+          { id: 'diseno_salon', icono: '🗺️', nombre: 'Diseño del Salón', show: true },
+        ]
+      },
+      {
+        titulo: "Administración",
+        iconoGrupo: "🏢",
+        items: [
+          { id: 'inventario', icono: '📦', nombre: 'Inventario (Stock)', show: modulos.inventario },
+          { id: 'personal', icono: '👥', nombre: 'Personal y Roles', show: true },
+        ]
+      },
+      {
+        titulo: "Crecimiento",
+        iconoGrupo: "🚀",
+        items: [
+          { id: 'crm', icono: '💬', nombre: 'Marketing & CRM', show: modulos.clientes },
+          { id: 'carta_qr', icono: '📱', nombre: 'Carta QR + Cuenta', show: modulos.cartaQr },
+          { id: 'bot_wsp', icono: '🤖', nombre: 'Bot de WhatsApp', show: modulos.botWsp },
+        ]
+      },
+      {
+        titulo: "Sistema",
+        iconoGrupo: "⚙️",
+        items: [
+          { id: 'facturacion', icono: '🧾', nombre: 'Facturación Electrónica', show: modulos.facturacion },
+          { id: 'config', icono: '🔧', nombre: 'Configuración', show: esDueño }
+        ]
+      }
+    ];
+
+    const handleCerrarSesion = () => {
+      if (window.confirm("¿Estás seguro que deseas cerrar sesión?")) {
+        localStorage.clear(); 
+        window.location.href = '/login-admin'; 
+      }
+    };
 
     return (
       <div className={`fixed inset-y-0 left-0 w-64 bg-[#111] border-r border-[#222] transform ${menuAbierto ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 transition-transform duration-300 z-50 flex flex-col`}>
         
-        {/* LOGO TEMATIZADO */}
-        <div className="p-6">
-          <h1 className="text-xl font-black text-white">
-            CAÑA <span style={{ color: colorPrimario }}>BRAVA</span>
+        {/* LOGO */}
+        <div className="p-6 shrink-0 border-b border-[#222] mb-4">
+          <h1 className="text-2xl font-black text-white tracking-tight">
+            BRAVA <span style={{ color: colorPrimario }}>POS</span>
           </h1>
-          <p className="text-xs text-neutral-500 tracking-widest uppercase mt-1">ERP Cloud</p>
+          <p className="text-[10px] text-neutral-500 font-bold tracking-widest uppercase mt-1">ERP Cloud</p>
         </div>
 
-        <nav className="flex-1 px-4 space-y-2 overflow-y-auto">
-          {menuItems.map(item => {
-            const isActivo = vistaActiva === item.id;
-            
+        {/* NAVEGACIÓN DESPLEGABLE */}
+        <nav className="flex-1 px-4 overflow-y-auto custom-scrollbar pb-6 space-y-2">
+          {gruposMenu.map((grupo, index) => {
+            const itemsVisibles = grupo.items.filter(item => item.show);
+            if (itemsVisibles.length === 0) return null;
+
+            const isOpen = grupoExpandido === grupo.titulo;
+
             return (
-              <button 
-                key={item.id}
-                onClick={() => { manejarCambioVista(item.id); setMenuAbierto(false); }}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition-all
-                  ${!isActivo ? 'text-neutral-400 hover:bg-[#222] hover:text-white' : ''}`}
-                // 👇 Magia CSS: Inyectamos el color dinámico con transparencias
-                style={isActivo ? { 
-                  backgroundColor: `${colorPrimario}1A`, // 1A = 10% opacidad
-                  color: colorPrimario,
-                  border: `1px solid ${colorPrimario}33` // 33 = 20% opacidad
-                } : {}}
-              >
-                <span className="text-xl">{item.icono}</span>
-                {item.nombre}
-              </button>
+              <div key={index} className="overflow-hidden rounded-2xl transition-all duration-300">
+                {/* BOTÓN CABECERA DEL GRUPO */}
+                <button 
+                  onClick={() => setGrupoExpandido(isOpen ? null : grupo.titulo)}
+                  className={`w-full flex items-center justify-between px-4 py-3.5 font-bold transition-all ${
+                    isOpen ? 'bg-[#1a1a1a] text-white' : 'text-neutral-400 hover:bg-[#161616] hover:text-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-lg opacity-80">{grupo.iconoGrupo}</span>
+                    <span className="text-sm tracking-wide">{grupo.titulo}</span>
+                  </div>
+                  <span className={`text-xs opacity-50 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`}>
+                    ▼
+                  </span>
+                </button>
+
+                {/* LOS HIJOS (SUB-MENÚ) */}
+                <div 
+                  className={`transition-all duration-300 ease-in-out ${
+                    isOpen ? 'max-h-96 opacity-100 mt-1 mb-2' : 'max-h-0 opacity-0'
+                  }`}
+                >
+                  <div className="space-y-1 px-2 border-l-2 border-[#222] ml-6 mr-2">
+                    {itemsVisibles.map(item => {
+                      const isActivo = vistaActiva === item.id;
+                      
+                      return (
+                        <button 
+                          key={item.id}
+                          onClick={() => { manejarCambioVista(item.id); setMenuAbierto(false); }}
+                          className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition-all text-sm
+                            ${!isActivo ? 'text-neutral-500 hover:bg-[#1a1a1a] hover:text-white' : ''}`}
+                          style={isActivo ? { 
+                            backgroundColor: `${colorPrimario}15`, 
+                            color: colorPrimario,
+                            border: `1px solid ${colorPrimario}30` 
+                          } : { border: '1px solid transparent' }}
+                        >
+                          <span className="text-base opacity-70">{item.icono}</span>
+                          {item.nombre}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
             );
           })}
         </nav>
 
-        {/* BOTÓN INFERIOR TEMATIZADO */}
-        <div className="p-4 border-t border-[#222]">
+        {/* FOOTER */}
+        <div className="p-4 border-t border-[#222] bg-[#0a0a0a] space-y-3 shrink-0">
           <button 
             onClick={onVolverAlPos} 
-            className="w-full text-white py-3 rounded-xl font-bold hover:brightness-110 transition-all shadow-lg"
+            className="w-full text-white py-3.5 rounded-xl font-black hover:brightness-110 active:scale-95 transition-all flex items-center justify-center gap-2 shadow-lg"
             style={{ backgroundColor: colorPrimario, boxShadow: `0 4px 15px ${colorPrimario}40` }}
           >
-            🖥️ Ir al POS
+            <span className="text-xl">🖥️</span> Ir al POS
+          </button>
+
+          <button 
+            onClick={handleCerrarSesion} 
+            className="w-full text-neutral-500 hover:text-red-500 hover:bg-red-500/10 py-3 rounded-xl font-bold text-sm transition-colors flex items-center justify-center gap-2"
+          >
+            <span className="text-lg">🚪</span> Cerrar Sesión
           </button>
         </div>
       </div>
     );
   };
+
+
+
   // ==========================================
   // ⚙️ FUNCIONES DE CONTROL (RESTAURADAS)
   // ==========================================
@@ -711,6 +798,43 @@ export default function ErpDashboard({ onVolverAlPos }) {
     });
   };
   
+  function SedeSelector({ alCambiarSede }) {
+    const [sedes, setSedes] = useState([]);
+    const [sedeActual, setSedeActual] = useState(localStorage.getItem('sede_id') || '');
+
+    useEffect(() => {
+      async function cargarSedes() {
+        const res = await getSedes();
+        setSedes(res.data);
+        if (!localStorage.getItem('sede_id') && res.data.length > 0) {
+          alCambiarSede(res.data[0].id);
+        }
+      }
+      cargarSedes();
+    }, [alCambiarSede]);
+
+    const cambiarSede = (id) => {
+      localStorage.setItem('sede_id', id);
+      setSedeActual(id);
+      if (alCambiarSede) alCambiarSede(id);
+      window.location.reload(); 
+    };
+
+    return (
+      <div className="flex items-center gap-3 bg-[#111] p-2 rounded-2xl border border-[#222]">
+        <span className="text-xs font-black text-neutral-500 uppercase ml-2">Sede:</span>
+        <select 
+          value={sedeActual} 
+          onChange={(e) => cambiarSede(e.target.value)}
+          className="bg-transparent text-white font-bold text-sm focus:outline-none cursor-pointer"
+        >
+          {sedes.map(s => (
+            <option key={s.id} value={s.id} className="bg-[#111]">{s.nombre}</option>
+          ))}
+        </select>
+      </div>
+    );
+  }
   return (
     
     <div className={`min-h-screen font-sans flex transition-colors duration-500 ${config.temaFondo === 'dark' ? 'bg-[#0a0a0a] text-neutral-100' : 'bg-[#f0f0f0] text-neutral-900'}`}>
@@ -1303,269 +1427,23 @@ export default function ErpDashboard({ onVolverAlPos }) {
 
           {/* ======================= VISTA: EDITOR DE MENÚ ======================= */}
           {vistaActiva === 'menu' && (
-            <div className="animate-fadeIn space-y-6 max-w-6xl mx-auto min-w-0">
-              
-              {/* ========== CABECERA DEL EDITOR DE MENÚ ========== */}
-              <div className={`flex flex-col md:flex-row justify-between items-start md:items-center gap-5 p-6 rounded-3xl border mb-6 transition-colors ${
-                config.temaFondo === 'dark' 
-                  ? 'bg-[#121212] border-[#222]' 
-                  : 'bg-white border-gray-200 shadow-sm'
-              }`}>
-                
-                {/* Textos a la izquierda */}
-                <div>
-                  <h2 className={`text-2xl font-black ${
-                    config.temaFondo === 'dark' ? 'text-white' : 'text-gray-900'
-                  }`}>
-                    Editor de Carta Digital
-                  </h2>
-                  <p className={`text-sm mt-1 ${
-                    config.temaFondo === 'dark' ? 'text-neutral-500' : 'text-gray-500'
-                  }`}>
-                    Crea tus categorías, platos y ajusta los precios en tiempo real.
-                  </p>
-                </div>
-
-                {/* Grupo de Acciones a la derecha */}
-                <div className="flex flex-col sm:flex-row w-full md:w-auto gap-3 shrink-0">
-                  
-                  {/* Botón Secundario */}
-                  <button 
-                    onClick={() => setModalCategorias(true)}
-                    className={`flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-bold transition-all w-full sm:w-auto text-sm ${
-                      config.temaFondo === 'dark'
-                        ? 'bg-[#1a1a1a] hover:bg-[#2a2a2a] text-neutral-300 border border-[#333] hover:border-[#555]'
-                        : 'bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-300 hover:border-gray-400'
-                    }`}
-                  >
-                    📁 Administrar Categorías
-                  </button>
-                  
-                  {/* Botón Primario (usa colorPrimario) */}
-                  <button 
-                    onClick={() => {
-                      cerrarModalPlato();
-                      setModalPlato(true);
-                    }}
-                    style={{ backgroundColor: config.colorPrimario }}
-                    className="flex items-center justify-center gap-2 text-white px-6 py-3 rounded-xl font-black shadow-lg transition-all w-full sm:w-auto text-sm hover:brightness-110 active:scale-95"
-                  >
-                    🍔 NUEVO PLATO
-                  </button>
-                  
-                </div>
-              </div>
-
-              {/* ========== CUERPO: CATEGORÍAS + PLATOS ========== */}
-              <div className="flex flex-col lg:flex-row gap-6">
-                
-                {/* Columna Izquierda: Categorías */}
-                <div className="w-full lg:w-1/4 shrink-0 mb-4 lg:mb-0">
-                  <h4 className={`text-[10px] font-black uppercase tracking-widest mb-3 px-2 hidden lg:block ${
-                    config.temaFondo === 'dark' ? 'text-neutral-500' : 'text-gray-500'
-                  }`}>
-                    Categorías
-                  </h4>
-                  
-                  {/* VERSIÓN MÓVIL (Dropdown) */}
-                  <div className="block lg:hidden relative">
-                    <button
-                      onClick={() => setDropdownAbierto(!dropdownAbierto)}
-                      className={`w-full flex items-center justify-between font-bold px-5 py-4 rounded-2xl shadow-lg transition-all ${
-                        config.temaFondo === 'dark'
-                          ? 'bg-[#1a1a1a] hover:bg-[#222] border border-[#333] hover:border-[#444] text-white'
-                          : 'bg-gray-100 hover:bg-gray-200 border border-gray-300 hover:border-gray-400 text-gray-800'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="text-xl">
-                          {categoriaSeleccionada === 'Todos' ? '🍔' : '📌'}
-                        </span>
-                        <span>{categoriaSeleccionada === 'Todos' ? 'Todas las Categorías' : categoriaSeleccionada}</span>
-                      </div>
-                      <span className={`transition-transform duration-300 ${dropdownAbierto ? 'rotate-180' : ''}`}>
-                        ▼
-                      </span>
-                    </button>
-
-                    {dropdownAbierto && (
-                      <div className={`absolute z-50 mt-2 w-full rounded-2xl shadow-2xl overflow-hidden animate-fadeIn ${
-                        config.temaFondo === 'dark'
-                          ? 'bg-[#1a1a1a] border border-[#333]'
-                          : 'bg-white border border-gray-200'
-                      }`}>
-                        <button
-                          onClick={() => {
-                            setCategoriaSeleccionada('Todos');
-                            setDropdownAbierto(false);
-                          }}
-                          className={`w-full text-left px-5 py-4 font-bold transition-all border-b flex items-center gap-3 ${
-                            config.temaFondo === 'dark'
-                              ? 'border-[#222] hover:bg-[#222] text-neutral-300'
-                              : 'border-gray-100 hover:bg-gray-50 text-gray-700'
-                          } ${categoriaSeleccionada === 'Todos' ? (config.temaFondo === 'dark' ? 'bg-[#ff5a1f]/10 text-[#ff5a1f]' : 'bg-gray-100 text-gray-900') : ''}`}
-                        >
-                          <span className="text-xl">🍔</span>
-                          Todas las Categorías
-                        </button>
-                        <div className="max-h-60 overflow-y-auto">
-                          {categorias.map(cat => (
-                            <button
-                              key={cat.id}
-                              onClick={() => {
-                                setCategoriaSeleccionada(cat.nombre);
-                                setDropdownAbierto(false);
-                              }}
-                              className={`w-full text-left px-5 py-4 font-bold transition-all border-b last:border-0 flex items-center gap-3 ${
-                                config.temaFondo === 'dark'
-                                  ? 'border-[#222] hover:bg-[#222] text-neutral-300'
-                                  : 'border-gray-100 hover:bg-gray-50 text-gray-700'
-                              } ${categoriaSeleccionada === cat.nombre ? (config.temaFondo === 'dark' ? 'bg-[#ff5a1f]/10 text-[#ff5a1f]' : 'bg-gray-100 text-gray-900') : ''}`}
-                            >
-                              <span className="text-xl opacity-50">📌</span>
-                              {cat.nombre}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* VERSIÓN PC (Botones laterales) */}
-                  <div className="hidden lg:flex flex-col space-y-2">
-                    <button 
-                      onClick={() => setCategoriaSeleccionada('Todos')}
-                      className={`w-full text-left px-5 py-3.5 rounded-2xl font-bold transition-all flex justify-between items-center group ${
-                        categoriaSeleccionada === 'Todos'
-                          ? 'text-white shadow-lg'
-                          : config.temaFondo === 'dark'
-                            ? 'bg-[#1a1a1a] text-neutral-400 hover:bg-[#222] border border-[#333] hover:border-[#444]'
-                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-200 hover:border-gray-300'
-                      }`}
-                      style={categoriaSeleccionada === 'Todos' ? { backgroundColor: config.colorPrimario } : {}}
-                    >
-                      Todos
-                    </button>
-                    {categorias.map(cat => (
-                      <button 
-                        key={cat.id} 
-                        onClick={() => setCategoriaSeleccionada(cat.nombre)}
-                        className={`w-full text-left px-5 py-3.5 rounded-2xl font-bold transition-all flex justify-between items-center group ${
-                          categoriaSeleccionada === cat.nombre
-                            ? 'text-white shadow-lg'
-                            : config.temaFondo === 'dark'
-                              ? 'bg-[#1a1a1a] text-neutral-400 hover:bg-[#222] border border-[#333] hover:border-[#444]'
-                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-200 hover:border-gray-300'
-                        }`}
-                        style={categoriaSeleccionada === cat.nombre ? { backgroundColor: config.colorPrimario } : {}}
-                      >
-                        {cat.nombre}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Columna Derecha: Cuadrícula de Platos */}
-                <div className="lg:w-3/4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                    
-                    {productosReales
-                      .filter(plato => {
-                        if (categoriaSeleccionada === 'Todos') return true;
-                        const nombreCatDelPlato = categorias.find(c => c.id === plato.categoria)?.nombre || plato.categoria;
-                        return nombreCatDelPlato === categoriaSeleccionada;
-                      })
-                      .map((plato) => {
-                        const nombreCategoriaMuestra = categorias.find(c => c.id === plato.categoria)?.nombre || plato.categoria || 'Sin categoría';
-                        return (
-                          <div 
-                            key={plato.id} 
-                            className={`rounded-3xl p-5 flex flex-col relative overflow-hidden transition-all ${
-                              !plato.disponible ? 'opacity-60 grayscale' : ''
-                            } ${
-                              config.temaFondo === 'dark'
-                                ? 'bg-[#111] border border-[#222] group hover:border-[#ff5a1f]/50'
-                                : 'bg-white border border-gray-200 shadow-sm group hover:border-gray-300'
-                            }`}
-                          >
-                            {/* Indicador de Disponibilidad */}
-                            <button 
-                              onClick={() => toggleDisponibilidad(plato)}
-                              className={`absolute top-4 right-4 flex items-center gap-2 px-3 py-1.5 rounded-full border z-10 transition-all hover:scale-105 ${
-                                config.temaFondo === 'dark'
-                                  ? 'bg-[#1a1a1a] border-[#333]'
-                                  : 'bg-gray-100 border-gray-200'
-                              }`}
-                            >
-                              <span className={`w-2 h-2 rounded-full ${plato.disponible ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500'}`}></span>
-                              <span className={`text-[10px] font-bold uppercase tracking-widest ${
-                                config.temaFondo === 'dark' ? 'text-neutral-400' : 'text-gray-500'
-                              }`}>
-                                {plato.disponible ? 'Disponible' : 'Agotado'}
-                              </span>
-                            </button>
-
-                            {/* Imagen placeholder */}
-                            <div className={`w-full h-32 rounded-2xl flex items-center justify-center text-6xl mb-4 transition-transform group-hover:scale-105 shadow-inner ${
-                              config.temaFondo === 'dark'
-                                ? 'bg-gradient-to-br from-[#1a1a1a] to-[#111] border border-[#222]'
-                                : 'bg-gradient-to-br from-gray-100 to-gray-50 border border-gray-200'
-                            }`}>
-                              🍽️
-                            </div>
-                            
-                            <h5 className={`font-black text-xl leading-tight mb-1 ${
-                              config.temaFondo === 'dark' ? 'text-white' : 'text-gray-900'
-                            }`}>
-                              {plato.nombre}
-                            </h5>
-                            <p className={`text-[10px] font-bold uppercase tracking-widest mb-4 line-clamp-1 ${
-                              config.temaFondo === 'dark' ? 'text-neutral-500' : 'text-gray-500'
-                            }`}>
-                              {nombreCategoriaMuestra}
-                            </p>
-                            
-                            <div className="mt-auto flex items-center justify-between">
-                              <p className="font-black text-2xl" style={{ color: config.colorPrimario }}>
-                                S/ {parseFloat(plato.precio_base).toFixed(2)}
-                              </p>
-                              <div className="flex gap-2">
-                                <button 
-                                  onClick={() => abrirModalEditar(plato)}
-                                  className={`w-10 h-10 flex items-center justify-center rounded-xl transition-colors ${
-                                    config.temaFondo === 'dark'
-                                      ? 'bg-[#1a1a1a] hover:bg-[#222] text-white border border-[#333]'
-                                      : 'bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-200'
-                                  }`}
-                                >
-                                  ✏️
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-
-                    {/* Mensaje si no hay platos */}
-                    {productosReales.filter(plato => {
-                      if (categoriaSeleccionada === 'Todos') return true;
-                      const nombreCatDelPlato = categorias.find(c => c.id === plato.categoria)?.nombre || plato.categoria;
-                      return nombreCatDelPlato === categoriaSeleccionada;
-                    }).length === 0 && (
-                      <div className="col-span-full py-12 text-center">
-                        <p className={`text-lg font-bold ${
-                          config.temaFondo === 'dark' ? 'text-neutral-500' : 'text-gray-500'
-                        }`}>
-                          No hay platos en esta categoría.
-                        </p>
-                      </div>
-                    )}
-
-                  </div>
-                </div>
-
-              </div>
-            </div>
+            <EditorMenu 
+              categorias={categorias}
+              productosReales={productosReales}
+              onOpenCategorias={() => setModalCategorias(true)}
+              onOpenPlatoNuevo={() => { cerrarModalPlato(); setModalPlato(true); }}
+              onEditPlato={(plato) => abrirModalEditar(plato)}
+              onToggleDisponibilidad={toggleDisponibilidad}
+              onOpenReceta={(plato) => {
+                // 🚀 Aquí abriremos el ModalConfigurarReceta que te pasé antes
+                setProductoParaReceta(plato);
+                setModalRecetaOpen(true);
+              }}
+              onOpenVariaciones={(plato) => {
+                setProductoParaVariaciones(plato);
+                setModalVariacionesOpen(true);
+              }}
+            />
           )}
           {/* ======================= VISTA: PERSONAL Y ROLES ======================= */}
           {vistaActiva === 'personal' && (
@@ -1641,7 +1519,7 @@ export default function ErpDashboard({ onVolverAlPos }) {
                             <span className={`text-[10px] font-black px-2 py-0.5 rounded border uppercase flex items-center gap-1 ${
                               config.temaFondo === 'dark' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 'bg-blue-50 text-blue-600 border-blue-200'
                             }`}>
-                              📍 {sedesReales.find(s => s.id === emp.sede)?.nombre || 'Sede Principal'}
+                              📍 {emp.sede_nombre || 'Sede Principal'}
                             </span>
                           )}
                         </div>
@@ -1829,98 +1707,7 @@ export default function ErpDashboard({ onVolverAlPos }) {
 
           {/* ======================= VISTA: INVENTARIO ======================= */}
           {vistaActiva === 'inventario' && (
-            <div className="animate-fadeIn space-y-6 max-w-5xl mx-auto">
-              
-              {/* CABECERA */}
-              <div className="flex justify-between items-end">
-                <div>
-                  <h3 className={`text-2xl font-black ${
-                    config.temaFondo === 'dark' ? 'text-white' : 'text-gray-900'
-                  }`}>
-                    Insumos y Stock
-                  </h3>
-                  <p className={`text-sm ${
-                    config.temaFondo === 'dark' ? 'text-neutral-500' : 'text-gray-500'
-                  }`}>
-                    Controla las mermas y asegura que no falte mercancía.
-                  </p>
-                </div>
-                <button 
-                  style={{ backgroundColor: config.colorPrimario }}
-                  className="text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:brightness-110 transition-colors"
-                >
-                  + Ingresar Compra (Factura)
-                </button>
-              </div>
-
-              {/* TARJETAS DE INSUMOS */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {[
-                  { n: 'Pan de Hamburguesa', q: '12 Unidades', st: 'Bajo', color: 'red' },
-                  { n: 'Carne Molida (Res)', q: '15.5 Kg', st: 'Óptimo', color: 'gray' },
-                  { n: 'Cerveza Pilsen', q: '4 Cajas', st: 'Alerta', color: 'yellow' },
-                ].map((ins, i) => (
-                  <div 
-                    key={i} 
-                    className={`p-6 rounded-3xl border relative overflow-hidden transition-all ${
-                      config.temaFondo === 'dark'
-                        ? `border-${ins.color}-500/50 bg-${ins.color}-500/5`
-                        : 'border-gray-200 bg-white shadow-sm'
-                    }`}
-                  >
-                    <p className={`text-xs font-bold uppercase tracking-widest mb-1 ${
-                      config.temaFondo === 'dark' ? 'text-neutral-500' : 'text-gray-500'
-                    }`}>
-                      {ins.st}
-                    </p>
-                    <h4 className={`text-xl font-black ${
-                      config.temaFondo === 'dark' ? 'text-white' : 'text-gray-900'
-                    }`}>
-                      {ins.n}
-                    </h4>
-                    <p className={`text-3xl font-mono mt-3 font-bold ${
-                      config.temaFondo === 'dark' ? 'text-white' : 'text-gray-800'
-                    }`}>
-                      {ins.q}
-                    </p>
-                  </div>
-                ))}
-              </div>
-
-              {/* INFO ESCANDALLO */}
-              <div className={`rounded-3xl p-6 flex items-start gap-4 border ${
-                config.temaFondo === 'dark'
-                  ? 'bg-[#111] border-[#222]'
-                  : 'bg-white border-gray-200 shadow-sm'
-              }`}>
-                <span className="text-4xl">💡</span>
-                <div>
-                  <h4 className={`font-bold text-lg ${
-                    config.temaFondo === 'dark' ? 'text-white' : 'text-gray-900'
-                  }`}>
-                    ¿Cómo funciona el escandallo automático?
-                  </h4>
-                  <p className={`text-sm mt-1 leading-relaxed ${
-                    config.temaFondo === 'dark' ? 'text-neutral-400' : 'text-gray-600'
-                  }`}>
-                    Cuando vincules una receta a un plato, el sistema hará el trabajo por ti. Si vendes una "Hamburguesa Simple", el sistema descontará automáticamente <strong className={config.temaFondo === 'dark' ? 'text-white' : 'text-gray-800'}>1 Pan</strong> y <strong className={config.temaFondo === 'dark' ? 'text-white' : 'text-gray-800'}>0.15 Kg de Carne</strong> de tu stock sin que el mesero tenga que hacer nada.
-                  </p>
-                  <button 
-                    style={{ borderColor: config.colorPrimario, color: config.colorPrimario }}
-                    className={`mt-4 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${
-                      config.temaFondo === 'dark'
-                        ? 'border hover:bg-[#222] hover:text-white'
-                        : 'border hover:bg-gray-100'
-                    }`}
-                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = config.colorPrimario; e.currentTarget.style.color = 'white'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = config.colorPrimario; }}
-                  >
-                    Configurar Recetas →
-                  </button>
-                </div>
-              </div>
-
-            </div>
+            <InventarioView />
           )}
           {/* ======================= VISTA: CARTA QR + CUENTA EN VIVO ======================= */}
           {vistaActiva === 'carta_qr' && (
@@ -2516,6 +2303,18 @@ export default function ErpDashboard({ onVolverAlPos }) {
           </div>
         </div>
       )}
+      <ModalConfigurarReceta 
+        isOpen={modalRecetaOpen} 
+        onClose={() => setModalRecetaOpen(false)} 
+        producto={productoParaReceta} 
+        config={config} 
+      />
+      <ModalVariaciones 
+        isOpen={modalVariacionesOpen} 
+        onClose={() => setModalVariacionesOpen(false)} 
+        producto={productoParaVariaciones} 
+        config={config} 
+      />
     </div>
   );
 }

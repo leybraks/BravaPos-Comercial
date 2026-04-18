@@ -361,21 +361,22 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
             </div>
 
             {/* FILA 2: Acciones Administrativas / Caja (Solo se renderiza si el usuario tiene permisos) */}
-            {(rolUsuario?.toLowerCase() === 'administrador' || rolUsuario?.toLowerCase() === 'admin' || rolUsuario?.toLowerCase() === 'cajero') && (
+            {['administrador', 'admin', 'cajero', 'dueño'].includes(rolUsuario?.toLowerCase()) && (
               <div className="flex items-center gap-1.5 sm:gap-2">
-                {/* BOTÓN ERP (Solo Admin) */}
-                {(rolUsuario?.toLowerCase() === 'administrador' || rolUsuario?.toLowerCase() === 'admin') && (
+                
+                {/* BOTÓN ERP (Solo Admin y Dueño) */}
+                {['administrador', 'admin', 'dueño'].includes(rolUsuario?.toLowerCase()) && (
                   <button onClick={onIrAErp} className="w-9 h-9 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl flex items-center justify-center border border-blue-500/30 bg-blue-500/10 text-blue-500 hover:bg-blue-500 hover:text-white transition-all active:scale-95 shrink-0" title="Panel de Control (ERP)">
                     <span className="text-base sm:text-lg">⚙️</span>
                   </button>
                 )}
 
-                {/* BOTÓN CAJA CHICA (Admin o Cajero) */}
+                {/* BOTÓN CAJA CHICA (Admin, Cajero o Dueño) */}
                 <button onClick={() => setModalMovimientosAbierto(true)} className="w-9 h-9 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl flex items-center justify-center border border-green-500/30 bg-green-500/10 text-green-500 hover:bg-green-500 hover:text-white transition-all active:scale-95 shrink-0" title="Caja Chica">
                   <span className="text-base sm:text-lg">💸</span>
                 </button>
 
-                {/* BOTÓN CERRAR TURNO (Admin o Cajero) */}
+                {/* BOTÓN CERRAR TURNO (Admin, Cajero o Dueño) */}
                 <button 
                   onClick={manejarCierreCajaSeguro} 
                   className="w-9 h-9 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl flex items-center justify-center border border-red-500/30 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-all active:scale-95 shrink-0" 

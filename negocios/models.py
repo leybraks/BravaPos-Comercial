@@ -2,6 +2,7 @@ from django.db import models
 from django.contrib.auth.models import User
 from django.contrib.auth.hashers import make_password, is_password_usable
 from django.core.exceptions import ValidationError
+from django.core.validators import MinValueValidator
 
 class ActivoManager(models.Manager):
     def get_queryset(self):
@@ -218,8 +219,16 @@ class Empleado(models.Model):
     
     def save(self, *args, **kwargs):
         # Si el PIN no empieza con la firma del hasher de Django, significa que es un PIN nuevo en texto plano. Lo encriptamos.
-        if not is_password_usable(self.pin):
-            self.pin = make_password(self.pin)
+        if self.pin:
+            self.pin = self.pin.strip()
+            
+        # 2. EL ESCUDO: Solo evaluamos si REALMENTE hay un texto.
+        # Si self.pin está vacío (""), esta condición se salta y no arruina la contraseña.
+        if self.pin and not is_password_usable(self.pin):
+            # Además, verificamos que sea cortito (un PIN real) para evitar doble encriptación
+            if len(self.pin) < 30:
+                self.pin = make_password(self.pin)
+                
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -359,8 +368,74 @@ class MovimientoCaja(models.Model):
     def __str__(self):
         return f"{self.get_tipo_display()} - S/ {self.monto} - {self.concepto[:20]}"
 
+class InsumoBase(models.Model):
+    """
+    EL CATÁLOGO GLOBAL (Sede 0 / Matriz)
+    Aquí el Dueño define qué ingredientes existen en todo el negocio.
+    """
+    UNIDADES_MEDIDA = [
+        ('g', 'Gramos'), ('kg', 'Kilogramos'),
+        ('ml', 'Mililitros'), ('l', 'Litros'),
+        ('unidades', 'Unidades'),
+    ]
 
+    nombre = models.CharField(max_length=100)
+    negocio = models.ForeignKey('Negocio', on_delete=models.CASCADE, related_name='catalogo_insumos')
+    unidad_medida = models.CharField(max_length=20, choices=UNIDADES_MEDIDA)
+    imagen = models.ImageField(upload_to='insumos/', null=True, blank=True)
+    activo = models.BooleanField(default=True)
+    
+    # ✨ CORRECCIÓN: Aquí es donde vive el stock de la Matriz
+    stock_general = models.DecimalField(max_digits=10, decimal_places=3, default=0)
 
+    def __str__(self):
+        return f"{self.nombre} ({self.unidad_medida})"
 
+class InsumoSede(models.Model):
+    """
+    EL STOCK LOCAL
+    Representa cuánta cantidad de un InsumoBase hay en una Sede específica.
+    """
+    insumo_base = models.ForeignKey(InsumoBase, on_delete=models.CASCADE, related_name='stocks_locales')
+    sede = models.ForeignKey('Sede', on_delete=models.CASCADE, related_name='inventario')
+    
+    stock_actual = models.DecimalField(max_digits=10, decimal_places=3, default=0)
+    stock_minimo = models.DecimalField(max_digits=10, decimal_places=3, default=0)
+    costo_unitario = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    
+    # ❌ (Borramos el stock_general de aquí porque este es el local)
 
+    class Meta:
+        unique_together = ('insumo_base', 'sede')
 
+    def __str__(self):
+        return f"{self.insumo_base.nombre} en {self.sede.nombre}"
+
+class RecetaDetalle(models.Model):
+    """
+    LA RECETA GLOBAL
+    Ahora conectamos el Plato con el InsumoBase. 
+    Así, la receta es la misma para todas las sedes.
+    """
+    producto = models.ForeignKey('Producto', on_delete=models.CASCADE, related_name='ingredientes')
+    insumo = models.ForeignKey(InsumoBase, on_delete=models.CASCADE)
+    
+    cantidad_necesaria = models.DecimalField(max_digits=10, decimal_places=3, validators=[MinValueValidator(0)])
+
+    def __str__(self):
+        return f"{self.cantidad_necesaria} {self.insumo.unidad_medida} de {self.insumo.nombre} para {self.producto.nombre}"
+
+class RecetaOpcion(models.Model):
+    """
+    LA RECETA DE LA VARIACIÓN
+    Define qué insumos EXACTOS gasta una opción. 
+    Sirve tanto para sumar (Extra Rachi) como para definir un plato completo (Mixto 2).
+    """
+    opcion = models.ForeignKey(OpcionVariacion, on_delete=models.CASCADE, related_name='ingredientes')
+    insumo = models.ForeignKey('InsumoBase', on_delete=models.CASCADE) # Conectamos al Almacén Matriz
+    
+    # Cuánto suma (o resta) esta opción al inventario
+    cantidad_necesaria = models.DecimalField(max_digits=10, decimal_places=3)
+
+    def __str__(self):
+        return f"{self.cantidad_necesaria} {self.insumo.unidad_medida} de {self.insumo.nombre} para opción {self.opcion.nombre}"

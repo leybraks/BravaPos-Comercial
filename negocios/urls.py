@@ -19,6 +19,9 @@ router.register(r'mesas', views.MesaViewSet, basename='mesa')
 router.register(r'productos', views.ProductoViewSet, basename='producto')
 router.register(r'ordenes', views.OrdenViewSet, basename='orden')
 router.register(r'empleados', views.EmpleadoViewSet, basename='empleado')
+router.register(r'insumo-base', views.InsumoBaseViewSet, basename='insumobase')
+router.register(r'insumo-sede', views.InsumoSedeViewSet, basename='insumosede')
+
 
 urlpatterns = [
     # Todas tus APIs vivirán bajo la ruta /api/

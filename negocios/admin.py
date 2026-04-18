@@ -1,6 +1,6 @@
 from django.contrib import admin
 # ✨ Agregamos PlanSaaS a la lista de importaciones
-from .models import Negocio, Rol, MovimientoCaja, Empleado, Mesa, Sede, Producto, Orden, DetalleOrden, Pago, ModificadorRapido, GrupoVariacion, OpcionVariacion, PlanSaaS
+from .models import InsumoSede, InsumoBase,Negocio, RecetaDetalle, Rol, MovimientoCaja, Empleado, Mesa, Sede, Producto, Orden, DetalleOrden, Pago, ModificadorRapido, GrupoVariacion, OpcionVariacion, PlanSaaS
 
 # Quitamos el admin.site.register(Negocio) que estaba aquí para hacerlo más pro abajo
 admin.site.register(Rol)
@@ -10,7 +10,9 @@ admin.site.register(Producto)
 admin.site.register(Orden)
 admin.site.register(DetalleOrden)
 admin.site.register(Pago) 
-
+admin.site.register(InsumoBase)
+admin.site.register(InsumoSede)
+admin.site.register(RecetaDetalle)
 # 1. Registramos los modificadores rápidos ("Sin cebolla", etc)
 admin.site.register(ModificadorRapido)
 
