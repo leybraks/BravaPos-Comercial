@@ -51,15 +51,22 @@ INSTALLED_APPS = [
 ASGI_APPLICATION = 'core.asgi.application'
 
 # Configuración inteligente para Redis
-REDIS_URL = os.environ.get('REDIS_URL', 'redis://127.0.0.1:6379')
+#REDIS_URL = os.environ.get('REDIS_URL', 'redis://127.0.0.1:6379')
+#CHANNEL_LAYERS = {
+#    "default": {
+#        "BACKEND": "channels_redis.core.RedisChannelLayer",
+#        "CONFIG": {
+#            "hosts": [REDIS_URL],
+#        },
+#    },
+#}
+
 CHANNEL_LAYERS = {
     "default": {
-        "BACKEND": "channels_redis.core.RedisChannelLayer",
-        "CONFIG": {
-            "hosts": [REDIS_URL],
-        },
-    },
+        "BACKEND": "channels.layers.InMemoryChannelLayer"
+    }
 }
+
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'corsheaders.middleware.CorsMiddleware',
@@ -152,46 +159,13 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:5173",
 ]
 
-REST_FRAMEWORK = {
-    # 1. El método para identificarse será por Token JWT
-    'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
-    ),
-    # 2. Bloqueamos TODAS las rutas por defecto (¡Puertas cerradas!)
-    'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.IsAuthenticated',
-    ]
-}
-
-# Configuración de los Tokens JWT
-SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
-}
-# settings.py
-LANGUAGE_CODE = 'es-pe'
-
-# Cámbialo a la zona horaria de tu país
-TIME_ZONE = 'America/Lima' 
-
-USE_I18N = True
-USE_TZ = True
-
-USE_TZ = False # 👈 ¡Esto es clave apagarlo!
-
-REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.TokenAuthentication',
-    ],
-    'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.IsAuthenticated', # 👈 Candado global
-    ]
-}
-
-
+# Permitir que React (puerto 5173) se comunique con Django
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
 CORS_ALLOW_ALL_ORIGINS = True 
 
-# 👇 ESTA ES LA LÍNEA MÁGICA QUE ARREGLA TU ERROR 👇
 CORS_ALLOW_HEADERS = [
     'accept',
     'accept-encoding',
@@ -202,6 +176,30 @@ CORS_ALLOW_HEADERS = [
     'user-agent',
     'x-csrftoken',
     'x-requested-with',
-    'x-empleado-id',  # ¡AQUÍ ESTÁ NUESTRO HEADER DE AUDITORÍA!
+    'x-empleado-id',  
 ]
 
+# ==========================================
+# ✨ LA ÚNICA Y VERDADERA CONFIGURACIÓN REST
+# ==========================================
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ]
+}
+
+# Configuración de los Tokens JWT
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'AUTH_HEADER_TYPES': ('Bearer',),
+}
+
+# Configuración regional
+LANGUAGE_CODE = 'es-pe'
+TIME_ZONE = 'America/Lima' 
+USE_I18N = True
+USE_TZ = False

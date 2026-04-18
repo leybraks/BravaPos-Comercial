@@ -1,6 +1,6 @@
 import axios from 'axios';
-
-const API_URL = 'http://163.176.135.213:8000/api';
+const apiUrl = import.meta.env.VITE_API_URL;
+const API_URL = `${apiUrl}/api`;
 
 const api = axios.create({
   baseURL: API_URL,
@@ -17,7 +17,7 @@ api.interceptors.request.use(
 
     // 1. Pase VIP
     if (token) {
-      config.headers.Authorization = `Token ${token}`;
+      config.headers.Authorization = `Bearer ${token}`; // ✅ LA PALABRA MÁGICA
     }
     
     // 2. Firma del Empleado
@@ -25,12 +25,11 @@ api.interceptors.request.use(
       config.headers['X-Empleado-ID'] = empleadoId; 
     }
 
-    // 3. Inyección automática para GETs
-    if (sedeId && config.method === 'get' && !config.url.includes('sede_id')) {
+    // 3. Inyección automática para GETs (Ignorando las rutas globales como Negocios)
+    if (sedeId && config.method === 'get' && !config.url.includes('sede_id') && !config.url.includes('negocios')) {
        const separador = config.url.includes('?') ? '&' : '?';
        config.url = `${config.url}${separador}sede_id=${sedeId}`;
     }
-
     return config;
   },
   (error) => Promise.reject(error)
@@ -48,8 +47,7 @@ const getNegocioId = () => localStorage.getItem('negocio_id');
 // ==========================================
 
 // --- LOGIN INICIAL DE LA TABLET ---
-export const loginAdministrador = (credenciales) => axios.post(`${API_URL}/login-tablet/`, credenciales);
-
+export const loginAdministrador = (credenciales) => axios.post(`${API_URL}/login-admin/`, credenciales);
 // --- CAJA Y LOGIN DE EMPLEADOS ---
 // Inyectamos la sede dinámicamente en el payload (cuerpo) de los POST
 export const validarPinEmpleado = (payload) => api.post(`/empleados/validar_pin/`, { ...payload, sede_id: getSedeId() });
@@ -59,7 +57,14 @@ export const cerrarCaja = (data) => api.post('/sesiones_caja/cerrar_caja/', { ..
 
 // --- VISTAS PRINCIPALES ---
 export const getProductos = () => api.get(`/productos/?negocio_id=${getNegocioId()}`);
-export const getMesas = () => api.get(`/mesas/?sede_id=${getSedeId()}`);
+// ✨ API INTELIGENTE: Prioriza el parámetro, sino usa la memoria
+export const getMesas = (params = {}) => {
+    // Si la función recibe un sede_id (como en el Editor), usa ese. 
+    // Si no recibe nada (como en el POS), saca el de la tablet.
+    const sedeIdFinal = params.sede_id || localStorage.getItem('sede_id');
+    
+    return api.get(`/mesas/?sede_id=${sedeIdFinal}`);
+};
 export const getOrdenes = () => api.get(`/ordenes/?sede_id=${getSedeId()}`);
 
 // --- OPERACIONES CON ORDEN Y MESA ---
@@ -81,5 +86,38 @@ export const getSedes = () => api.get('/sedes/');
 export const crearEmpleado = (data) => api.post('/empleados/', data);
 export const crearProducto = (data) => api.post('/productos/', data);
 export const actualizarProducto = (id, data) => api.put(`/productos/${id}/`, data);
+export const parchearProducto = (id, data) => api.patch(`/productos/${id}/`, data);
+export const registrarMovimientoCaja = (data) => api.post('/movimientos-caja/', data);
+// Asegúrate de tener esto junto a tus otras llamadas de la API
+export const getCategorias = () => api.get('/categorias/'); 
+export const crearCategoria = (data) => api.post('/categorias/', data);
+export const parchearCategoria = (id, data) => api.patch(`/categorias/${id}/`, data);
+export const actualizarNegocio = (id, data) => api.patch(`/negocios/${id}/`, data);
+export const getNegocio = (id) => api.get(`/negocios/${id}/`);
+export const actualizarEmpleado = (id, data) => api.patch(`/empleados/${id}/`, data);
+export const crearMesa = (data) => api.post('/mesas/', data);
+export const getInsumos = (params) => api.get('/insumos/', { params });
+export const registrarCompraInsumo = (data) => api.post('/insumos/registrar_compra/', data);
+export const getRecetas = (productoId) => api.get(`/productos/${productoId}/receta/`);
+// En api/api.js
 
+// 🌍 Para el Dueño (Catálogo Global)
+export const getCatalogoGlobal = (params) => api.get('/insumo-base/', { params });
+export const crearInsumoBase = (data) => api.post('/insumo-base/', data);
+export const registrarIngresoMasivo = (data) => api.post('/insumo-sede/ingreso_masivo/', data);
+// 📍 Para el Local (Stock Físico)
+export const getInsumosSede = (params) => api.get('/insumo-sede/', { params });
+export const vincularInsumoASede = (data) => api.post('/insumo-sede/', data);
+export const guardarReceta = async (productoId, datosReceta) => {
+    return await api.post(`/productos/${productoId}/configurar_receta/`, datosReceta);
+};
+export const getReceta = async (productoId) => {
+    return await api.get(`/productos/${productoId}/obtener_receta/`);
+};
+
+export const actualizarVariacionesProducto = async (productoId, gruposData) => {
+    // Usamos PATCH para actualizar solo la parte de las variaciones sin tocar el nombre o el precio base
+    return await api.patch(`/productos/${productoId}/`, { grupos_variacion: gruposData });
+};
+// (Ajusta la URL si en tu Django la llamaste diferente)
 export default api;
