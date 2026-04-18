@@ -4,6 +4,7 @@ import {
   getEmpleados, 
   getRoles, 
   getSedes, 
+  getOrdenes,
   crearEmpleado,
   getProductos,
   crearProducto,
@@ -22,11 +23,14 @@ import InventarioView from './InventarioView';
 import EditorMenu from './EditorMenu';
 import ModalConfigurarReceta from './ModalConfigurarReceta';
 import ModalVariaciones from './ModalVariaciones';
+import DashboardVentas from './DashboardVentas';
+import DashboardCartaQR from './DashboardCartaQR';
 export default function ErpDashboard({ onVolverAlPos }) {
   const { configuracionGlobal } = usePosStore();
   const tema = configuracionGlobal?.temaFondo || 'dark';
   const setConfiguracionGlobal = usePosStore((state) => state.setConfiguracionGlobal);
   const colorPrimario = configuracionGlobal?.colorPrimario || '#ff5a1f';
+  const [ordenesReales, setOrdenesReales] = useState([]);
   const [vistaActiva, setVistaActiva] = useState('dashboard');
   const [sedeFiltro, setSedeFiltro] = useState('Todas');
   const [sedeFiltroId, setSedeFiltroId] = useState(null); // ✨ Nuevo: ID real de la sede
@@ -110,18 +114,25 @@ export default function ErpDashboard({ onVolverAlPos }) {
     if (vistaActiva === 'dashboard') {
       const cargarDatos = async () => {
         try {
-          // ✨ Enviamos el sede_id seleccionado (o null si es "Todas")
-          const res = await obtenerMetricasDashboard({ sede_id: sedeFiltroId });
-          setMetricas(res.data);
+          // ✨ Pedimos a Django las métricas y la lista completa de órdenes a la vez
+          const [resMetricas, resOrdenes] = await Promise.all([
+            obtenerMetricasDashboard({ sede_id: sedeFiltroId }),
+            getOrdenes({ sede_id: sedeFiltroId }) 
+          ]);
+          
+          setMetricas(resMetricas.data);
+          setOrdenesReales(resOrdenes.data); // ✨ Guardamos la data cruda para Power BI
+
         } catch (error) {
-          console.error("Error al cargar métricas:", error);
+          console.error("Error al cargar métricas u órdenes:", error);
         }
       };
+      
       cargarDatos();
       const intervalo = setInterval(cargarDatos, 10000);
       return () => clearInterval(intervalo);
     }
-  }, [vistaActiva, sedeFiltroId]); // ✨ Recarga al cambiar de sede
+  }, [vistaActiva, sedeFiltroId]);
 
   // ==========================================
   // 👥 EFECTO 2: GESTIÓN DE PERSONAL
@@ -310,7 +321,7 @@ export default function ErpDashboard({ onVolverAlPos }) {
     }
   };
 
-
+  //MEJORAR FUNCIONAMIENTO 
   
   const Sidebar = () => {
     const { configuracionGlobal } = usePosStore();
@@ -848,154 +859,17 @@ export default function ErpDashboard({ onVolverAlPos }) {
         </header>
 
         <main className="p-4 md:p-8 flex-1 overflow-y-auto overflow-x-hidden min-w-0 w-full">
+          {/* ======================= VISTA: DASHBOARD ======================= */}
           {vistaActiva === 'dashboard' && (
-            <div className="animate-fadeIn space-y-6">
-              
-              {/* ========== FILTRO MULTI-SEDE ========== */}
-              <div className={`flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 p-2 rounded-2xl border transition-colors ${
-                config.temaFondo === 'dark' 
-                  ? 'bg-[#111] border-[#222]' 
-                  : 'bg-gray-100 border-gray-300'
-              }`}>
-                <div className={`flex w-full sm:w-auto rounded-xl p-1 overflow-x-auto transition-colors ${
-                  config.temaFondo === 'dark' ? 'bg-[#1a1a1a]' : 'bg-gray-200'
-                }`}>
-                  <button 
-                    onClick={() => cambiarSedeFiltro('Todas')}
-                    className={`px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${
-                      sedeFiltro === 'Todas' 
-                        ? 'text-white' 
-                        : config.temaFondo === 'dark' ? 'text-neutral-500' : 'text-gray-600'
-                    }`}
-                    style={sedeFiltro === 'Todas' ? { backgroundColor: config.colorPrimario } : {}}
-                  >
-                    Todas
-                  </button>
-                  {sedesReales.map(s => (
-                    <button 
-                      key={s.id} 
-                      onClick={() => cambiarSedeFiltro(s)}
-                      className={`px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${
-                        sedeFiltro === s.nombre 
-                          ? 'text-white' 
-                          : config.temaFondo === 'dark' ? 'text-neutral-500' : 'text-gray-600'
-                      }`}
-                      style={sedeFiltro === s.nombre ? { backgroundColor: config.colorPrimario } : {}}
-                    >
-                      {s.nombre}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* ========== TARJETAS DE MÉTRICAS ========== */}
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                
-                {/* Tarjeta Ingresos Totales (ocupa 2 columnas en móvil, 1 en desktop) */}
-                <div className={`col-span-2 md:col-span-1 p-6 rounded-3xl border transition-all ${
-                  config.temaFondo === 'dark' 
-                    ? 'bg-[#121212] border-[#222]' 
-                    : 'bg-white border-gray-200 shadow-sm'
-                }`}>
-                  <p className={`font-bold uppercase tracking-widest text-[10px] mb-2 ${
-                    config.temaFondo === 'dark' ? 'text-neutral-500' : 'text-gray-500'
-                  }`}>
-                    Ingresos Totales
-                  </p>
-                  <h3 className={`text-3xl md:text-4xl font-black ${
-                    config.temaFondo === 'dark' ? 'text-white' : 'text-gray-900'
-                  }`}>
-                    S/ {metricas.ventas.toFixed(2)}
-                  </h3>
-                </div>
-
-                {/* Tarjeta Órdenes */}
-                <div className={`col-span-1 p-5 md:p-6 rounded-3xl border transition-all ${
-                  config.temaFondo === 'dark' 
-                    ? 'bg-[#121212] border-[#222]' 
-                    : 'bg-white border-gray-200 shadow-sm'
-                }`}>
-                  <p className={`font-bold uppercase tracking-widest text-[10px] mb-2 ${
-                    config.temaFondo === 'dark' ? 'text-neutral-500' : 'text-gray-500'
-                  }`}>
-                    Órdenes
-                  </p>
-                  <h3 className={`text-2xl md:text-4xl font-black ${
-                    config.temaFondo === 'dark' ? 'text-white' : 'text-gray-900'
-                  }`}>
-                    {metricas.ordenes}
-                  </h3>
-                </div>
-
-                {/* Tarjeta Ticket Promedio */}
-                <div className={`col-span-1 p-5 md:p-6 rounded-3xl border transition-all ${
-                  config.temaFondo === 'dark' 
-                    ? 'bg-[#121212] border-[#222]' 
-                    : 'bg-white border-gray-200 shadow-sm'
-                }`}>
-                  <p className={`font-bold uppercase tracking-widest text-[10px] mb-2 ${
-                    config.temaFondo === 'dark' ? 'text-neutral-500' : 'text-gray-500'
-                  }`}>
-                    Ticket Promedio
-                  </p>
-                  <h3 className={`text-2xl md:text-4xl font-black ${
-                    config.temaFondo === 'dark' ? 'text-white' : 'text-gray-900'
-                  }`}>
-                    S/ {metricas.ticketPromedio.toFixed(2)}
-                  </h3>
-                </div>
-              </div>
-
-              {/* ========== ACTIVIDAD RECIENTE ========== */}
-              <div className={`rounded-3xl p-6 border transition-all ${
-                config.temaFondo === 'dark' 
-                  ? 'bg-[#121212] border-[#222]' 
-                  : 'bg-white border-gray-200 shadow-sm'
-              }`}>
-                <h3 className={`font-bold text-lg mb-6 flex items-center gap-2 ${
-                  config.temaFondo === 'dark' ? 'text-white' : 'text-gray-900'
-                }`}>
-                  Actividad Reciente
-                </h3>
-                <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
-                  {metricas.actividadReciente.length === 0 ? (
-                    <p className={`text-sm text-center py-4 ${
-                      config.temaFondo === 'dark' ? 'text-neutral-500' : 'text-gray-500'
-                    }`}>
-                      Sin ventas el día de hoy.
-                    </p>
-                  ) : (
-                    metricas.actividadReciente.map(orden => (
-                      <div key={orden.id} className={`flex justify-between items-center p-4 rounded-xl border transition-all ${
-                        config.temaFondo === 'dark' 
-                          ? 'bg-[#1a1a1a] border-[#2a2a2a]' 
-                          : 'bg-gray-50 border-gray-200'
-                      }`}>
-                        <div>
-                          <p className={`font-bold ${
-                            config.temaFondo === 'dark' ? 'text-white' : 'text-gray-800'
-                          }`}>
-                            Orden #{orden.id}
-                          </p>
-                          <p className={`text-xs ${
-                            config.temaFondo === 'dark' ? 'text-neutral-500' : 'text-gray-500'
-                          }`}>
-                            {orden.origen} • {orden.hora}
-                          </p>
-                        </div>
-                        <p className={`font-black text-right ${
-                          config.temaFondo === 'dark' ? 'text-white' : 'text-gray-800'
-                        }`}>
-                          S/ {orden.total.toFixed(2)}
-                        </p>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-
-            </div>
-          )}
+          <DashboardVentas 
+            config={config} 
+            sedeFiltro={sedeFiltro} 
+            cambiarSedeFiltro={cambiarSedeFiltro} 
+            sedesReales={sedesReales} 
+            metricas={metricas} 
+            ordenesReales={ordenesReales} 
+          />
+        )}
 
           {/* ======================= VISTA: CONFIGURACIONES ======================= */}
           {vistaActiva === 'config' && (
@@ -1711,28 +1585,7 @@ export default function ErpDashboard({ onVolverAlPos }) {
           )}
           {/* ======================= VISTA: CARTA QR + CUENTA EN VIVO ======================= */}
           {vistaActiva === 'carta_qr' && (
-            <div className="animate-fadeIn max-w-4xl mx-auto space-y-6">
-              <div className={`rounded-3xl p-8 text-center border ${
-                config.temaFondo === 'dark'
-                  ? 'bg-[#121212] border-[#222]'
-                  : 'bg-white border-gray-200 shadow-sm'
-              }`}>
-                <div className="text-7xl mb-4">📱</div>
-                <h2 className={`text-2xl font-black mb-2 ${
-                  config.temaFondo === 'dark' ? 'text-white' : 'text-gray-900'
-                }`}>
-                  Menú QR + Cuenta en Vivo
-                </h2>
-                <p className={`mb-6 ${
-                  config.temaFondo === 'dark' ? 'text-neutral-400' : 'text-gray-600'
-                }`}>
-                  Módulo en desarrollo. Permite a los clientes escanear un código QR en la mesa, ver el menú y solicitar la cuenta en tiempo real.
-                </p>
-                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#ff5a1f]/10 text-[#ff5a1f] text-sm font-bold">
-                  🚧 Próximamente
-                </div>
-              </div>
-            </div>
+            <DashboardCartaQR config={config} />
           )}
 
           {/* ======================= VISTA: BOT DE WHATSAPP ======================= */}
