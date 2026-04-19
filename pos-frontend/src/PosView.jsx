@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import usePosStore from './store/usePosStore';
 import ModalCobro from './ModalCobro';
 import ModalModificadores from './ModalModificadores';
-import { getProductos, crearOrden, actualizarOrden, getOrdenes, getCategorias, crearPago, agregarProductosAOrden } from './api/api';
+import { getProductos, crearOrden, actualizarOrden, getOrdenes, getCategorias, crearPago, agregarProductosAOrden, anularItemDeOrden } from './api/api';
 
 export default function PosView({ mesaId, onVolver }) {
   // ✨ 1. EXTRAEMOS EL TEMA Y COLOR GLOBAL DE ZUSTAND ✨
@@ -31,6 +31,59 @@ export default function PosView({ mesaId, onVolver }) {
   const vaciarStore = vaciarCarrito; 
 
   const sedeActualId = localStorage.getItem('sede_id');
+  const esParaLlevar = (typeof mesaId === 'object' && mesaId?.id === 'llevar') || mesaId === 'llevar';
+  const nombreLlevar = typeof mesaId === 'object' ? mesaId.cliente : 'Cliente (🛍️ Llevar)';
+  const wsRef = useRef(null);
+
+  // Conecta al WS del salón para notificar estado de la mesa en tiempo real
+  useEffect(() => {
+    if (esParaLlevar || !mesaId || !sedeActualId) return;
+
+    // El estado al que volver si el mesero sale sin hacer nada
+    // Si ya había orden activa → cobrando; si no → libre
+    const estadoAnteriorRef = { value: 'libre' };
+
+    const wsUrl = `${import.meta.env.VITE_WS_URL || import.meta.env.VITE_API_URL.replace('http', 'ws')}/ws/salon/${sedeActualId}/`;
+    let ws = null;
+    let unmounted = false;
+
+    const conectar = () => {
+      if (unmounted) return;
+      ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        // El estado de entrada lo decide cargarData una vez que sabe si hay orden activa
+        // Por eso no enviamos nada aquí todavía
+      };
+
+      ws.onclose = () => {
+        if (!unmounted) setTimeout(conectar, 3000);
+      };
+      ws.onerror = () => ws.close();
+    };
+
+    conectar();
+
+    // Exponemos una forma de actualizar el estado anterior desde fuera del efecto
+    wsRef.estadoAnterior = estadoAnteriorRef;
+
+    return () => {
+      unmounted = true;
+      // Al salir → restaurar el estado que tenía la mesa antes de entrar
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'mesa_estado', mesa_id: mesaId, estado: estadoAnteriorRef.value, total: 0 }));
+      }
+      ws?.close();
+    };
+  }, [mesaId, sedeActualId, esParaLlevar]);
+
+  const notificarEstadoMesa = (estado, total = 0) => {
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN && !esParaLlevar) {
+      ws.send(JSON.stringify({ type: 'mesa_estado', mesa_id: mesaId, estado, total }));
+    }
+  };
 
   const cargarData = useCallback(async () => {
       try {
@@ -56,8 +109,21 @@ export default function PosView({ mesaId, onVolver }) {
             o.estado_pago !== 'pagado'
         );
         
-        if (ordenViva) { setOrdenActiva(ordenViva); } 
-        else { setOrdenActiva(null); }
+        if (ordenViva) {
+          setOrdenActiva(ordenViva);
+          // Había orden → entra como 'cobrando', al salir vuelve a 'ocupada'
+          if (wsRef.estadoAnterior) wsRef.estadoAnterior.value = 'ocupada';
+          if (wsRef.current?.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({ type: 'mesa_estado', mesa_id: mesaId, estado: 'cobrando', total: parseFloat(ordenViva.total || 0) }));
+          }
+        } else {
+          setOrdenActiva(null);
+          // Sin orden → entra como 'tomando_pedido', al salir vuelve a 'libre'
+          if (wsRef.estadoAnterior) wsRef.estadoAnterior.value = 'libre';
+          if (wsRef.current?.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({ type: 'mesa_estado', mesa_id: mesaId, estado: 'tomando_pedido', total: 0 }));
+          }
+        }
         
         vaciarStore(); 
         setCargando(false);
@@ -71,11 +137,18 @@ export default function PosView({ mesaId, onVolver }) {
     cargarData();
   }, [cargarData]);
 
-  const totalMesa = (ordenActiva ? parseFloat(ordenActiva.total) : 0) + obtenerTotalDinero();
-  const cantItemsMesa = (ordenActiva ? ordenActiva.detalles.reduce((acc, el) => acc + el.cantidad, 0) : 0) + obtenerTotalItems();
+  // Total desde detalles activos, no desde ordenActiva.total (que no se actualiza solo)
+  // El backend borra el detalle al anular (no hay campo 'anulado'), así que simplemente sumamos todos
+  const totalOrdenActiva = ordenActiva
+    ? ordenActiva.detalles
+        .reduce((acc, d) => acc + parseFloat(d.precio_unitario || 0) * (d.cantidad || 1), 0)
+    : 0;
+  const totalMesa = totalOrdenActiva + obtenerTotalDinero();
+  const cantItemsMesa = (ordenActiva
+    ? ordenActiva.detalles.reduce((acc, el) => acc + el.cantidad, 0)
+    : 0) + obtenerTotalItems();
 
   const manejarEnviarCocina = async () => {
-    // 🛑 1. EL ESCUDO ANTI-DUEÑOS SIN SEDE
     if (!sedeActualId) {
       alert("⚠️ Modo Dueño: Debes seleccionar o asignarte una Sede activa antes de registrar ventas.");
       return; 
@@ -89,18 +162,13 @@ export default function PosView({ mesaId, onVolver }) {
         precio_unitario: item.precio_unitario_calculado || item.precio,
         notas_y_modificadores: item.notas_y_modificadores || "",
         notas_cocina: item.notas_cocina || "",
-        // ✨ 2. EL PUENTE DE LAS VARIACIONES
         opciones_seleccionadas: item.opciones_seleccionadas || [] 
       }));
 
+      // ✨ LA CLAVE: Guardamos la respuesta de la API
+      let response;
       if (ordenActiva) {
-        // ✨ AQUÍ ESTÁ LA MAGIA NUEVA: Guardamos la respuesta de Django
-        const response = await agregarProductosAOrden(ordenActiva.id, { detalles: detallesNuevos });
-        
-        // Y actualizamos la orden en pantalla al instante
-        if (response.data && response.data.orden) {
-            setOrdenActiva(response.data.orden);
-        }
+        response = await agregarProductosAOrden(ordenActiva.id, { detalles: detallesNuevos });
       } else {
         const payloadOrden = {
           sede: sedeActualId, 
@@ -112,35 +180,73 @@ export default function PosView({ mesaId, onVolver }) {
           cliente_telefono: esParaLlevar ? telefonoLlevar : "",
           detalles: detallesNuevos
         };
-        // ✨ LO MISMO AQUÍ PARA ÓRDENES NUEVAS
-        const response = await crearOrden(payloadOrden); 
-        if (response.data) {
-           setOrdenActiva(response.data);
-        }
+        response = await crearOrden(payloadOrden); 
       }
       
-      // Ahora al vaciar el store, la pantalla leerá la ordenActiva recién actualizada
+      // ✨ ACTUALIZAMOS EL ESTADO LOCAL CON LA ORDEN FRESCA
+      if (response.data) {
+        // Si el backend devuelve { orden: {...} } o solo el objeto {...}
+        const ordenActualizada = response.data.orden || response.data;
+        setOrdenActiva(ordenActualizada);
+      }
+      
       vaciarStore(); 
-      setCarritoAbierto(false); 
+      setCarritoAbierto(false);
+      notificarEstadoMesa('ocupada', totalMesa);
       setMostrarExito(true);    
       
-      setTimeout(() => {
-        setMostrarExito(false);
-        onVolver(); 
-      }, 2000);
+      setTimeout(() => { setMostrarExito(false); onVolver(); }, 2000);
     } catch (error) {
-      // 🕵️‍♂️ 3. EL CHIVATO DE ERRORES
-      console.error("🔍 Reporte de Django:", error.response?.data || error);
-      const mensajeError = error.response?.data 
-        ? JSON.stringify(error.response.data).substring(0, 100) 
-        : 'Desconocido';
-      alert(`Error del servidor: ${mensajeError}...`);
+      console.error("🔍 Error:", error.response?.data || error);
     } finally {
       setProcesando(false); 
     }
   };
 
-  const abrirModalParaNuevo = (producto) => { setProductoParaModificar(producto); setModalModsAbierto(true); };
+  const manejarAnularItem = async (detalleId, nombrePlato) => {
+    const motivo = window.prompt(`¿Motivo de anulación para "${nombrePlato}"?`);
+    if (!motivo) return;
+
+    setProcesando(true);
+    try {
+      const response = await anularItemDeOrden(ordenActiva.id, {
+        detalle_id: detalleId,
+        motivo: motivo,
+        empleado_nombre: localStorage.getItem('empleado_nombre') || 'Admin'
+      });
+
+      // Cubre ambos formatos: { orden: {...} } o directamente el objeto orden
+      const ordenActualizada = response.data?.orden || (response.data?.id ? response.data : null);
+
+      if (ordenActualizada) {
+        // El backend devolvió la orden actualizada → la usamos directo
+        setOrdenActiva(ordenActualizada);
+      } else {
+        // Fallback: el backend no devolvió la orden → la actualizamos manualmente en el estado local
+        const detalleAnulado = ordenActiva.detalles.find(d => d.id === detalleId);
+        const montoRestado = detalleAnulado
+          ? parseFloat(detalleAnulado.precio_unitario || 0) * (detalleAnulado.cantidad || 1)
+          : 0;
+
+        setOrdenActiva(prev => ({
+          ...prev,
+          total: (parseFloat(prev.total) - montoRestado).toFixed(2),
+          detalles: prev.detalles.filter(d => d.id !== detalleId),
+        }));
+      }
+    } catch (error) {
+      alert("Error al anular");
+    } finally {
+      setProcesando(false);
+    }
+  };
+
+  const abrirModalParaNuevo = (producto) => {
+    // Si había orden activa, el mesero está agregando más → cambia a 'pidiendo'
+    if (ordenActiva) notificarEstadoMesa('tomando_pedido', totalMesa);
+    setProductoParaModificar(producto);
+    setModalModsAbierto(true);
+  };
   const abrirModalParaEditar = (itemCarrito) => { setProductoParaModificar(itemCarrito); setModalModsAbierto(true); };
 
   const manejarAgregarAlCarritoDesdeModal = (itemCompleto) => {
@@ -149,8 +255,7 @@ export default function PosView({ mesaId, onVolver }) {
       else { agregarProducto(itemCompleto); }
   };
   
-  const esParaLlevar = (typeof mesaId === 'object' && mesaId?.id === 'llevar') || mesaId === 'llevar';
-  const nombreLlevar = typeof mesaId === 'object' ? mesaId.cliente : 'Cliente (🛍️ Llevar)';
+
   
   const productosFiltrados = productosBase.filter(plato => {
     if (categoriaActiva === 'Todas' || categoriaActiva === 'Todos') return true;
@@ -264,7 +369,7 @@ export default function PosView({ mesaId, onVolver }) {
           return (
             <div 
               key={prod.id} 
-              onClick={() => prod.disponible && agregarProducto(prod)} 
+              onClick={() => { if (prod.disponible) { if (ordenActiva) notificarEstadoMesa('tomando_pedido', totalMesa); agregarProducto(prod); } }} 
               className={`relative p-3 sm:p-4 rounded-3xl shadow-lg transition-all flex flex-col h-full text-left justify-between overflow-hidden ${
                 prod.disponible 
                   ? (tema === 'dark' ? 'bg-[#111] border border-[#222] hover:bg-[#151515] cursor-pointer' : 'bg-white border border-gray-200 hover:shadow-xl cursor-pointer hover:bg-gray-50') 
@@ -390,8 +495,19 @@ export default function PosView({ mesaId, onVolver }) {
                       )}
                       <p className="font-mono text-sm font-bold mt-1.5" style={{ color: colorPrimario }}>{formatearSoles(item.precio_unitario)} /u</p>
                     </div>
-                    <div className={`font-black px-4 py-2 rounded-xl border text-xl ${tema === 'dark' ? 'text-neutral-500 bg-[#1a1a1a] border-[#222]' : 'text-gray-500 bg-gray-100 border-gray-200'}`}>
-                      x{item.cantidad}
+                    <div className="flex flex-col items-end gap-2">
+                      <div className={`font-black px-4 py-2 rounded-xl border text-xl ${tema === 'dark' ? 'text-neutral-500 bg-[#1a1a1a] border-[#222]' : 'text-gray-500 bg-gray-100 border-gray-200'}`}>
+                        x{item.cantidad}
+                      </div>
+                      
+                      {/* BOTÓN DE ANULAR */}
+                      <button 
+                        onClick={() => manejarAnularItem(item.id, item.producto_nombre || item.nombre || "Producto")}
+                        disabled={procesando}
+                        className="text-[10px] text-red-500 hover:text-red-400 font-bold uppercase tracking-widest flex items-center gap-1 border border-red-500/20 rounded-lg px-3 py-1.5 bg-red-500/10 active:scale-95 transition-all"
+                      >
+                        🗑️ Anular
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -453,7 +569,7 @@ export default function PosView({ mesaId, onVolver }) {
             ) : (
                 ordenActiva && (
                     <button 
-                      onClick={() => setModalCobroAbierto(true)}
+                      onClick={() => { setModalCobroAbierto(true); notificarEstadoMesa('cobrando', totalMesa); }}
                       className="w-full bg-green-500 hover:bg-green-600 text-white rounded-xl h-16 font-black text-lg flex justify-center items-center shadow-lg shadow-green-500/20 transition-all active:scale-[0.98]"
                     >
                       COBRAR TICKET 💵

@@ -49,6 +49,20 @@ class SalonConsumer(AsyncWebsocketConsumer):
             self.channel_name
         )
 
+    # Recibe mensajes del cliente (React) y los redistribuye al grupo
+    async def receive(self, text_data):
+        data = json.loads(text_data)
+        if data.get('type') == 'mesa_estado':
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    'type': 'mesa_actualizada',
+                    'mesa_id': data['mesa_id'],
+                    'estado': data['estado'],
+                    'total': data.get('total', 0),
+                }
+            )
+
     # 3. Este método recibe el evento 'pedido_listo' enviado desde views.py
     # y lo "escupe" por el WebSocket hacia la tablet del mesero
     async def pedido_listo(self, event):
@@ -56,4 +70,21 @@ class SalonConsumer(AsyncWebsocketConsumer):
             'type': 'pedido_listo',
             'mesa': event['mesa'],
             'producto': event['producto']
+        }))
+
+    # 4. Nuevo evento: notifica a todos los meseros cuando cambia el estado de una mesa
+    async def mesa_actualizada(self, event):
+        await self.send(text_data=json.dumps({
+            'type': 'mesa_actualizada',
+            'mesa_id': event['mesa_id'],
+            'estado': event['estado'],
+            'total': event['total'],
+        }))
+
+    # 5. Nuevo evento: notifica cuando se crea o actualiza una orden para llevar
+    async def orden_llevar_actualizada(self, event):
+        await self.send(text_data=json.dumps({
+            'type': 'orden_llevar_actualizada',
+            'orden': event['orden'],
+            'accion': event['accion'],  # 'nueva', 'actualizada', 'completada'
         }))

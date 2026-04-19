@@ -119,5 +119,7 @@ export const actualizarVariacionesProducto = async (productoId, gruposData) => {
     // Usamos PATCH para actualizar solo la parte de las variaciones sin tocar el nombre o el precio base
     return await api.patch(`/productos/${productoId}/`, { grupos_variacion: gruposData });
 };
+export const anularItemDeOrden = (idOrden, payload) => api.post(`/ordenes/${idOrden}/anular_item/`, payload);
+export const actualizarSede = (id, data) => api.patch(`/sedes/${id}/`, data);
 // (Ajusta la URL si en tu Django la llamaste diferente)
 export default api;

@@ -19,7 +19,7 @@ import time
 from rest_framework.permissions import IsAuthenticated
 from .permissions import EsDuenioOsoloLectura
 from .models import (GrupoVariacion, InsumoBase, InsumoSede, Negocio, Sede, Mesa, Producto, Orden, DetalleOrden, Pago, ModificadorRapido,DetalleOrdenOpcion, 
-GrupoVariacion, OpcionVariacion,MovimientoCaja,RecetaDetalle, Rol, Empleado, SesionCaja, Categoria, RecetaOpcion)
+GrupoVariacion, OpcionVariacion,MovimientoCaja,RecetaDetalle, Rol, Empleado, SesionCaja, Categoria, RecetaOpcion,RegistroAuditoria)
 from .serializers import (
     InsumoBaseSerializer, InsumoSedeSerializer, NegocioSerializer, SedeSerializer, MesaSerializer,
     ProductoSerializer, ModificadorRapidoSerializer, GrupoVariacionSerializer, OpcionVariacionSerializer,
@@ -44,7 +44,9 @@ class MesaViewSet(viewsets.ModelViewSet):
     serializer_class = MesaSerializer
 
     def get_queryset(self):
-        queryset = Mesa.objects.filter(activo=True)
+        # ✨ AQUÍ ESTÁ EL CAMBIO: Le decimos que las ordene por el mapa
+        queryset = Mesa.objects.filter(activo=True).order_by('posicion_x')
+        
         empleado_id = self.request.headers.get('X-Empleado-Id')
         
         if empleado_id:
@@ -62,6 +64,8 @@ class MesaViewSet(viewsets.ModelViewSet):
                 queryset = queryset.filter(sede_id=sede_id)
                 
             return queryset
+        
+
 class ProductoViewSet(viewsets.ModelViewSet):
     serializer_class = ProductoSerializer
     
@@ -157,8 +161,16 @@ class OrdenViewSet(viewsets.ModelViewSet):
             
         return queryset
     def perform_create(self, serializer):
-        # ✨ TRANSACCIÓN ATÓMICA: Si algo falla, nada se guarda
+        empleado_id = self.request.headers.get('X-Empleado-Id')
+        empleado_instancia = None
+        
+        if empleado_id:
+            try:
+                empleado_instancia = Empleado.objects.get(id=empleado_id)
+            except Empleado.DoesNotExist:
+                pass
         with transaction.atomic():
+            orden = serializer.save(mesero=empleado_instancia)
             orden = serializer.save()
             
             detalles_data = self.request.data.get('detalles', [])
@@ -201,6 +213,57 @@ class OrdenViewSet(viewsets.ModelViewSet):
                 "orden": orden_data
             }
         )
+        # Notificamos a todos los meseros del salón que esta mesa cambió de estado
+        if orden.mesa_id:
+            async_to_sync(channel_layer.group_send)(
+                f"salon_sede_{orden.sede_id}",
+                {
+                    "type": "mesa_actualizada",
+                    "mesa_id": orden.mesa_id,
+                    "estado": "ocupada",
+                    "total": float(orden.total),
+                }
+            )
+        # Si es para llevar, notificamos la lista de delivery
+        if orden.tipo == 'llevar':
+            orden_data = self.get_serializer(orden).data
+            async_to_sync(channel_layer.group_send)(
+                f"salon_sede_{orden.sede_id}",
+                {
+                    "type": "orden_llevar_actualizada",
+                    "accion": "nueva",
+                    "orden": orden_data,
+                }
+            )
+    def perform_update(self, serializer):
+        instance = serializer.save()
+        channel_layer = get_channel_layer()
+        estados_libres = {'completado', 'cancelado'}
+        # Si la orden se completa, cancela o se paga → la mesa vuelve a libre
+        if instance.estado in estados_libres or instance.estado_pago == 'pagado':
+            if instance.mesa_id:
+                async_to_sync(channel_layer.group_send)(
+                    f"salon_sede_{instance.sede_id}",
+                    {
+                        "type": "mesa_actualizada",
+                        "mesa_id": instance.mesa_id,
+                        "estado": "libre",
+                        "total": 0,
+                    }
+                )
+            # Si es para llevar, notificamos que se completó/canceló
+            if instance.tipo == 'llevar':
+                orden_data = self.get_serializer(instance).data
+                accion = 'completada' if instance.estado in estados_libres or instance.estado_pago == 'pagado' else 'actualizada'
+                async_to_sync(channel_layer.group_send)(
+                    f"salon_sede_{instance.sede_id}",
+                    {
+                        "type": "orden_llevar_actualizada",
+                        "accion": accion,
+                        "orden": orden_data,
+                    }
+                )
+
     @action(detail=True, methods=['post'])
     def agregar_productos(self, request, pk=None):
         orden = self.get_object()
@@ -269,12 +332,74 @@ class OrdenViewSet(viewsets.ModelViewSet):
             'detalles__producto', 
             'detalles__opciones_seleccionadas'
         ).get(id=orden.id)
+
+        # Notificamos al salón que el total de esta mesa se actualizó
+        if orden.mesa_id:
+            async_to_sync(channel_layer.group_send)(
+                f"salon_sede_{orden.sede_id}",
+                {
+                    "type": "mesa_actualizada",
+                    "mesa_id": orden.mesa_id,
+                    "estado": "ocupada",
+                    "total": float(orden_fresca.total),
+                }
+            )
         
         serializer = self.get_serializer(orden_fresca)
         return Response({
             'status': 'Productos agregados correctamente',
             'orden': serializer.data
         }, status=status.HTTP_200_OK)
+    
+    @action(detail=True, methods=['post'])
+    def anular_item(self, request, pk=None):
+        orden = self.get_object()
+        detalle_id = request.data.get('detalle_id')
+        motivo = request.data.get('motivo', 'No especificado')
+        empleado_nombre = request.data.get('empleado_nombre', 'Admin')
+
+        try:
+            with transaction.atomic():
+                detalle = orden.detalles.get(id=detalle_id)
+                nombre_plato = detalle.producto.nombre
+                
+                # 1. Registrar en Auditoría (La prueba del delito)
+                RegistroAuditoria.objects.create(
+                    sede=orden.sede,
+                    empleado_nombre=empleado_nombre,
+                    accion='anular_plato',
+                    descripcion=f"Anuló {detalle.cantidad}x {nombre_plato} de Orden #{orden.id}. Motivo: {motivo}"
+                )
+
+                # 2. Borrar el plato y recalcular total
+                detalle.delete()
+                
+                # Recalculamos el total real desde la base de datos
+                detalles_vivos = orden.detalles.all()
+                nuevo_total = sum(d.cantidad * d.precio_unitario for d in detalles_vivos)
+                
+                # Sumar variaciones si existen
+                for d in detalles_vivos:
+                    nuevo_total += sum(v.precio_adicional_aplicado for v in d.opciones_seleccionadas.all()) * d.cantidad
+
+                orden.total = nuevo_total
+                orden.save()
+
+            # 3. Respuesta fresca para React
+            # IMPORTANTE: Re-fetch desde BD para limpiar el caché en memoria de Django
+            # sin esto, orden.detalles.all() puede devolver el detalle borrado
+            orden_fresca = Orden.objects.prefetch_related(
+                'detalles__producto',
+                'detalles__opciones_seleccionadas'
+            ).get(id=orden.id)
+            serializer = self.get_serializer(orden_fresca)
+            return Response({
+                'status': 'Plato anulado y auditado',
+                'orden': serializer.data
+            }, status=status.HTTP_200_OK)
+
+        except DetalleOrden.DoesNotExist:
+            return Response({'error': 'El plato no existe'}, status=status.HTTP_400_BAD_REQUEST)
 
 class DetalleOrdenViewSet(viewsets.ModelViewSet):
     queryset = DetalleOrden.objects.all()
