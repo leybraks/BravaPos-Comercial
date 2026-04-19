@@ -19,7 +19,7 @@ import time
 from rest_framework.permissions import IsAuthenticated
 from .permissions import EsDuenioOsoloLectura
 from .models import (GrupoVariacion, InsumoBase, InsumoSede, Negocio, Sede, Mesa, Producto, Orden, DetalleOrden, Pago, ModificadorRapido,DetalleOrdenOpcion, 
-GrupoVariacion, OpcionVariacion,MovimientoCaja,RecetaDetalle, Rol, Empleado, SesionCaja, Categoria, RecetaOpcion)
+GrupoVariacion, OpcionVariacion,MovimientoCaja,RecetaDetalle, Rol, Empleado, SesionCaja, Categoria, RecetaOpcion,RegistroAuditoria)
 from .serializers import (
     InsumoBaseSerializer, InsumoSedeSerializer, NegocioSerializer, SedeSerializer, MesaSerializer,
     ProductoSerializer, ModificadorRapidoSerializer, GrupoVariacionSerializer, OpcionVariacionSerializer,
@@ -44,7 +44,9 @@ class MesaViewSet(viewsets.ModelViewSet):
     serializer_class = MesaSerializer
 
     def get_queryset(self):
-        queryset = Mesa.objects.filter(activo=True)
+        # ✨ AQUÍ ESTÁ EL CAMBIO: Le decimos que las ordene por el mapa
+        queryset = Mesa.objects.filter(activo=True).order_by('posicion_x')
+        
         empleado_id = self.request.headers.get('X-Empleado-Id')
         
         if empleado_id:
@@ -62,6 +64,8 @@ class MesaViewSet(viewsets.ModelViewSet):
                 queryset = queryset.filter(sede_id=sede_id)
                 
             return queryset
+        
+
 class ProductoViewSet(viewsets.ModelViewSet):
     serializer_class = ProductoSerializer
     
@@ -157,8 +161,16 @@ class OrdenViewSet(viewsets.ModelViewSet):
             
         return queryset
     def perform_create(self, serializer):
-        # ✨ TRANSACCIÓN ATÓMICA: Si algo falla, nada se guarda
+        empleado_id = self.request.headers.get('X-Empleado-Id')
+        empleado_instancia = None
+        
+        if empleado_id:
+            try:
+                empleado_instancia = Empleado.objects.get(id=empleado_id)
+            except Empleado.DoesNotExist:
+                pass
         with transaction.atomic():
+            orden = serializer.save(mesero=empleado_instancia)
             orden = serializer.save()
             
             detalles_data = self.request.data.get('detalles', [])
@@ -201,6 +213,56 @@ class OrdenViewSet(viewsets.ModelViewSet):
                 "orden": orden_data
             }
         )
+        # Notificamos a todos los meseros del salón que esta mesa cambió de estado
+        if orden.mesa_id:
+            async_to_sync(channel_layer.group_send)(
+                f"salon_sede_{orden.sede_id}",
+                {
+                    "type": "mesa_actualizada",
+                    "mesa_id": orden.mesa_id,
+                    "estado": "ocupada",
+                    "total": float(orden.total),
+                }
+            )
+        # Si es para llevar, notificamos la lista de delivery
+        if orden.tipo == 'llevar':
+            orden_data = self.get_serializer(orden).data
+            async_to_sync(channel_layer.group_send)(
+                f"salon_sede_{orden.sede_id}",
+                {
+                    "type": "orden_llevar_actualizada",
+                    "accion": "nueva",
+                    "orden": orden_data,
+                }
+            )
+    def perform_update(self, serializer):
+        instance = serializer.save()
+        channel_layer = get_channel_layer()
+        estados_libres = {'completado', 'cancelado'}
+        # Si la orden se completa, cancela o se paga → la mesa vuelve a libre
+        if instance.estado in estados_libres or instance.estado_pago == 'pagado':
+            if instance.mesa_id:
+                async_to_sync(channel_layer.group_send)(
+                    f"salon_sede_{instance.sede_id}",
+                    {
+                        "type": "mesa_actualizada",
+                        "mesa_id": instance.mesa_id,
+                        "estado": "libre",
+                        "total": 0,
+                    }
+                )
+            # Si es para llevar, notificamos que se completó/canceló
+            if instance.tipo == 'llevar':
+                orden_data = self.get_serializer(instance).data
+                accion = 'completada' if instance.estado in estados_libres or instance.estado_pago == 'pagado' else 'actualizada'
+                async_to_sync(channel_layer.group_send)(
+                    f"salon_sede_{instance.sede_id}",
+                    {
+                        "type": "orden_llevar_actualizada",
+                        "accion": accion,
+                        "orden": orden_data,
+                    }
+                )
 
     @action(detail=True, methods=['post'])
     def agregar_productos(self, request, pk=None):
@@ -211,28 +273,44 @@ class OrdenViewSet(viewsets.ModelViewSet):
 
         detalles_data = request.data.get('detalles', [])
         detalles_creados = []
-        nuevo_total = Decimal('0.00')
 
-        # ✨ TRANSACCIÓN ATÓMICA TAMBIÉN AQUÍ
         with transaction.atomic():
-            orden = serializer.save() # Se crea la orden base
-            detalles_data = request.data.get('detalles', [])
-            
             for detalle_data in detalles_data:
-                # ✨ PASO CLAVE: Sacamos las opciones para que no rompan el modelo DetalleOrden
                 opciones_data = detalle_data.pop('opciones_seleccionadas', [])
                 
-                # 1. Creamos el plato
-                nuevo_detalle = DetalleOrden.objects.create(orden=orden, **detalle_data)
+                nuevo_detalle = DetalleOrden.objects.create(
+                    orden=orden,
+                    producto_id=detalle_data['producto'],
+                    cantidad=detalle_data['cantidad'],
+                    precio_unitario=detalle_data['precio_unitario'],
+                    notas_y_modificadores=detalle_data.get('notas_y_modificadores', ''),
+                    notas_cocina=detalle_data.get('notas_cocina', '')
+                )
+                detalles_creados.append(nuevo_detalle)
                 
-                # 2. Le colgamos las variaciones que eligió el cliente (Ej: Extra Rachi)
                 for opcion in opciones_data:
-                    DetalleOrdenOpcion.objects.create(
-                        detalle_orden=nuevo_detalle,
-                        opcion_variacion_id=opcion['opcion_variacion'], # Asegúrate de que React mande el ID aquí
-                        precio_adicional_aplicado=opcion.get('precio_adicional_aplicado', 0)
-                    )
+                    try:
+                        opcion_obj = OpcionVariacion.objects.get(id=opcion)
+                        DetalleOrdenOpcion.objects.create(
+                            detalle_orden=nuevo_detalle,
+                            opcion_variacion=opcion_obj,
+                            precio_adicional_aplicado=opcion_obj.precio_adicional
+                        )
+                    except OpcionVariacion.DoesNotExist:
+                        pass 
 
+            # ✨ 3. MAGIA 1: Sumamos directamente desde la base de datos (ignorando el caché)
+            detalles_db = DetalleOrden.objects.filter(orden=orden)
+            nuevo_total = sum(d.cantidad * d.precio_unitario for d in detalles_db)
+            
+            for d in detalles_db:
+                variaciones = DetalleOrdenOpcion.objects.filter(detalle_orden=d)
+                nuevo_total += sum(v.precio_adicional_aplicado for v in variaciones) * d.cantidad
+
+            orden.total = nuevo_total
+            orden.save()
+
+        # ✨ AVISO A LA COCINA (WebSockets)
         nuevos_detalles_json = DetalleOrdenSerializer(detalles_creados, many=True).data
         channel_layer = get_channel_layer()
         async_to_sync(channel_layer.group_send)(
@@ -240,15 +318,88 @@ class OrdenViewSet(viewsets.ModelViewSet):
             {
                 "type": "orden_nueva", 
                 "orden": {
-                    "id": orden.id, # 👈 ID real
-                    "es_actualizacion": True, # 👈 Le avisamos a React
+                    "id": orden.id, 
+                    "es_actualizacion": True, 
                     "mesa": f"{orden.mesa.numero_o_nombre} (AGREGADO)" if orden.mesa else "LLEVAR (AGREGADO)",
                     "detalles": nuevos_detalles_json
                 }
             }
         )
         
-        return Response({'status': 'Productos agregados correctamente'}, status=status.HTTP_200_OK)
+        # ✨ 4. MAGIA 2: Volvemos a pedirle la orden a la BD para borrar la memoria vieja
+        # Así aseguramos que a React le llegue la lista completa y el precio final real
+        orden_fresca = Orden.objects.prefetch_related(
+            'detalles__producto', 
+            'detalles__opciones_seleccionadas'
+        ).get(id=orden.id)
+
+        # Notificamos al salón que el total de esta mesa se actualizó
+        if orden.mesa_id:
+            async_to_sync(channel_layer.group_send)(
+                f"salon_sede_{orden.sede_id}",
+                {
+                    "type": "mesa_actualizada",
+                    "mesa_id": orden.mesa_id,
+                    "estado": "ocupada",
+                    "total": float(orden_fresca.total),
+                }
+            )
+        
+        serializer = self.get_serializer(orden_fresca)
+        return Response({
+            'status': 'Productos agregados correctamente',
+            'orden': serializer.data
+        }, status=status.HTTP_200_OK)
+    
+    @action(detail=True, methods=['post'])
+    def anular_item(self, request, pk=None):
+        orden = self.get_object()
+        detalle_id = request.data.get('detalle_id')
+        motivo = request.data.get('motivo', 'No especificado')
+        empleado_nombre = request.data.get('empleado_nombre', 'Admin')
+
+        try:
+            with transaction.atomic():
+                detalle = orden.detalles.get(id=detalle_id)
+                nombre_plato = detalle.producto.nombre
+                
+                # 1. Registrar en Auditoría (La prueba del delito)
+                RegistroAuditoria.objects.create(
+                    sede=orden.sede,
+                    empleado_nombre=empleado_nombre,
+                    accion='anular_plato',
+                    descripcion=f"Anuló {detalle.cantidad}x {nombre_plato} de Orden #{orden.id}. Motivo: {motivo}"
+                )
+
+                # 2. Borrar el plato y recalcular total
+                detalle.delete()
+                
+                # Recalculamos el total real desde la base de datos
+                detalles_vivos = orden.detalles.all()
+                nuevo_total = sum(d.cantidad * d.precio_unitario for d in detalles_vivos)
+                
+                # Sumar variaciones si existen
+                for d in detalles_vivos:
+                    nuevo_total += sum(v.precio_adicional_aplicado for v in d.opciones_seleccionadas.all()) * d.cantidad
+
+                orden.total = nuevo_total
+                orden.save()
+
+            # 3. Respuesta fresca para React
+            # IMPORTANTE: Re-fetch desde BD para limpiar el caché en memoria de Django
+            # sin esto, orden.detalles.all() puede devolver el detalle borrado
+            orden_fresca = Orden.objects.prefetch_related(
+                'detalles__producto',
+                'detalles__opciones_seleccionadas'
+            ).get(id=orden.id)
+            serializer = self.get_serializer(orden_fresca)
+            return Response({
+                'status': 'Plato anulado y auditado',
+                'orden': serializer.data
+            }, status=status.HTTP_200_OK)
+
+        except DetalleOrden.DoesNotExist:
+            return Response({'error': 'El plato no existe'}, status=status.HTTP_400_BAD_REQUEST)
 
 class DetalleOrdenViewSet(viewsets.ModelViewSet):
     queryset = DetalleOrden.objects.all()

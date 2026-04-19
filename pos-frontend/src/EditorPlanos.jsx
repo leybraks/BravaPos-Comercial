@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getMesas, actualizarMesa, crearMesa, getSedes } from './api/api';
+import { getMesas, actualizarMesa, crearMesa, getSedes, actualizarSede } from './api/api';
 import usePosStore from './store/usePosStore';
 
 export default function EditorPlanos() {
@@ -90,13 +90,22 @@ export default function EditorPlanos() {
   }, [sedeActivaId]);
 
   // 3. Actualizamos la función de cambio para que guarde con el ID de la sede
-  const manejarCambioColumnas = (nuevasCols) => {
+  const manejarCambioColumnas = async (nuevasCols) => {
     setColumnas(nuevasCols);
-    localStorage.setItem(`columnas_salon_${sedeActivaId}`, nuevasCols); // ✨ Guardado independiente
     
+    // Reordenamos las mesas para que se adapten a la nueva cuadrícula
     const mesasOrdenadas = [...mesas].sort((a, b) => a.posicion_x - b.posicion_x);
     const mesasCompactadas = mesasOrdenadas.map((m, index) => ({ ...m, posicion_x: index }));
     setMesas(mesasCompactadas);
+
+    // ✨ MAGIA: Guardamos la configuración en Django
+    try {
+      if (sedeActivaId) {
+        await actualizarSede(sedeActivaId, { columnas_salon: nuevasCols });
+      }
+    } catch (error) {
+      console.error("Error guardando las columnas en la sede:", error);
+    }
   };
 
   // 🪑 CREAR MESA (Asignada a la sede correcta)

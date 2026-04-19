@@ -58,6 +58,7 @@ class Sede(models.Model):
     nombre = models.CharField(max_length=100) # Ej: "Local Ventanilla", "Sede Centro"
     direccion = models.CharField(max_length=200, null=True, blank=True)
     activo = models.BooleanField(default=True)
+    columnas_salon = models.IntegerField(default=2)
     objects = ActivoManager()      
     all_objects = models.Manager()
     class Meta:
@@ -128,74 +129,6 @@ class VariacionProducto(models.Model):
 
     def __str__(self):
         return f"{self.producto.nombre} - {self.nombre} (S/ {self.precio})"
-
-class Orden(models.Model):
-    # 🍳 DIMENSIÓN 1: ¿En qué parte del restaurante está el plato?
-    ESTADOS_COCINA = [
-        ('pendiente', 'Pendiente'),
-        ('preparando', 'En Cocina'),
-        ('listo', 'Listo para entregar'),
-        ('completado', 'Entregado / Mesa Cerrada'), # 👈 Renombrado (antes 'pagado')
-        ('cancelado', 'Cancelado')
-    ]
-    
-    # 💰 DIMENSIÓN 2: ¿Qué pasó con la plata?
-    ESTADOS_PAGO = [
-        ('pendiente', 'Por Cobrar'),
-        ('pagado', 'Pagado Completamente'),
-        ('reembolsado', 'Reembolsado')
-    ]
-    
-    TIPO_CHOICES = [
-        ('salon', 'En Salón'),
-        ('llevar', 'Para Llevar'),
-        ('delivery', 'Delivery')
-    ]
-    
-    sede = models.ForeignKey(Sede, on_delete=models.CASCADE)
-    mesa = models.ForeignKey(Mesa, on_delete=models.SET_NULL, null=True, blank=True)
-    tipo = models.CharField(max_length=20, choices=TIPO_CHOICES, default='salon')
-    
-    estado = models.CharField(max_length=20, choices=ESTADOS_COCINA, default='pendiente')
-    estado_pago = models.CharField(max_length=20, choices=ESTADOS_PAGO, default='pendiente') # 👈 NUEVO
-    
-    total = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-    
-    cliente_nombre = models.CharField(max_length=100, null=True, blank=True)
-    cliente_telefono = models.CharField(max_length=20, null=True, blank=True)
-    motivo_cancelacion = models.CharField(max_length=255, null=True, blank=True)
-    creado_en = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        indexes = [
-            models.Index(fields=['sede', 'estado']),
-            models.Index(fields=['creado_en']),
-            models.Index(fields=['sede', 'estado_pago']), # 👈 Índice para el dashboard de finanzas
-        ]
-    def clean(self):
-        super().clean() # Llama a las validaciones normales de Django
-        if self.estado_pago == 'pagado' and self.estado == 'cancelado':
-            raise ValidationError('Error lógico: Una orden cancelada no puede aparecer como pagada. Debe estar reembolsada o pendiente.')
-
-    def save(self, *args, **kwargs):
-        self.full_clean() # Fuerza a que se ejecute "clean()" antes de guardar
-        super().save(*args, **kwargs)
-    def __str__(self):
-        origen = f"Mesa {self.mesa.numero_o_nombre}" if self.mesa else (self.cliente_nombre or self.get_tipo_display())
-        return f"Orden #{self.id} - {origen} - Cocina: {self.estado} - Caja: {self.estado_pago}"
-
-class DetalleOrden(models.Model):
-    orden = models.ForeignKey(Orden, related_name='detalles', on_delete=models.CASCADE)
-    producto = models.ForeignKey(Producto, on_delete=models.PROTECT)
-    cantidad = models.IntegerField(default=1)
-    
-    precio_unitario = models.DecimalField(max_digits=10, decimal_places=2, default=0.00) 
-    notas_y_modificadores = models.JSONField(default=dict, blank=True)
-    notas_cocina = models.TextField(blank=True, null=True)
-    activo = models.BooleanField(default=True) 
-    
-    def __str__(self):
-        return f"{self.cantidad}x {self.producto.nombre}"
 
 class Empleado(models.Model):
     # Relaciones vitales para el multi-local
@@ -273,11 +206,85 @@ class SesionCaja(models.Model):
     def __str__(self):
         return f"Caja {self.estado} - {self.hora_apertura.strftime('%d/%m/%Y')}"
 
+class Orden(models.Model):
+    # 🍳 DIMENSIÓN 1: ¿En qué parte del restaurante está el plato?
+    ESTADOS_COCINA = [
+        ('pendiente', 'Pendiente'),
+        ('preparando', 'En Cocina'),
+        ('listo', 'Listo para entregar'),
+        ('completado', 'Entregado / Mesa Cerrada'), # 👈 Renombrado (antes 'pagado')
+        ('cancelado', 'Cancelado')
+    ]
+    
+    # 💰 DIMENSIÓN 2: ¿Qué pasó con la plata?
+    ESTADOS_PAGO = [
+        ('pendiente', 'Por Cobrar'),
+        ('pagado', 'Pagado Completamente'),
+        ('reembolsado', 'Reembolsado')
+    ]
+    
+    TIPO_CHOICES = [
+        ('salon', 'En Salón'),
+        ('llevar', 'Para Llevar'),
+        ('delivery', 'Delivery')
+    ]
+
+    
+    sede = models.ForeignKey(Sede, on_delete=models.CASCADE)
+    mesa = models.ForeignKey(Mesa, on_delete=models.SET_NULL, null=True, blank=True)
+
+    mesero = models.ForeignKey(Empleado, on_delete=models.SET_NULL, null=True, blank=True, related_name='ordenes_tomadas', help_text="¿Quién tomó el pedido inicial?")
+    sesion_caja = models.ForeignKey(SesionCaja, on_delete=models.PROTECT, null=True, blank=True, related_name='ordenes', help_text="Turno en el que se cobró")
+                                    
+    tipo = models.CharField(max_length=20, choices=TIPO_CHOICES, default='salon')
+    
+    estado = models.CharField(max_length=20, choices=ESTADOS_COCINA, default='pendiente')
+    estado_pago = models.CharField(max_length=20, choices=ESTADOS_PAGO, default='pendiente') # 👈 NUEVO
+    total = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    
+    cliente_nombre = models.CharField(max_length=100, null=True, blank=True)
+    cliente_telefono = models.CharField(max_length=20, null=True, blank=True)
+    motivo_cancelacion = models.CharField(max_length=255, null=True, blank=True)
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['sede', 'estado']),
+            models.Index(fields=['creado_en']),
+            models.Index(fields=['sede', 'estado_pago']), # 👈 Índice para el dashboard de finanzas
+        ]
+    def clean(self):
+        super().clean() # Llama a las validaciones normales de Django
+        if self.estado_pago == 'pagado' and self.estado == 'cancelado':
+            raise ValidationError('Error lógico: Una orden cancelada no puede aparecer como pagada. Debe estar reembolsada o pendiente.')
+
+
+    def save(self, *args, **kwargs):
+        self.full_clean() # Fuerza a que se ejecute "clean()" antes de guardar
+        super().save(*args, **kwargs)
+    def __str__(self):
+        origen = f"Mesa {self.mesa.numero_o_nombre}" if self.mesa else (self.cliente_nombre or self.get_tipo_display())
+        return f"Orden #{self.id} - {origen} - Cocina: {self.estado} - Caja: {self.estado_pago}"
+
+class DetalleOrden(models.Model):
+    orden = models.ForeignKey(Orden, related_name='detalles', on_delete=models.CASCADE)
+    producto = models.ForeignKey(Producto, on_delete=models.PROTECT)
+    cantidad = models.IntegerField(default=1)
+    
+    precio_unitario = models.DecimalField(max_digits=10, decimal_places=2, default=0.00) 
+    notas_y_modificadores = models.JSONField(default=dict, blank=True)
+    notas_cocina = models.TextField(blank=True, null=True)
+    activo = models.BooleanField(default=True) 
+    
+    def __str__(self):
+        return f"{self.cantidad}x {self.producto.nombre}"
+
 class Pago(models.Model):
     METODOS = [
         ('efectivo', 'Efectivo'),
         ('tarjeta', 'Tarjeta (Visa/MC)'),
-        ('yape_plin', 'Yape / Plin'),
+        ('yape', 'Yape'),
+        ('plin', 'Plin'),
     ]
     
     orden = models.ForeignKey(Orden, on_delete=models.CASCADE, related_name='pagos')
@@ -439,3 +446,39 @@ class RecetaOpcion(models.Model):
 
     def __str__(self):
         return f"{self.cantidad_necesaria} {self.insumo.unidad_medida} de {self.insumo.nombre} para opción {self.opcion.nombre}"
+    
+class RegistroAuditoria(models.Model):
+    """
+    EL OJO QUE TODO LO VE (Log de Seguridad)
+    Registra operaciones críticas que podrían representar fugas de dinero o malas prácticas.
+    """
+    TIPO_ACCION = [
+        ('anular_plato', 'Anulación de Plato en Cocina'),
+        ('cancelar_orden', 'Orden Completa Cancelada'),
+        ('descuento', 'Descuento Aplicado Manualmente'),
+        ('modificar_caja', 'Modificación de Caja Fuerte'),
+    ]
+    
+    # Lo vinculamos a la sede para que el Dueño pueda filtrar por local
+    sede = models.ForeignKey(Sede, on_delete=models.CASCADE, related_name='auditorias')
+    
+    # Guardamos el empleado real, pero si lo despiden (eliminan), no perdemos el historial
+    empleado = models.ForeignKey(Empleado, on_delete=models.SET_NULL, null=True, blank=True)
+    empleado_nombre = models.CharField(max_length=100) # Respaldo en texto plano
+    
+    accion = models.CharField(max_length=50, choices=TIPO_ACCION)
+    descripcion = models.TextField() # Ej: "Anuló 1x Anticucho de Orden #45. Motivo: Se equivocó de mesa"
+    
+    # ¿En qué orden pasó esto? (Opcional, porque la orden podría llegar a eliminarse en un futuro lejano)
+    orden = models.ForeignKey(Orden, on_delete=models.SET_NULL, null=True, blank=True)
+    
+    fecha = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['sede', 'fecha']),
+            models.Index(fields=['accion']),
+        ]
+
+    def __str__(self):
+        return f"[{self.fecha.strftime('%d/%m %H:%M')}] {self.empleado_nombre}: {self.get_accion_display()}"
