@@ -201,7 +201,6 @@ class OrdenViewSet(viewsets.ModelViewSet):
                 "orden": orden_data
             }
         )
-
     @action(detail=True, methods=['post'])
     def agregar_productos(self, request, pk=None):
         orden = self.get_object()
@@ -211,28 +210,44 @@ class OrdenViewSet(viewsets.ModelViewSet):
 
         detalles_data = request.data.get('detalles', [])
         detalles_creados = []
-        nuevo_total = Decimal('0.00')
 
-        # ✨ TRANSACCIÓN ATÓMICA TAMBIÉN AQUÍ
         with transaction.atomic():
-            orden = serializer.save() # Se crea la orden base
-            detalles_data = request.data.get('detalles', [])
-            
             for detalle_data in detalles_data:
-                # ✨ PASO CLAVE: Sacamos las opciones para que no rompan el modelo DetalleOrden
                 opciones_data = detalle_data.pop('opciones_seleccionadas', [])
                 
-                # 1. Creamos el plato
-                nuevo_detalle = DetalleOrden.objects.create(orden=orden, **detalle_data)
+                nuevo_detalle = DetalleOrden.objects.create(
+                    orden=orden,
+                    producto_id=detalle_data['producto'],
+                    cantidad=detalle_data['cantidad'],
+                    precio_unitario=detalle_data['precio_unitario'],
+                    notas_y_modificadores=detalle_data.get('notas_y_modificadores', ''),
+                    notas_cocina=detalle_data.get('notas_cocina', '')
+                )
+                detalles_creados.append(nuevo_detalle)
                 
-                # 2. Le colgamos las variaciones que eligió el cliente (Ej: Extra Rachi)
                 for opcion in opciones_data:
-                    DetalleOrdenOpcion.objects.create(
-                        detalle_orden=nuevo_detalle,
-                        opcion_variacion_id=opcion['opcion_variacion'], # Asegúrate de que React mande el ID aquí
-                        precio_adicional_aplicado=opcion.get('precio_adicional_aplicado', 0)
-                    )
+                    try:
+                        opcion_obj = OpcionVariacion.objects.get(id=opcion)
+                        DetalleOrdenOpcion.objects.create(
+                            detalle_orden=nuevo_detalle,
+                            opcion_variacion=opcion_obj,
+                            precio_adicional_aplicado=opcion_obj.precio_adicional
+                        )
+                    except OpcionVariacion.DoesNotExist:
+                        pass 
 
+            # ✨ 3. MAGIA 1: Sumamos directamente desde la base de datos (ignorando el caché)
+            detalles_db = DetalleOrden.objects.filter(orden=orden)
+            nuevo_total = sum(d.cantidad * d.precio_unitario for d in detalles_db)
+            
+            for d in detalles_db:
+                variaciones = DetalleOrdenOpcion.objects.filter(detalle_orden=d)
+                nuevo_total += sum(v.precio_adicional_aplicado for v in variaciones) * d.cantidad
+
+            orden.total = nuevo_total
+            orden.save()
+
+        # ✨ AVISO A LA COCINA (WebSockets)
         nuevos_detalles_json = DetalleOrdenSerializer(detalles_creados, many=True).data
         channel_layer = get_channel_layer()
         async_to_sync(channel_layer.group_send)(
@@ -240,15 +255,26 @@ class OrdenViewSet(viewsets.ModelViewSet):
             {
                 "type": "orden_nueva", 
                 "orden": {
-                    "id": orden.id, # 👈 ID real
-                    "es_actualizacion": True, # 👈 Le avisamos a React
+                    "id": orden.id, 
+                    "es_actualizacion": True, 
                     "mesa": f"{orden.mesa.numero_o_nombre} (AGREGADO)" if orden.mesa else "LLEVAR (AGREGADO)",
                     "detalles": nuevos_detalles_json
                 }
             }
         )
         
-        return Response({'status': 'Productos agregados correctamente'}, status=status.HTTP_200_OK)
+        # ✨ 4. MAGIA 2: Volvemos a pedirle la orden a la BD para borrar la memoria vieja
+        # Así aseguramos que a React le llegue la lista completa y el precio final real
+        orden_fresca = Orden.objects.prefetch_related(
+            'detalles__producto', 
+            'detalles__opciones_seleccionadas'
+        ).get(id=orden.id)
+        
+        serializer = self.get_serializer(orden_fresca)
+        return Response({
+            'status': 'Productos agregados correctamente',
+            'orden': serializer.data
+        }, status=status.HTTP_200_OK)
 
 class DetalleOrdenViewSet(viewsets.ModelViewSet):
     queryset = DetalleOrden.objects.all()

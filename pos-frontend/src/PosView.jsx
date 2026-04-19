@@ -76,7 +76,6 @@ export default function PosView({ mesaId, onVolver }) {
 
   const manejarEnviarCocina = async () => {
     // 🛑 1. EL ESCUDO ANTI-DUEÑOS SIN SEDE
-    // Si la sede no existe o está vacía, bloqueamos la venta para no romper la base de datos.
     if (!sedeActualId) {
       alert("⚠️ Modo Dueño: Debes seleccionar o asignarte una Sede activa antes de registrar ventas.");
       return; 
@@ -91,12 +90,17 @@ export default function PosView({ mesaId, onVolver }) {
         notas_y_modificadores: item.notas_y_modificadores || "",
         notas_cocina: item.notas_cocina || "",
         // ✨ 2. EL PUENTE DE LAS VARIACIONES
-        // Aquí le pasamos a Django el arreglo con los IDs de las opciones que eligió el cliente
         opciones_seleccionadas: item.opciones_seleccionadas || [] 
       }));
 
       if (ordenActiva) {
-        await agregarProductosAOrden(ordenActiva.id, { detalles: detallesNuevos });
+        // ✨ AQUÍ ESTÁ LA MAGIA NUEVA: Guardamos la respuesta de Django
+        const response = await agregarProductosAOrden(ordenActiva.id, { detalles: detallesNuevos });
+        
+        // Y actualizamos la orden en pantalla al instante
+        if (response.data && response.data.orden) {
+            setOrdenActiva(response.data.orden);
+        }
       } else {
         const payloadOrden = {
           sede: sedeActualId, 
@@ -108,9 +112,15 @@ export default function PosView({ mesaId, onVolver }) {
           cliente_telefono: esParaLlevar ? telefonoLlevar : "",
           detalles: detallesNuevos
         };
-        await crearOrden(payloadOrden); 
+        // ✨ LO MISMO AQUÍ PARA ÓRDENES NUEVAS
+        const response = await crearOrden(payloadOrden); 
+        if (response.data) {
+           setOrdenActiva(response.data);
+        }
       }
       
+      // Ahora al vaciar el store, la pantalla leerá la ordenActiva recién actualizada
+      vaciarStore(); 
       setCarritoAbierto(false); 
       setMostrarExito(true);    
       
@@ -119,11 +129,8 @@ export default function PosView({ mesaId, onVolver }) {
         onVolver(); 
       }, 2000);
     } catch (error) {
-      // 🕵️‍♂️ 3. EL CHIVATO DE ERRORES (Modo Senior)
-      // Si Django vuelve a lanzar un 400, esto imprimirá en tu consola EXACTAMENTE qué campo falló.
+      // 🕵️‍♂️ 3. EL CHIVATO DE ERRORES
       console.error("🔍 Reporte de Django:", error.response?.data || error);
-      
-      // Le mostramos al usuario un resumen del error para no tener que adivinar
       const mensajeError = error.response?.data 
         ? JSON.stringify(error.response.data).substring(0, 100) 
         : 'Desconocido';
@@ -475,17 +482,35 @@ export default function PosView({ mesaId, onVolver }) {
             carrito={ordenActiva ? ordenActiva.detalles : []} 
             onCobroExitoso={async (datosPago) => {
               try {
-                let metodoParaDjango = datosPago[0].metodo;
-                if (metodoParaDjango === 'yape') metodoParaDjango = 'yape_plin';
-                
-                await crearPago({ orden: ordenActiva.id, metodo: metodoParaDjango, monto: datosPago[0].monto });
-                await actualizarOrden(ordenActiva.id, { estado: 'completado', estado_pago: 'pagado', pago_confirmado: true });
+                // 1. Guardamos TODOS los pagos parciales en Django
+                for (const pago of datosPago) {
+                  // Mandamos el método tal cual viene ('yape', 'efectivo', 'tarjeta')
+                  await crearPago({ 
+                    orden: ordenActiva.id, 
+                    metodo: pago.metodo, 
+                    monto: pago.monto 
+                  });
+                }
 
+                // 2. Tomamos el primer método como referencia para la orden general (opcional)
+                
+                // 3. Cerramos la mesa
+                await actualizarOrden(ordenActiva.id, { 
+                  estado: 'completado', 
+                  estado_pago: 'pagado', 
+                  pago_confirmado: true 
+                });
+
+                // 4. Limpiamos y volvemos
                 setModalCobroAbierto(false);
                 vaciarStore();
                 setCarritoAbierto(false);
                 onVolver();
-              } catch (error) { alert("Hubo un error al procesar el pago"); }
+                
+              } catch (error) { 
+                console.error("Error en cobro:", error.response?.data || error);
+                alert("Hubo un error al procesar el pago"); 
+              }
             }}
           />
       )}

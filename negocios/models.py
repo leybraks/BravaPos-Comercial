@@ -151,6 +151,7 @@ class Orden(models.Model):
         ('llevar', 'Para Llevar'),
         ('delivery', 'Delivery')
     ]
+
     
     sede = models.ForeignKey(Sede, on_delete=models.CASCADE)
     mesa = models.ForeignKey(Mesa, on_delete=models.SET_NULL, null=True, blank=True)
@@ -158,7 +159,6 @@ class Orden(models.Model):
     
     estado = models.CharField(max_length=20, choices=ESTADOS_COCINA, default='pendiente')
     estado_pago = models.CharField(max_length=20, choices=ESTADOS_PAGO, default='pendiente') # 👈 NUEVO
-    
     total = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     
     cliente_nombre = models.CharField(max_length=100, null=True, blank=True)
@@ -176,6 +176,7 @@ class Orden(models.Model):
         super().clean() # Llama a las validaciones normales de Django
         if self.estado_pago == 'pagado' and self.estado == 'cancelado':
             raise ValidationError('Error lógico: Una orden cancelada no puede aparecer como pagada. Debe estar reembolsada o pendiente.')
+
 
     def save(self, *args, **kwargs):
         self.full_clean() # Fuerza a que se ejecute "clean()" antes de guardar
@@ -277,7 +278,8 @@ class Pago(models.Model):
     METODOS = [
         ('efectivo', 'Efectivo'),
         ('tarjeta', 'Tarjeta (Visa/MC)'),
-        ('yape_plin', 'Yape / Plin'),
+        ('yape', 'Yape'),
+        ('plin', 'Plin'),
     ]
     
     orden = models.ForeignKey(Orden, on_delete=models.CASCADE, related_name='pagos')

@@ -158,6 +158,7 @@ class OrdenSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Orden
+        # 👇 MIRA AQUÍ: Agregué 'metodo' justo después de 'estado_pago'
         fields = ['id', 'sede', 'mesa', 'mesa_nombre', 'tipo', 'estado', 
                   'estado_pago', 'total', 'cliente_nombre', 'cliente_telefono', 
                   'motivo_cancelacion', 'creado_en', 'detalles']
