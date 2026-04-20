@@ -75,8 +75,8 @@ export default function App() {
         {/* RUTA 1: El POS principal (mozos, dueños, cocina) */}
         <Route path="/" element={<VistaInternaPOS />} />
 
-        {/* RUTA 2: La Carta QR para el Cliente (pública e independiente) */}
-        <Route path="/menu/:sedeId/:mesaId" element={<PublicMenu />} />
+        {/* RUTA 2: La Carta QR para el Cliente (publica e independiente) */}
+        <Route path="/menu/:negocioId/:sedeId/:mesaId" element={<PublicMenu />} />
       </Routes>
     </BrowserRouter>
   );

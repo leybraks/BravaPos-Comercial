@@ -122,7 +122,8 @@ export default function DashboardCartaQR({ config }) {
           </div>
         ) : (
           mesas.map(mesa => {
-            const urlMenu = `${window.location.origin}/menu/${sedeSeleccionada}/${mesa.id}`;
+            const negocioId = localStorage.getItem('negocio_id');
+            const urlMenu = `${window.location.origin}/menu/${negocioId}/${sedeSeleccionada}/${mesa.id}`;
             return (
               <div key={mesa.id} className={`p-6 rounded-3xl border flex flex-col items-center text-center transition-all hover:border-[#444] ${
                 config.temaFondo === 'dark' ? 'bg-[#121212] border-[#222]' : 'bg-white border-gray-200'

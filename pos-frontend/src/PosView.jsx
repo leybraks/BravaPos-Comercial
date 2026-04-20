@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import usePosStore from './store/usePosStore';
 import ModalCobro from './ModalCobro';
 import ModalModificadores from './ModalModificadores';
-import { getProductos, crearOrden, actualizarOrden, getOrdenes, getCategorias, crearPago, agregarProductosAOrden, anularItemDeOrden } from './api/api';
+import { getProductos, crearOrden, actualizarOrden, getOrdenes, getCategorias, crearPago, agregarProductosAOrden, anularItemDeOrden, getModificadores } from './api/api';
 
 export default function PosView({ mesaId, onVolver }) {
   // ✨ 1. EXTRAEMOS EL TEMA Y COLOR GLOBAL DE ZUSTAND ✨
@@ -12,6 +12,7 @@ export default function PosView({ mesaId, onVolver }) {
 
   const [categoriaActiva, setCategoriaActiva] = useState('Todos');
   const [categoriasExpandidas, setCategoriasExpandidas] = useState(false);
+  const [modificadoresGlobales, setModificadoresGlobales] = useState([]);
   const [modalCobroAbierto, setModalCobroAbierto] = useState(false);
   const [categoriasReales, setCategoriasReales] = useState([]);
   const [formLlevar, setFormLlevar] = useState({ nombre: '', telefono: '' });
@@ -87,10 +88,13 @@ export default function PosView({ mesaId, onVolver }) {
 
   const cargarData = useCallback(async () => {
       try {
-        const [responseProductos, responseCategorias] = await Promise.all([
-            getProductos(),
-            getCategorias()
+        // ✨ 1. Añadimos getModificadores al Promise.all para que cargue súper rápido
+        const [responseProductos, responseCategorias, responseMods] = await Promise.all([
+            getProductos({ sede_id: sedeActualId }), // Mejorado: Filtramos productos por sede
+            getCategorias(),
+            getModificadores() // <-- Asegúrate de importar esta función desde api.js
         ]);
+
         const dataFormateada = responseProductos.data.map(p => ({
           ...p,
           id: p.id, 
@@ -98,12 +102,18 @@ export default function PosView({ mesaId, onVolver }) {
           precio: parseFloat(p.precio_base), 
           categoria: p.categoria
         }));
+        
         setProductosBase(dataFormateada);
         setCategoriasReales(responseCategorias.data);
+        
+        // ✨ 2. Guardamos los modificadores en el estado que creamos antes
+        setModificadoresGlobales(responseMods.data);
 
         const responseOrdenes = await getOrdenes({ sede_id: sedeActualId });
+        
+        // ✨ 3. Blindaje: Convertimos ambos a String por seguridad
         const ordenViva = responseOrdenes.data.find(o => 
-            o.mesa === mesaId && 
+            String(o.mesa) === String(mesaId) && 
             o.estado !== 'completado' && 
             o.estado !== 'cancelado' &&
             o.estado_pago !== 'pagado'
@@ -131,12 +141,11 @@ export default function PosView({ mesaId, onVolver }) {
         console.error(error);
         setCargando(false);
       }
-  }, [mesaId, vaciarStore, sedeActualId]);
+  }, [mesaId, vaciarStore, sedeActualId]); // El linter de React es feliz aquí
 
   useEffect(() => {
     cargarData();
   }, [cargarData]);
-
   // Total desde detalles activos, no desde ordenActiva.total (que no se actualiza solo)
   // El backend borra el detalle al anular (no hay campo 'anulado'), así que simplemente sumamos todos
   const totalOrdenActiva = ordenActiva

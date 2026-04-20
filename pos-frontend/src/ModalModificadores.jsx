@@ -1,12 +1,9 @@
 import React, { useState, useEffect } from 'react';
-// ✨ 1. Importamos la tienda global
-import usePosStore from './store/usePosStore'; // Ajusta esta ruta si es necesario
+import usePosStore from './store/usePosStore';
 
-// Helper seguro para monedas
 const formatearSoles = (monto) => `S/ ${parseFloat(monto || 0).toFixed(2)}`;
 
 export default function ModalModificadores({ isOpen, onClose, producto, modificadoresGlobales = [], onAgregarAlCarrito }) {
-  // ✨ 2. Extraemos la configuración visual
   const { configuracionGlobal } = usePosStore();
   const tema = configuracionGlobal?.temaFondo || 'dark';
   const colorPrimario = configuracionGlobal?.colorPrimario || '#ff5a1f';
@@ -35,10 +32,14 @@ export default function ModalModificadores({ isOpen, onClose, producto, modifica
 
   if (!isOpen || !producto) return null;
 
+  // Filtramos la base de datos (Gratis vs Pagos)
+  const notasGratis = modificadoresGlobales.filter(m => parseFloat(m.precio || 0) === 0);
+  const agregadosPagos = modificadoresGlobales.filter(m => parseFloat(m.precio || 0) > 0);
+
   // --- LÓGICA DE PRECIOS ---
   const precioBase = parseFloat(producto.precio_base || producto.precio || 0);
-  
   let precioExtras = 0;
+
   Object.values(selecciones).forEach(opcionesSeleccionadas => {
     opcionesSeleccionadas.forEach(idOpcion => {
       producto.grupos_variacion?.forEach(grupo => {
@@ -46,6 +47,13 @@ export default function ModalModificadores({ isOpen, onClose, producto, modifica
         if (opcion) precioExtras += parseFloat(opcion.precio_adicional || 0);
       });
     });
+  });
+
+  chipsActivos.forEach(nombreChip => {
+    const modGlobal = modificadoresGlobales.find(m => (m.nombre || m) === nombreChip);
+    if (modGlobal && parseFloat(modGlobal.precio || 0) > 0) {
+      precioExtras += parseFloat(modGlobal.precio);
+    }
   });
 
   const precioUnitarioFinal = precioBase + precioExtras;
@@ -157,9 +165,9 @@ export default function ModalModificadores({ isOpen, onClose, producto, modifica
         {/* CUERPO SCROLLABLE */}
         <div className="flex-1 overflow-y-auto p-6 space-y-8 scrollbar-hide">
           
-          {/* 1. VARIACIONES (Grupos) */}
-          {producto.grupos_variacion?.map(grupo => (
-            <div key={grupo.id} className="space-y-3">
+          {/* 1. VARIACIONES INTERNAS (Grupos del Plato) */}
+          {producto.grupos_variacion?.map((grupo, gIndex) => (
+            <div key={grupo.id || `grupo-${gIndex}`} className="space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className={`font-black text-lg uppercase tracking-wider ${tema === 'dark' ? 'text-neutral-200' : 'text-gray-800'}`}>
                   {grupo.nombre}
@@ -172,13 +180,13 @@ export default function ModalModificadores({ isOpen, onClose, producto, modifica
               </div>
               
               <div className="grid grid-cols-2 gap-3">
-                {grupo.opciones.map(opcion => {
+                {grupo.opciones.map((opcion, oIndex) => {
                   const estaSeleccionado = (selecciones[grupo.id] || []).includes(opcion.id);
                   const precioAdicional = parseFloat(opcion.precio_adicional);
                   
                   return (
                     <button
-                      key={opcion.id}
+                      key={opcion.id || `opcion-${oIndex}`}
                       onClick={() => toggleOpcion(grupo, opcion.id)}
                       className={`p-4 rounded-2xl border text-left flex justify-between items-center transition-all active:scale-95 ${
                         estaSeleccionado 
@@ -186,7 +194,7 @@ export default function ModalModificadores({ isOpen, onClose, producto, modifica
                           : (tema === 'dark' ? 'bg-[#151515] border-[#2a2a2a] hover:border-[#444] hover:bg-[#1a1a1a]' : 'bg-white border-gray-200 hover:border-gray-300 shadow-sm')
                       }`}
                       style={estaSeleccionado ? { 
-                        backgroundColor: `${colorPrimario}15`, // 15 es opacidad hex
+                        backgroundColor: `${colorPrimario}15`,
                         borderColor: colorPrimario, 
                         boxShadow: `0 0 15px ${colorPrimario}30` 
                       } : {}}
@@ -206,34 +214,72 @@ export default function ModalModificadores({ isOpen, onClose, producto, modifica
             </div>
           ))}
 
-          {/* 2. CHIPS RÁPIDOS */}
-          <div className="space-y-3 pt-2">
-            <h3 className={`font-black text-sm uppercase tracking-widest border-t pt-6 ${tema === 'dark' ? 'text-neutral-400 border-[#222]' : 'text-gray-500 border-gray-200'}`}>
-              Notas Rápidas
-            </h3>
-            <div className="flex flex-wrap gap-2">
-              {(modificadoresGlobales.length > 0 ? modificadoresGlobales : ["Sin cebolla", "Sin ensalada", "Poco arroz", "Bien cocido", "Para llevar"]).map(chip => {
-                const nombreChip = chip.nombre || chip;
-                const activo = chipsActivos.includes(nombreChip);
-                return (
-                  <button
-                    key={nombreChip}
-                    onClick={() => toggleChip(nombreChip)}
-                    className={`px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-wider transition-all border ${
-                      activo 
-                        ? 'text-white shadow-lg' 
-                        : (tema === 'dark' ? 'bg-[#151515] border-[#2a2a2a] text-neutral-400 hover:text-white hover:border-[#444]' : 'bg-white border-gray-200 text-gray-500 hover:text-gray-800 hover:border-gray-300 shadow-sm')
-                    }`}
-                    style={activo ? { backgroundColor: colorPrimario, borderColor: colorPrimario } : {}}
-                  >
-                    {nombreChip}
-                  </button>
-                );
-              })}
+          {/* 2. AGREGADOS GLOBALES CON PRECIO (Ej. + Rachi, + Queso) */}
+          {agregadosPagos.length > 0 && (
+            <div className="space-y-3 pt-2">
+              <h3 className={`font-black text-sm uppercase tracking-widest border-t pt-6 ${tema === 'dark' ? 'text-neutral-400 border-[#222]' : 'text-gray-500 border-gray-200'}`}>
+                Agregados Extras
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {agregadosPagos.map((chip, idx) => {
+                  const nombreChip = chip.nombre || chip;
+                  const precioChip = parseFloat(chip.precio || 0);
+                  const activo = chipsActivos.includes(nombreChip);
+                  
+                  return (
+                    <button
+                      key={chip.id || `agregado-${idx}`}
+                      onClick={() => toggleChip(nombreChip)}
+                      className={`pl-3 pr-1 py-1 rounded-full flex items-center gap-2 transition-all border ${
+                        activo 
+                          ? 'shadow-lg' 
+                          : (tema === 'dark' ? 'bg-transparent border-[#333] hover:border-[#444]' : 'bg-transparent border-gray-300 hover:border-gray-400')
+                      }`}
+                      style={activo ? { borderColor: colorPrimario, backgroundColor: `${colorPrimario}15` } : {}}
+                    >
+                      <span className={`text-xs font-bold ${activo ? 'text-white' : (tema === 'dark' ? 'text-neutral-400' : 'text-gray-600')}`}>
+                        {nombreChip}
+                      </span>
+                      <span className="text-[10px] font-black px-2 py-1 rounded-full" style={{ backgroundColor: activo ? colorPrimario : (tema === 'dark' ? '#1a1a1a' : '#f3f4f6'), color: activo ? '#fff' : colorPrimario }}>
+                        + {formatearSoles(precioChip)}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* 3. TEXTO LIBRE */}
+          {/* 3. NOTAS RÁPIDAS GRATIS (Ej. Sin cebolla, Poco arroz) */}
+          {notasGratis.length > 0 && (
+            <div className="space-y-3 pt-2">
+              <h3 className={`font-black text-sm uppercase tracking-widest border-t pt-6 ${tema === 'dark' ? 'text-neutral-400 border-[#222]' : 'text-gray-500 border-gray-200'}`}>
+                Notas Rápidas
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {notasGratis.map((chip, idx) => {
+                  const nombreChip = chip.nombre || chip;
+                  const activo = chipsActivos.includes(nombreChip);
+                  return (
+                    <button
+                      key={chip.id || `gratis-${idx}`}
+                      onClick={() => toggleChip(nombreChip)}
+                      className={`px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-wider transition-all border ${
+                        activo 
+                          ? 'text-white shadow-lg' 
+                          : (tema === 'dark' ? 'bg-[#151515] border-[#2a2a2a] text-neutral-400 hover:text-white hover:border-[#444]' : 'bg-white border-gray-200 text-gray-500 hover:text-gray-800 hover:border-gray-300 shadow-sm')
+                      }`}
+                      style={activo ? { backgroundColor: colorPrimario, borderColor: colorPrimario } : {}}
+                    >
+                      {nombreChip}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* 4. TEXTO LIBRE */}
           <div className="space-y-3 pt-2">
             <h3 className={`font-black text-sm uppercase tracking-widest ${tema === 'dark' ? 'text-neutral-400' : 'text-gray-500'}`}>
               Nota Personalizada

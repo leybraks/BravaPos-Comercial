@@ -14,7 +14,8 @@ import {
   crearCategoria,
   actualizarNegocio,
   actualizarEmpleado,
-  parchearCategoria
+  parchearCategoria,
+  
 } from './api/api';
 import api from './api/api';
 import usePosStore from './store/usePosStore';
@@ -372,8 +373,8 @@ export default function ErpDashboard({ onVolverAlPos }) {
 
     const handleCerrarSesion = () => {
       if (window.confirm("¿Estás seguro que deseas cerrar sesión?")) {
-        localStorage.clear(); 
-        window.location.href = '/login-admin'; 
+        localStorage.clear();
+        window.location.href = '/';
       }
     };
 
