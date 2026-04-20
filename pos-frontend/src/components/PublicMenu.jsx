@@ -3,10 +3,9 @@ import { useParams } from 'react-router-dom';
 import { getProductos, getCategorias, getOrdenes } from '../api/api';
 
 export default function PublicMenu() {
-  // Capturamos los IDs que vienen en el link del QR
   const { sedeId, mesaId } = useParams(); 
   
-  const [vistaActiva, setVistaActiva] = useState('menu'); // 'menu' o 'cuenta'
+  const [vistaActiva, setVistaActiva] = useState('menu'); 
   const [categoriaActiva, setCategoriaActiva] = useState('Todas');
   
   const [productos, setProductos] = useState([]);
@@ -14,7 +13,6 @@ export default function PublicMenu() {
   const [ordenActiva, setOrdenActiva] = useState(null);
   const [cargando, setCargando] = useState(true);
 
-  // Paleta de colores Brava
   const colorPrimario = '#ff5a1f';
   const bgGlobal = '#0a0a0a';
 
@@ -27,11 +25,9 @@ export default function PublicMenu() {
           getOrdenes({ sede_id: sedeId }) 
         ]);
 
-        // Filtramos solo los productos disponibles para que el cliente no vea lo agotado
         setProductos(resProductos.data.filter(p => p.disponible && p.activo));
         setCategorias(resCategorias.data);
 
-        // Buscamos si la mesa tiene una orden viva para mostrar su cuenta
         const ordenViva = resOrdenes.data.find(o => 
           String(o.mesa) === String(mesaId) && 
           o.estado !== 'cancelado' && 
@@ -48,11 +44,24 @@ export default function PublicMenu() {
     };
 
     cargarData();
-    
-    // Opcional: Recargar la cuenta cada 30 segundos para que el cliente vea si su pedido ya está "Listo"
     const intervalo = setInterval(cargarData, 30000);
     return () => clearInterval(intervalo);
   }, [sedeId, mesaId]);
+
+  // ✨ LA FUNCIÓN TRADUCTORA: Convierte el JSON de la BD en texto legible para el cliente
+  const formatearNotas = (notas) => {
+    if (!notas) return null;
+    // Si por alguna razón ya es texto, lo devolvemos tal cual
+    if (typeof notas === 'string') return notas;
+    
+    // Si es el objeto JSON que estructuramos, lo unimos
+    const partes = [];
+    if (notas.variaciones && notas.variaciones.length > 0) partes.push(...notas.variaciones);
+    if (notas.chips && notas.chips.length > 0) partes.push(...notas.chips);
+    if (notas.nota_libre) partes.push(notas.nota_libre);
+    
+    return partes.length > 0 ? partes.join(' | ') : null;
+  };
 
   if (cargando) {
     return (
@@ -71,7 +80,6 @@ export default function PublicMenu() {
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white font-sans pb-24">
       
-      {/* HEADER FIJO */}
       <header className="sticky top-0 z-50 bg-[#0a0a0a]/90 backdrop-blur-md border-b border-[#222] p-4 flex justify-between items-center shadow-xl">
         <div>
           <h1 className="text-2xl font-black tracking-tight">BRAVA <span style={{ color: colorPrimario }}>POS</span></h1>
@@ -82,7 +90,6 @@ export default function PublicMenu() {
         </div>
       </header>
 
-      {/* TABS: MENÚ / MI CUENTA */}
       <div className="flex p-4 gap-2">
         <button 
           onClick={() => setVistaActiva('menu')}
@@ -107,10 +114,8 @@ export default function PublicMenu() {
         </button>
       </div>
 
-      {/* ===================== VISTA 1: EL MENÚ ===================== */}
       {vistaActiva === 'menu' && (
         <div className="animate-fadeIn">
-          {/* Scroll de Categorías */}
           <div className="flex overflow-x-auto gap-2 px-4 pb-4 custom-scrollbar">
             <button 
               onClick={() => setCategoriaActiva('Todas')}
@@ -135,11 +140,9 @@ export default function PublicMenu() {
             ))}
           </div>
 
-          {/* Grid de Productos (Modo Vitrina) */}
           <div className="px-4 space-y-4">
             {productosFiltrados.map(plato => (
               <div key={plato.id} className="bg-[#111] border border-[#222] p-4 rounded-2xl flex gap-4 items-center">
-                {/* Imagen del Plato (Placeholder temporal) */}
                 <div className="w-20 h-20 bg-[#1a1a1a] rounded-xl shrink-0 flex items-center justify-center border border-[#333]">
                   <span className="text-2xl">🍲</span>
                 </div>
@@ -162,7 +165,6 @@ export default function PublicMenu() {
         </div>
       )}
 
-      {/* ===================== VISTA 2: MI CUENTA ===================== */}
       {vistaActiva === 'cuenta' && (
         <div className="px-4 animate-fadeIn">
           {!ordenActiva ? (
@@ -190,24 +192,29 @@ export default function PublicMenu() {
               </div>
 
               <div className="space-y-4 mb-6">
-                {ordenActiva.detalles.map((detalle, idx) => (
-                  <div key={idx} className="flex justify-between items-start">
-                    <div>
-                      <p className="text-sm font-bold text-white">
-                        <span className="text-neutral-500 mr-2">{detalle.cantidad}x</span> 
-                        {detalle.producto_nombre || 'Producto'}
-                      </p>
-                      {detalle.notas_y_modificadores && (
-                        <p className="text-[10px] text-neutral-500 mt-1 ml-6 leading-tight">
-                          {detalle.notas_y_modificadores}
+                {ordenActiva.detalles.map((detalle, idx) => {
+                  // ✨ APLICAMOS LA FUNCIÓN TRADUCTORA AQUÍ
+                  const notasTexto = formatearNotas(detalle.notas_y_modificadores);
+                  
+                  return (
+                    <div key={idx} className="flex justify-between items-start">
+                      <div>
+                        <p className="text-sm font-bold text-white">
+                          <span className="text-neutral-500 mr-2">{detalle.cantidad}x</span> 
+                          {detalle.producto_nombre || detalle.producto?.nombre || 'Producto'}
                         </p>
-                      )}
+                        {notasTexto && (
+                          <p className="text-[10px] text-neutral-500 mt-1 ml-6 leading-tight">
+                            ↳ {notasTexto}
+                          </p>
+                        )}
+                      </div>
+                      <p className="text-sm font-bold text-white ml-4 shrink-0">
+                        S/ {(detalle.precio_unitario * detalle.cantidad).toFixed(2)}
+                      </p>
                     </div>
-                    <p className="text-sm font-bold text-white ml-4">
-                      S/ {(detalle.precio_unitario * detalle.cantidad).toFixed(2)}
-                    </p>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               <div className="border-t border-[#222] pt-4 flex justify-between items-center">
