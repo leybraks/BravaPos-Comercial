@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { getProductos, getCategorias, getOrdenes } from '../api/api';
+import { getMenuPublico, getOrdenPublica } from '../api/api';
 
 export default function PublicMenu() {
-  const { sedeId, mesaId } = useParams(); 
+  const { negocioId, sedeId, mesaId } = useParams();
   
   const [vistaActiva, setVistaActiva] = useState('menu'); 
   const [categoriaActiva, setCategoriaActiva] = useState('Todas');
@@ -12,6 +12,7 @@ export default function PublicMenu() {
   const [categorias, setCategorias] = useState([]);
   const [ordenActiva, setOrdenActiva] = useState(null);
   const [cargando, setCargando] = useState(true);
+  const [negocioNombre, setNegocioNombre] = useState('');
 
   // Paleta de colores Premium
   const colorPrimario = '#ff5a1f';
@@ -22,22 +23,15 @@ export default function PublicMenu() {
   useEffect(() => {
     const cargarData = async () => {
       try {
-        const [resProductos, resCategorias, resOrdenes] = await Promise.all([
-          getProductos({ sede_id: sedeId }),
-          getCategorias(),
-          getOrdenes({ sede_id: sedeId }) 
+        const [resMenu, resOrden] = await Promise.all([
+          getMenuPublico(sedeId),
+          getOrdenPublica(sedeId, mesaId),
         ]);
 
-        setProductos(resProductos.data.filter(p => p.disponible && p.activo));
-        setCategorias(resCategorias.data);
-
-        const ordenViva = resOrdenes.data.find(o => 
-          String(o.mesa) === String(mesaId) && 
-          o.estado !== 'cancelado' && 
-          o.estado_pago !== 'pagado'
-        );
-        
-        setOrdenActiva(ordenViva || null);
+        setProductos(resMenu.data.productos || []);
+        setCategorias(resMenu.data.categorias || []);
+        setOrdenActiva(resOrden.data.orden || null);
+        setNegocioNombre(resMenu.data.negocio_nombre || '');
       } catch (error) {
         console.error("Error al cargar la carta digital:", error);
       } finally {
@@ -84,7 +78,7 @@ export default function PublicMenu() {
       <header className="sticky top-0 z-50 bg-[#050505]/80 backdrop-blur-xl border-b border-[#262626] p-5 flex justify-between items-center transition-all">
         <div className="flex flex-col">
           <h1 className="text-3xl font-black tracking-tighter leading-none">
-            BRAVA<span style={{ color: colorPrimario }}>.</span>
+            {negocioNombre || 'Menú'}<span style={{ color: colorPrimario }}>.</span>
           </h1>
           <p className="text-[9px] text-neutral-400 font-bold uppercase tracking-[0.3em] mt-1">Menú Digital</p>
         </div>

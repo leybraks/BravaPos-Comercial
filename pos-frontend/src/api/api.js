@@ -96,6 +96,8 @@ export const actualizarNegocio = (id, data) => api.patch(`/negocios/${id}/`, dat
 export const getNegocio = (id) => api.get(`/negocios/${id}/`);
 export const actualizarEmpleado = (id, data) => api.patch(`/empleados/${id}/`, data);
 export const crearMesa = (data) => api.post('/mesas/', data);
+export const actualizarSede = (id, data) => api.patch(`/sedes/${id}/`, data);
+export const getModificadores = () => api.get('/modificadores-rapidos/');
 export const getInsumos = (params) => api.get('/insumos/', { params });
 export const registrarCompraInsumo = (data) => api.post('/insumos/registrar_compra/', data);
 export const getRecetas = (productoId) => api.get(`/productos/${productoId}/receta/`);
@@ -120,6 +122,15 @@ export const actualizarVariacionesProducto = async (productoId, gruposData) => {
     return await api.patch(`/productos/${productoId}/`, { grupos_variacion: gruposData });
 };
 export const anularItemDeOrden = (idOrden, payload) => api.post(`/ordenes/${idOrden}/anular_item/`, payload);
-export const actualizarSede = (id, data) => api.patch(`/sedes/${id}/`, data);
+
+// ==========================================
+// 🌐 ENDPOINTS PÚBLICOS (Sin token - Carta QR)
+// ==========================================
+// Usamos axios directo (sin interceptor) para no adjuntar el token
+const apiPublica = axios.create({ baseURL: API_URL });
+
+export const getMenuPublico = (sedeId) => apiPublica.get(`/menu-publico/${sedeId}/`);
+export const getOrdenPublica = (sedeId, mesaId) => apiPublica.get(`/orden-publica/${sedeId}/${mesaId}/`);
+
 // (Ajusta la URL si en tu Django la llamaste diferente)
 export default api;

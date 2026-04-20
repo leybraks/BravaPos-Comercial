@@ -21,6 +21,7 @@ router.register(r'ordenes', views.OrdenViewSet, basename='orden')
 router.register(r'empleados', views.EmpleadoViewSet, basename='empleado')
 router.register(r'insumo-base', views.InsumoBaseViewSet, basename='insumobase')
 router.register(r'insumo-sede', views.InsumoSedeViewSet, basename='insumosede')
+router.register(r'modificadores-rapidos', views.ModificadorRapidoViewSet, basename='modificadorrapido')
 
 
 urlpatterns = [
@@ -31,4 +32,6 @@ urlpatterns = [
     path('dashboard/metricas/', views.metricas_dashboard, name='metricas_dashboard'),
     path('movimientos-caja/', views.registrar_movimiento_caja, name='registrar_movimiento_caja'),
     path('login-admin/', views.LoginAdministradorView.as_view(), name='login-admin'),
+    path('menu-publico/<int:sede_id>/', views.menu_publico),
+    path('orden-publica/<int:sede_id>/<int:mesa_id>/', views.orden_publica),
 ]

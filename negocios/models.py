@@ -303,8 +303,11 @@ class Pago(models.Model):
 class ModificadorRapido(models.Model):
     negocio = models.ForeignKey(Negocio, on_delete=models.CASCADE)
     nombre = models.CharField(max_length=50)
+    precio = models.DecimalField(max_digits=6, decimal_places=2, default=0.00)
 
     def __str__(self):
+        if self.precio > 0:
+            return f"{self.nombre} (+S/ {self.precio})"
         return self.nombre
 
 class GrupoVariacion(models.Model):

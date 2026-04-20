@@ -213,6 +213,25 @@ class OrdenViewSet(viewsets.ModelViewSet):
                 "orden": orden_data
             }
         )
+        if orden.mesa_id:
+            async_to_sync(channel_layer.group_send)(
+                f"salon_sede_{orden.sede_id}",
+                {
+                    "type": "mesa_actualizada",
+                    "mesa_id": orden.mesa_id,
+                    "estado": "ocupada",
+                    "total": float(orden.total),
+                }
+            )
+        if orden.tipo == 'llevar':
+            async_to_sync(channel_layer.group_send)(
+                f"salon_sede_{orden.sede_id}",
+                {
+                    "type": "orden_llevar_actualizada",
+                    "accion": "nueva",
+                    "orden": orden_data,
+                }
+            )
         # Notificamos a todos los meseros del salón que esta mesa cambió de estado
         if orden.mesa_id:
             async_to_sync(channel_layer.group_send)(
@@ -252,6 +271,33 @@ class OrdenViewSet(viewsets.ModelViewSet):
                     }
                 )
             # Si es para llevar, notificamos que se completó/canceló
+            if instance.tipo == 'llevar':
+                orden_data = self.get_serializer(instance).data
+                accion = 'completada' if instance.estado in estados_libres or instance.estado_pago == 'pagado' else 'actualizada'
+                async_to_sync(channel_layer.group_send)(
+                    f"salon_sede_{instance.sede_id}",
+                    {
+                        "type": "orden_llevar_actualizada",
+                        "accion": accion,
+                        "orden": orden_data,
+                    }
+                )
+
+    def perform_update(self, serializer):
+        instance = serializer.save()
+        channel_layer = get_channel_layer()
+        estados_libres = {'completado', 'cancelado'}
+        if instance.estado in estados_libres or instance.estado_pago == 'pagado':
+            if instance.mesa_id:
+                async_to_sync(channel_layer.group_send)(
+                    f"salon_sede_{instance.sede_id}",
+                    {
+                        "type": "mesa_actualizada",
+                        "mesa_id": instance.mesa_id,
+                        "estado": "libre",
+                        "total": 0,
+                    }
+                )
             if instance.tipo == 'llevar':
                 orden_data = self.get_serializer(instance).data
                 accion = 'completada' if instance.estado in estados_libres or instance.estado_pago == 'pagado' else 'actualizada'
@@ -741,6 +787,49 @@ def registrar_movimiento_caja(request):
         
     except SesionCaja.DoesNotExist:
         return Response({'error': 'La sesión de caja no existe.'}, status=404)
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def menu_publico(request, sede_id):
+    # Endpoint publico para la carta QR, no requiere token
+    # Productos pertenecen al negocio, no a la sede directamente
+    # Buscamos el negocio a través de la sede
+    try:
+        sede = Sede.objects.get(id=sede_id)
+        productos = Producto.objects.filter(negocio=sede.negocio, activo=True, disponible=True)
+        categorias_ids = list(productos.values_list('categoria', flat=True).distinct())
+        from .models import Categoria
+        from .serializers import CategoriaSerializer
+        categorias = Categoria.objects.filter(id__in=categorias_ids)
+        return Response({
+            'negocio_nombre': sede.negocio.nombre,
+            'productos': ProductoSerializer(productos, many=True).data,
+            'categorias': CategoriaSerializer(categorias, many=True).data,
+        })
+    except Sede.DoesNotExist:
+        return Response({'error': 'Sede no encontrada'}, status=404)
+    except Exception as e:
+        return Response({'error': str(e)}, status=400)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def orden_publica(request, sede_id, mesa_id):
+    # Endpoint publico para ver la cuenta desde la carta QR
+    try:
+        orden = Orden.objects.prefetch_related(
+            'detalles__producto', 'detalles__opciones_seleccionadas'
+        ).filter(
+            sede_id=sede_id,
+            mesa_id=mesa_id,
+            estado_pago='pendiente'
+        ).exclude(estado__in=['cancelado', 'completado']).first()
+        if not orden:
+            return Response({'orden': None})
+        return Response({'orden': OrdenSerializer(orden).data})
+    except Exception as e:
+        return Response({'error': str(e)}, status=400)
+
 
 class LoginAdministradorView(APIView):
     permission_classes = [AllowAny]
