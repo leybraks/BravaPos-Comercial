@@ -1,3 +1,33 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ========================================================= */
+/* SCROLLBAR PREMIUM (Tipo Toast/Mac)                        */
+/* ========================================================= */
+
+/* Para navegadores basados en WebKit (Chrome, Edge, Safari) */
+::-webkit-scrollbar {
+  width: 6px; /* Súper delgadito */
+  height: 6px; /* Para scrolls horizontales si los hay */
+}
+
+::-webkit-scrollbar-track {
+  background: transparent; /* Fondo invisible */
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: rgba(156, 163, 175, 0.3); /* Gris neutro semitransparente */
+  border-radius: 10px; /* Bordes bien redondeados */
+  transition: background-color 0.3s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(156, 163, 175, 0.6); /* Se nota más cuando pasas el mouse por encima */
+}
+
+/* Para Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(156, 163, 175, 0.3) transparent;
+}

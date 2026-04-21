@@ -7,7 +7,7 @@ import usePosStore from './store/usePosStore';
 import DrawerVentaRapida from './DrawerVentaRapida';
 import ModalMovimientoCaja from './ModalMovimientoCaja';
 
-function MesasView({ onSeleccionarMesa, onIrAErp }) {
+function MesasView({ onSeleccionarMesa, onIrAErp, mesaActivaId, esModoTerminal = false }) {
   const { estadoCaja, configuracionGlobal, setConfiguracionGlobal } = usePosStore();
   const tema = configuracionGlobal?.temaFondo || 'dark';
   const colorPrimario = configuracionGlobal?.colorPrimario || '#ff5a1f';
@@ -358,13 +358,13 @@ function MesasView({ onSeleccionarMesa, onIrAErp }) {
   }
 
   return (
-    <div className={`min-h-screen flex flex-col font-sans transition-colors duration-500 pb-10 ${
+    <div className={`min-h-full flex flex-col font-sans transition-colors duration-500 pb-10 ${
       tema === 'dark' ? 'bg-[#0a0a0a] text-neutral-100' : 'bg-[#f4f4f5] text-gray-900'
     }`}>
       
       {/* CABECERA (HEADER) - FORZADA A DARK MODE PARA HACER JUEGO CON EL ERP */}
       {/* CABECERA (HEADER) - ESTRUCTURA 2 FILAS */}
-      <header className="px-4 py-4 md:px-5 md:pt-6 md:pb-5 sticky top-0 z-10 border-b bg-[#0a0a0a]/95 border-[#222] backdrop-blur-md shadow-xl">
+      {!esModoTerminal && <header className="px-4 py-4 md:px-5 md:pt-6 md:pb-5 sticky top-0 z-10 border-b bg-[#0a0a0a]/95 border-[#222] backdrop-blur-md shadow-xl">
         <div className="flex justify-between items-start gap-2">
           
           {/* TÍTULO Y ESTADO */}
@@ -485,7 +485,7 @@ function MesasView({ onSeleccionarMesa, onIrAErp }) {
             </div>
           </div>
         </div>
-      </header>
+      </header>}
 
       {/* ========================================================= */}
       {/* VISTA: SALÓN PRINCIPAL (HÍBRIDO: GRID MÓVIL / LINEAL PC)  */}
@@ -565,6 +565,7 @@ function MesasView({ onSeleccionarMesa, onIrAErp }) {
 
                   const esOcupada = mesa.estado === 'ocupada';
                   const esTomandoPedido = mesa.estado === 'tomando_pedido';
+                  const esLaMesaActiva = mesaActivaId === mesa.id;
                   const esCobrando = mesa.estado === 'cobrando';
                   let cardStyle = tema === 'dark' ? "bg-[#161616] border-[#2a2a2a] active:bg-[#1a1a1a]" : "bg-white border-gray-200 shadow-sm active:bg-gray-50"; 
                   let badgeStyle = tema === 'dark' ? "bg-[#222222] text-neutral-400" : "bg-gray-100 text-gray-500";
@@ -573,6 +574,11 @@ function MesasView({ onSeleccionarMesa, onIrAErp }) {
                   let icono = null;
                   let labelEstado = mesa.estado;
 
+
+                  if (esLaMesaActiva) {
+                    cardStyle = "scale-105 z-10 border-white ring-2 ring-white";
+                    inlineCardStyle = { ...inlineCardStyle, filter: 'brightness(1.2)' }; // Un extra de brillo
+                  }
                   if (esOcupada) {
                     cardStyle = "";
                     inlineCardStyle = { backgroundColor: tema === 'dark' ? `${colorPrimario}0D` : `${colorPrimario}0A`, borderColor: `${colorPrimario}60` };
