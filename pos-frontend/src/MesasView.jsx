@@ -1,31 +1,39 @@
-import React, { useState, useEffect } from 'react';
-import { getMesas, crearOrden, getOrdenes, getNegocio, validarPinEmpleado, actualizarMesa, actualizarOrden, crearPago } from './api/api';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+// ✨ 1. Importamos getSedes
+import { getMesas, crearOrden, getOrdenes, getNegocio, validarPinEmpleado, actualizarMesa, actualizarOrden, crearPago, registrarMovimientoCaja, getSedes } from './api/api';
 import ModalCobro from './ModalCobro';
 import ModalCierreCaja from './ModalCierreCaja';
 import usePosStore from './store/usePosStore';
 import DrawerVentaRapida from './DrawerVentaRapida';
 import ModalMovimientoCaja from './ModalMovimientoCaja';
-import { registrarMovimientoCaja } from './api/api';
 
-function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
+function MesasView({ onSeleccionarMesa, onIrAErp, mesaActivaId, esModoTerminal = false }) {
   const { estadoCaja, configuracionGlobal, setConfiguracionGlobal } = usePosStore();
   const tema = configuracionGlobal?.temaFondo || 'dark';
   const colorPrimario = configuracionGlobal?.colorPrimario || '#ff5a1f';
-  // ✨ 2. LEEMOS LOS TOGGLES (Si no hay config aún, los dejamos undefined para no tomar decisiones apresuradas)
+  
   const modSalonActivo = configuracionGlobal?.modulos?.salon;
   const modLlevarActivo = configuracionGlobal?.modulos?.delivery;
-
+  
+  // ✨ 2. Estado para las sedes
+  const [sedes, setSedes] = useState([]);
+  
   const [modalMovimientosAbierto, setModalMovimientosAbierto] = useState(false);
   const [ordenesLlevar, setOrdenesLlevar] = useState([]);
   
-  // ✨ 3. LA VISTA INICIAL EMPIEZA VACÍA HASTA SABER QUÉ MODULOS HAY
   const [vistaLocal, setVistaLocal] = useState('salon'); 
   const [mostrarPuertaMovil, setMostrarPuertaMovil] = useState(false);
-  const sedeActualId = localStorage.getItem('sede_id');
+  
+  // ✨ 3. Limpiamos las variables duplicadas. Solo definimos estas UNA VEZ:
+  const [sedeActualId, setSedeActualId] = useState(localStorage.getItem('sede_id') || '');
+  const rolUsuario = localStorage.getItem('rol_usuario') || ''; 
+  const esDueño = rolUsuario.trim().toLowerCase() === 'dueño' || rolUsuario.trim().toLowerCase() === 'admin';
+  
   const columnasGrid = parseInt(localStorage.getItem(`columnas_salon_${sedeActualId}`)) || 3;
   const [modoUnir, setModoUnir] = useState(false);
   const [mesaPrincipal, setMesaPrincipal] = useState(null);
   const [triggerRecarga, setTriggerRecarga] = useState(false);
+  const wsRef = useRef(null);
   
   const [modalClienteAbierto, setModalClienteAbierto] = useState(false);
   const [nombreCliente, setNombreCliente] = useState('');
@@ -34,17 +42,27 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
   const [mesas, setMesas] = useState([]);
   const [modalCierreAbierto, setModalCierreAbierto] = useState(false);
   const [drawerVentaRapidaAbierto, setDrawerVentaRapidaAbierto] = useState(false);
-  const [carritoVentaRapida, setCarritoVentaRapida] = useState([]); 
-  const [totalVentaRapida, setTotalVentaRapida] = useState(0);
   const [ordenACobrar, setOrdenACobrar] = useState(null);
 
+  // ✨ 4. Función para cambiar de sede (el Dueño usa esto)
+  const manejarCambioSede = (nuevaSedeId) => {
+    if (!nuevaSedeId) return;
+    localStorage.setItem('sede_id', nuevaSedeId);
+    setSedeActualId(nuevaSedeId);
+  };
 
   useEffect(() => {
     async function cargarSalón() {
       try {
-        const resMesas = await getMesas({ sede_id: sedeActualId });
-        const resOrdenes = await getOrdenes({ sede_id: sedeActualId });
+        // ✨ 5. Traemos las sedes junto con las mesas
+        const [resMesas, resOrdenes, resSedes] = await Promise.all([
+            getMesas({ sede_id: sedeActualId }),
+            getOrdenes({ sede_id: sedeActualId }),
+            getSedes() // Obtenemos todas las sedes del negocio
+        ]);
         
+        setSedes(resSedes.data); // Guardamos las sedes para el <select>
+
         const ordenesVivas = resOrdenes.data.filter(o => 
           o.estado !== 'completado' && 
           o.estado !== 'cancelado' &&
@@ -90,6 +108,64 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
     cargarSalón();
   }, [triggerRecarga, sedeActualId]);
 
+  // WebSocket: escucha cambios de mesas en tiempo real
+  useEffect(() => {
+    if (!sedeActualId) return;
+
+    let ws = null;
+    let reconnectTimeout = null;
+    let unmounted = false;
+
+    const conectar = () => {
+      if (unmounted) return;
+      const wsUrl = `${import.meta.env.VITE_WS_URL || import.meta.env.VITE_API_URL.replace('http', 'ws')}/ws/salon/${sedeActualId}/`;
+      ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      ws.onmessage = (e) => {
+        const data = JSON.parse(e.data);
+
+        if (data.type === 'mesa_actualizada') {
+          setMesas(prev => prev.map(mesa =>
+            mesa.id === data.mesa_id
+              ? { ...mesa, estado: data.estado, totalConsumido: data.total ?? mesa.totalConsumido }
+              : mesa
+          ));
+        }
+
+        if (data.type === 'orden_llevar_actualizada') {
+          const orden = data.orden;
+          if (data.accion === 'nueva') {
+            // Agregamos la nueva orden al tope de la lista (máx 10)
+            setOrdenesLlevar(prev => [orden, ...prev].slice(0, 10));
+          } else if (data.accion === 'completada') {
+            // La quitamos de la lista
+            setOrdenesLlevar(prev => prev.filter(o => o.id !== orden.id));
+          } else if (data.accion === 'actualizada') {
+            // Actualizamos la orden existente
+            setOrdenesLlevar(prev => prev.map(o => o.id === orden.id ? orden : o));
+          }
+        }
+      };
+
+      ws.onclose = () => {
+        if (!unmounted) {
+          reconnectTimeout = setTimeout(conectar, 3000);
+        }
+      };
+
+      ws.onerror = () => ws.close(); // deja que onclose maneje la reconexión
+    };
+
+    conectar();
+
+    return () => {
+      unmounted = true;
+      clearTimeout(reconnectTimeout);
+      ws?.close();
+    };
+  }, [sedeActualId]);
+
   const mesasAgrupadas = mesas.filter(m => m.estado !== 'unida').map(mesaPadre => {
     const hijas = mesas.filter(m => m.unida_a === mesaPadre.id);
     return {
@@ -99,7 +175,6 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
       capacidadTotal: mesaPadre.capacidad + hijas.reduce((sum, h) => sum + h.capacidad, 0)
     };
   });
-
   const manejarCancelacion = async (id) => {
     const motivo = window.prompt("¿Por qué se cancela el pedido? (Ej: Cliente se fue, Error de digitación)");
     if (motivo) {
@@ -283,13 +358,13 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
   }
 
   return (
-    <div className={`min-h-screen flex flex-col font-sans transition-colors duration-500 pb-10 ${
+    <div className={`min-h-full flex flex-col font-sans transition-colors duration-500 pb-10 ${
       tema === 'dark' ? 'bg-[#0a0a0a] text-neutral-100' : 'bg-[#f4f4f5] text-gray-900'
     }`}>
       
       {/* CABECERA (HEADER) - FORZADA A DARK MODE PARA HACER JUEGO CON EL ERP */}
       {/* CABECERA (HEADER) - ESTRUCTURA 2 FILAS */}
-      <header className="px-4 py-4 md:px-5 md:pt-6 md:pb-5 sticky top-0 z-10 border-b bg-[#0a0a0a]/95 border-[#222] backdrop-blur-md shadow-xl">
+      {!esModoTerminal && <header className="px-4 py-4 md:px-5 md:pt-6 md:pb-5 sticky top-0 z-10 border-b bg-[#0a0a0a]/95 border-[#222] backdrop-blur-md shadow-xl">
         <div className="flex justify-between items-start gap-2">
           
           {/* TÍTULO Y ESTADO */}
@@ -307,96 +382,120 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
             </div>
           </div>
           
-          {/* BOTONERA (Dividida en 2 filas lógicas) */}
-          <div className="flex flex-col items-end gap-1.5 sm:gap-2">
+          {/* BOTONERA (Ahora con el Selector de Sedes para el Dueño) */}
+          <div className="flex flex-col items-end gap-2 sm:gap-3">
             
-            {/* FILA 1: Operaciones del POS (Máximo 3 botones) */}
-            <div className="flex items-center gap-1.5 sm:gap-2">
-              {/* BOTÓN UNIR MESAS */}
-              {vistaLocal === 'salon' && (
-                <button 
-                  onClick={() => { setModoUnir(!modoUnir); setMesaPrincipal(null); }}
-                  className={`w-9 h-9 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl flex items-center justify-center border transition-all shrink-0 ${
-                    !modoUnir && 'bg-[#1a1a1a] border-[#333] text-neutral-400 hover:text-white hover:bg-[#222]'
-                  }`}
-                  style={modoUnir ? { backgroundColor: colorPrimario, borderColor: colorPrimario, color: '#fff', boxShadow: `0 0 15px ${colorPrimario}60` } : {}}
-                  title="Unir Mesas"
+            {/* ✨ FILA 0: SELECTOR EXCLUSIVO PARA EL DUEÑO */}
+            {esDueño && sedes?.length > 1 &&(
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-neutral-500">
+                  Modo Dueño:
+                </span>
+                <select 
+                  value={sedeActualId || ''} 
+                  onChange={(e) => manejarCambioSede(e.target.value)}
+                  className="text-xs font-bold px-3 py-1.5 rounded-lg border outline-none cursor-pointer appearance-none text-center shadow-sm transition-colors bg-[#1a1a1a] text-white border-[#333] hover:border-[#ff5a1f] focus:border-[#ff5a1f]"
+                  style={{ color: colorPrimario }}
                 >
-                  <span className="text-base sm:text-lg">🔗</span>
-                </button>
-              )}
-
-              {/* BOTÓN CAMBIO SALÓN/LLEVAR */}
-              {modSalonActivo && modLlevarActivo && (
-                <button 
-                  onClick={() => {
-                    if (vistaLocal === 'salon') { setVistaLocal('llevar'); setModoUnir(false); } 
-                    else { setVistaLocal('salon'); }
-                  }}
-                  className="w-9 h-9 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl flex items-center justify-center border transition-all relative shrink-0 border-[#333] bg-[#1a1a1a] text-neutral-400 hover:text-white hover:bg-[#222] shadow-[0_0_10px_rgba(0,0,0,0.5)]"
-                  title={vistaLocal === 'salon' ? "Ir a Para Llevar" : "Ir al Salón Principal"}
-                >
-                  {vistaLocal === 'salon' ? (
-                    <>
-                      <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path></svg>
-                      <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 sm:w-4 sm:h-4 text-white text-[8px] sm:text-[9px] font-bold flex items-center justify-center rounded-full border border-[#0a0a0a]" style={{ backgroundColor: colorPrimario }}>
-                        {ordenesLlevar.length}
-                      </span>
-                    </>
-                  ) : (
-                    <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg>
-                  )}
-                </button>
-              )}
-
-              {/* BOTÓN VENTA RÁPIDA */}
-              <button 
-                onClick={() => setDrawerVentaRapidaAbierto(true)}
-                className="w-9 h-9 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl flex items-center justify-center border transition-all active:scale-95 shrink-0 hover:brightness-125"
-                style={{ backgroundColor: `${colorPrimario}1A`, borderColor: `${colorPrimario}4D`, color: colorPrimario }}
-                title="Venta Rápida"
-              >
-                <span className="text-base sm:text-lg">⚡</span>
-              </button>
-            </div>
-
-            {/* FILA 2: Acciones Administrativas / Caja (Solo se renderiza si el usuario tiene permisos) */}
-            {['administrador', 'admin', 'cajero', 'dueño'].includes(rolUsuario?.toLowerCase()) && (
-              <div className="flex items-center gap-1.5 sm:gap-2">
-                
-                {/* BOTÓN ERP (Solo Admin y Dueño) */}
-                {['administrador', 'admin', 'dueño'].includes(rolUsuario?.toLowerCase()) && (
-                  <button onClick={onIrAErp} className="w-9 h-9 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl flex items-center justify-center border border-blue-500/30 bg-blue-500/10 text-blue-500 hover:bg-blue-500 hover:text-white transition-all active:scale-95 shrink-0" title="Panel de Control (ERP)">
-                    <span className="text-base sm:text-lg">⚙️</span>
-                  </button>
-                )}
-
-                {/* BOTÓN CAJA CHICA (Admin, Cajero o Dueño) */}
-                <button onClick={() => setModalMovimientosAbierto(true)} className="w-9 h-9 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl flex items-center justify-center border border-green-500/30 bg-green-500/10 text-green-500 hover:bg-green-500 hover:text-white transition-all active:scale-95 shrink-0" title="Caja Chica">
-                  <span className="text-base sm:text-lg">💸</span>
-                </button>
-
-                {/* BOTÓN CERRAR TURNO (Admin, Cajero o Dueño) */}
-                <button 
-                  onClick={manejarCierreCajaSeguro} 
-                  className="w-9 h-9 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl flex items-center justify-center border border-red-500/30 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-all active:scale-95 shrink-0" 
-                  title="Cerrar Turno"
-                >
-                  <span className="text-base sm:text-lg">🔒</span>
-                </button>
+                  <option value="" disabled>Seleccionar Sede...</option>
+                  {sedes?.map(sede => (
+                    <option key={sede.id} value={sede.id}>📍 {sede.nombre}</option>
+                  ))}
+                </select>
               </div>
             )}
 
+            <div className="flex flex-col items-end gap-1.5 sm:gap-2">
+              {/* FILA 1: Operaciones del POS (Máximo 3 botones) */}
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                {/* BOTÓN UNIR MESAS */}
+                {vistaLocal === 'salon' && (
+                  <button 
+                    onClick={() => { setModoUnir(!modoUnir); setMesaPrincipal(null); }}
+                    className={`w-9 h-9 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl flex items-center justify-center border transition-all shrink-0 ${
+                      !modoUnir && 'bg-[#1a1a1a] border-[#333] text-neutral-400 hover:text-white hover:bg-[#222]'
+                    }`}
+                    style={modoUnir ? { backgroundColor: colorPrimario, borderColor: colorPrimario, color: '#fff', boxShadow: `0 0 15px ${colorPrimario}60` } : {}}
+                    title="Unir Mesas"
+                  >
+                    <span className="text-base sm:text-lg">🔗</span>
+                  </button>
+                )}
+
+                {/* BOTÓN CAMBIO SALÓN/LLEVAR */}
+                {modSalonActivo && modLlevarActivo && (
+                  <button 
+                    onClick={() => {
+                      if (vistaLocal === 'salon') { setVistaLocal('llevar'); setModoUnir(false); } 
+                      else { setVistaLocal('salon'); }
+                    }}
+                    className="w-9 h-9 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl flex items-center justify-center border transition-all relative shrink-0 border-[#333] bg-[#1a1a1a] text-neutral-400 hover:text-white hover:bg-[#222] shadow-[0_0_10px_rgba(0,0,0,0.5)]"
+                    title={vistaLocal === 'salon' ? "Ir a Para Llevar" : "Ir al Salón Principal"}
+                  >
+                    {vistaLocal === 'salon' ? (
+                      <>
+                        <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path></svg>
+                        <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 sm:w-4 sm:h-4 text-white text-[8px] sm:text-[9px] font-bold flex items-center justify-center rounded-full border border-[#0a0a0a]" style={{ backgroundColor: colorPrimario }}>
+                          {ordenesLlevar?.length || 0}
+                        </span>
+                      </>
+                    ) : (
+                      <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg>
+                    )}
+                  </button>
+                )}
+
+                {/* BOTÓN VENTA RÁPIDA */}
+                <button 
+                  onClick={() => setDrawerVentaRapidaAbierto(true)}
+                  className="w-9 h-9 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl flex items-center justify-center border transition-all active:scale-95 shrink-0 hover:brightness-125"
+                  style={{ backgroundColor: `${colorPrimario}1A`, borderColor: `${colorPrimario}4D`, color: colorPrimario }}
+                  title="Venta Rápida"
+                >
+                  <span className="text-base sm:text-lg">⚡</span>
+                </button>
+              </div>
+
+              {/* FILA 2: Acciones Administrativas / Caja */}
+              {['administrador', 'admin', 'cajero', 'dueño'].includes(rolUsuario?.toLowerCase()) && (
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  
+                  {/* BOTÓN ERP (Solo Admin y Dueño) */}
+                  {['administrador', 'admin', 'dueño'].includes(rolUsuario?.toLowerCase()) && (
+                    <button onClick={onIrAErp} className="w-9 h-9 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl flex items-center justify-center border border-blue-500/30 bg-blue-500/10 text-blue-500 hover:bg-blue-500 hover:text-white transition-all active:scale-95 shrink-0" title="Panel de Control (ERP)">
+                      <span className="text-base sm:text-lg">⚙️</span>
+                    </button>
+                  )}
+
+                  {/* BOTÓN CAJA CHICA */}
+                  <button onClick={() => setModalMovimientosAbierto(true)} className="w-9 h-9 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl flex items-center justify-center border border-green-500/30 bg-green-500/10 text-green-500 hover:bg-green-500 hover:text-white transition-all active:scale-95 shrink-0" title="Caja Chica">
+                    <span className="text-base sm:text-lg">💸</span>
+                  </button>
+
+                  {/* BOTÓN CERRAR TURNO */}
+                  <button 
+                    onClick={manejarCierreCajaSeguro} 
+                    className="w-9 h-9 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl flex items-center justify-center border border-red-500/30 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-all active:scale-95 shrink-0" 
+                    title="Cerrar Turno"
+                  >
+                    <span className="text-base sm:text-lg">🔒</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      </header>
+      </header>}
 
       {/* ========================================================= */}
-      {/* VISTA: SALÓN PRINCIPAL (HÍBRIDO: MÓVIL + DESKTOP)           */}
+      {/* VISTA: SALÓN PRINCIPAL (HÍBRIDO: GRID MÓVIL / LINEAL PC)  */}
       {/* ========================================================= */}
       {vistaLocal === 'salon' && modSalonActivo && (() => {
         
-        // 🧠 LÓGICA PARA MÓVIL (Con huecos y posiciones exactas)
+        // ✨ LÓGICA PARA MÓVIL (Respeta la configuración del editor y los huecos)
+        const sedeActual = sedes.find(s => String(s.id) === String(sedeActualId));
+        const COLUMNAS_MAPA = sedeActual?.columnas_salon || 3; 
+
         let maxPos = 0;
         const mapaMesas = {};
         mesasAgrupadas.forEach((mesa) => {
@@ -409,10 +508,11 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
           if (pos > maxPos) maxPos = pos;
         });
 
-        const totalCasillas = maxPos + 1;
-        const casillasArray = Array.from({ length: totalCasillas });
+        const baseCasillas = Math.max(maxPos + 1, mesasAgrupadas.length, 12);
+        const totalCasillas = Math.ceil(baseCasillas / COLUMNAS_MAPA) * COLUMNAS_MAPA; 
+        const casillasArrayMovil = Array.from({ length: totalCasillas }, (_, i) => i);
 
-        // 🧠 LÓGICA PARA PC (Solo mesas ordenadas, sin huecos)
+        // ✨ LÓGICA PARA PC (Lineal, ignora los huecos y se adapta al ancho total)
         const mesasOrdenadasPC = [...mesasAgrupadas].sort((a, b) => (a.posicion_x || 0) - (b.posicion_x || 0));
 
         return (
@@ -420,7 +520,7 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
             
             {/* AVISO MODO UNIR MESAS */}
             {modoUnir && (
-              <div className="p-4 rounded-2xl mb-6 text-sm flex items-center gap-3 animate-pulse border shadow-md" style={{ backgroundColor: `${colorPrimario}1A`, borderColor: `${colorPrimario}4D`, color: colorPrimario }}>
+              <div className="p-4 rounded-2xl mb-6 text-sm flex items-center gap-3 animate-pulse border shadow-md w-full max-w-3xl mx-auto md:max-w-none" style={{ backgroundColor: `${colorPrimario}1A`, borderColor: `${colorPrimario}4D`, color: colorPrimario }}>
                 <span className="text-xl">🔗</span>
                 <span className="font-bold">
                   {mesaPrincipal ? `Selecciona la mesa que se unirá a la Mesa ${mesaPrincipal}...` : 'Paso 1: Selecciona la Mesa Principal (la que recibirá la cuenta)...'}
@@ -429,9 +529,7 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
             )}
 
             {/* CONTROLES DE LA CUADRÍCULA Y ORIENTACIÓN */}
-            <div className="flex justify-end items-center mb-5">
-              
-              {/* Botón de Puerta (Visible en todas las pantallas) */}
+            <div className="flex justify-end items-center mb-5 w-full max-w-3xl mx-auto md:max-w-none md:justify-end">
               <button 
                 onClick={() => setMostrarPuertaMovil(!mostrarPuertaMovil)}
                 className="text-[10px] font-black uppercase tracking-widest px-4 py-2.5 rounded-lg border transition-all active:scale-95 w-full sm:w-auto shadow-sm"
@@ -444,87 +542,122 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
               </button>
             </div>
 
-            {/* Marcador de Puerta (Visible en todas las pantallas) */}
+            {/* Marcador de Puerta */}
             {mostrarPuertaMovil && (
-              <div className={`w-full py-3 rounded-xl mb-4 text-[10px] font-black text-center uppercase tracking-[0.2em] shadow-inner border border-dashed ${tema === 'dark' ? 'bg-[#1a1a1a] text-neutral-500 border-[#333]' : 'bg-gray-100 text-gray-400 border-gray-300'}`}>
+              <div className={`w-full max-w-3xl mx-auto md:max-w-none py-3 rounded-xl mb-4 text-[10px] font-black text-center uppercase tracking-[0.2em] shadow-inner border border-dashed ${tema === 'dark' ? 'bg-[#1a1a1a] text-neutral-500 border-[#333]' : 'bg-gray-100 text-gray-400 border-gray-300'}`}>
                 Entrada Principal 🚪
               </div>
             )}
 
             {/* ========================================== */}
-            {/* 📱 GRID MÓVIL (Con Huecos)                   */}
+            {/* 📱 GRID MÓVIL (Con Huecos y Ancho Limitado)*/}
             {/* ========================================== */}
-            <div 
-              className="grid gap-3 pb-10 md:hidden" 
-              style={{ gridTemplateColumns: `repeat(${columnasGrid}, minmax(0, 1fr))` }}
-            >
-              {casillasArray.map((_, index) => {
-                const mesa = mapaMesas[index];
+            <div className="md:hidden w-full max-w-3xl mx-auto">
+              <div 
+                className="grid gap-3 pb-10" 
+                style={{ gridTemplateColumns: `repeat(${COLUMNAS_MAPA}, minmax(0, 1fr))` }}
+              >
+                {casillasArrayMovil.map((casillaIndex) => {
+                  const mesa = mapaMesas[casillaIndex];
 
-                // Hueco invisible
-                if (!mesa) return <div key={`hueco-${index}`} className="h-32 sm:h-36 rounded-2xl border-2 border-dashed border-transparent"></div>;
+                  // Hueco invisible para mantener el diseño
+                  if (!mesa) return <div key={`hueco-movil-${casillaIndex}`} className="h-32 rounded-3xl border-2 border-dashed border-transparent pointer-events-none"></div>;
 
-                const esOcupada = mesa.estado === 'ocupada';
-                let cardStyle = tema === 'dark' ? "bg-[#161616] border-[#2a2a2a] active:bg-[#1a1a1a]" : "bg-white border-gray-200 shadow-sm active:bg-gray-50"; 
-                let badgeStyle = tema === 'dark' ? "bg-[#222222] text-neutral-400" : "bg-gray-100 text-gray-500";
-                let titleStyle = tema === 'dark' ? "text-white" : "text-gray-900";
-                let inlineCardStyle = {};
+                  const esOcupada = mesa.estado === 'ocupada';
+                  const esTomandoPedido = mesa.estado === 'tomando_pedido';
+                  const esLaMesaActiva = mesaActivaId === mesa.id;
+                  const esCobrando = mesa.estado === 'cobrando';
+                  let cardStyle = tema === 'dark' ? "bg-[#161616] border-[#2a2a2a] active:bg-[#1a1a1a]" : "bg-white border-gray-200 shadow-sm active:bg-gray-50"; 
+                  let badgeStyle = tema === 'dark' ? "bg-[#222222] text-neutral-400" : "bg-gray-100 text-gray-500";
+                  let titleStyle = tema === 'dark' ? "text-white" : "text-gray-900";
+                  let inlineCardStyle = {};
+                  let icono = null;
+                  let labelEstado = mesa.estado;
 
-                if (esOcupada) {
-                  cardStyle = ""; 
-                  inlineCardStyle = { backgroundColor: tema === 'dark' ? `${colorPrimario}0D` : `${colorPrimario}0A`, borderColor: `${colorPrimario}60` };
-                  badgeStyle = "";
-                }
-                if (modoUnir && mesaPrincipal === mesa.id) {
-                  cardStyle = "text-white scale-[1.02] z-10";
-                  inlineCardStyle = { backgroundColor: colorPrimario, borderColor: colorPrimario, boxShadow: `0 4px 15px ${colorPrimario}4D` };
-                  badgeStyle = "bg-white/20 text-white";
-                  titleStyle = "text-white";
-                }
 
-                return (
-                  <button key={`movil-${mesa.id}`} onClick={() => manejarClickMesa(mesa)} style={inlineCardStyle} className={`border-[1.5px] rounded-3xl p-3.5 flex flex-col active:scale-95 text-left h-32 sm:h-36 relative transition-all ${cardStyle} ${mesa.esGigante ? 'col-span-2' : ''}`}>
-                    <div className="flex justify-between items-start w-full mb-1">
-                      <div className="flex gap-1.5 flex-wrap">
-                        <span className={`text-[9px] font-black px-2 py-1 rounded-md uppercase tracking-widest ${badgeStyle}`} style={esOcupada && !modoUnir ? { backgroundColor: `${colorPrimario}20`, color: colorPrimario } : {}}>
-                          {mesa.esGigante ? 'GRUPO' : mesa.estado}
-                        </span>
-                        {mesa.esGigante && !modoUnir && (
-                          <button onClick={(e) => { e.stopPropagation(); separarMesas(mesa.id); }} className="text-[9px] font-black px-2 py-1 rounded-md bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500 hover:text-white transition-colors z-20">✂️</button>
-                        )}
+                  if (esLaMesaActiva) {
+                    cardStyle = "scale-105 z-10 border-white ring-2 ring-white";
+                    inlineCardStyle = { ...inlineCardStyle, filter: 'brightness(1.2)' }; // Un extra de brillo
+                  }
+                  if (esOcupada) {
+                    cardStyle = "";
+                    inlineCardStyle = { backgroundColor: tema === 'dark' ? `${colorPrimario}0D` : `${colorPrimario}0A`, borderColor: `${colorPrimario}60` };
+                    badgeStyle = "";
+                    icono = '🍴'; labelEstado = 'ocupada';
+                  }
+                  if (esTomandoPedido) {
+                    cardStyle = "";
+                    inlineCardStyle = { backgroundColor: tema === 'dark' ? '#fbbf2408' : '#fef9c3', borderColor: '#fbbf24aa' };
+                    badgeStyle = "bg-yellow-400/20 text-yellow-400";
+                    icono = '📝'; labelEstado = 'pidiendo';
+                  }
+                  if (esCobrando) {
+                    cardStyle = "";
+                    inlineCardStyle = { backgroundColor: tema === 'dark' ? '#a855f708' : '#faf5ff', borderColor: '#a855f7aa' };
+                    badgeStyle = "bg-purple-400/20 text-purple-400";
+                    icono = '💳'; labelEstado = 'cobrando';
+                  }
+                  if (modoUnir && mesaPrincipal === mesa.id) {
+                    cardStyle = "text-white scale-[1.02] z-10";
+                    inlineCardStyle = { backgroundColor: colorPrimario, borderColor: colorPrimario, boxShadow: `0 4px 15px ${colorPrimario}4D` };
+                    badgeStyle = "bg-white/20 text-white";
+                    titleStyle = "text-white";
+                  }
+
+                  return (
+                    <button key={`movil-${mesa.id}`} onClick={() => manejarClickMesa(mesa)} style={inlineCardStyle} className={`border-[1.5px] rounded-3xl p-3.5 flex flex-col active:scale-95 text-left h-32 relative transition-all ${cardStyle} ${mesa.esGigante ? 'col-span-2' : ''}`}>
+                      <div className="flex justify-between items-start w-full mb-1">
+                        <div className="flex gap-1.5 flex-wrap">
+                          <span className={`text-[9px] font-black px-2 py-1 rounded-md uppercase tracking-widest ${badgeStyle}`} style={esOcupada && !modoUnir ? { backgroundColor: `${colorPrimario}20`, color: colorPrimario } : {}}>
+                            {mesa.esGigante ? 'GRUPO' : labelEstado}
+                          </span>
+                        </div>
+                        {icono && !modoUnir && <span className="opacity-70 text-sm">{icono}</span>}
                       </div>
-                      {esOcupada && !modoUnir && <span style={{ color: colorPrimario }} className="opacity-70 text-sm">🍴</span>}
-                    </div>
-                    <div className="flex-1 flex items-center justify-center w-full">
-                      <h3 className={`font-black tracking-tight leading-none ${mesa.esGigante ? 'text-2xl' : 'text-xl'} ${titleStyle}`}>
-                        {mesa.esGigante ? mesa.mesasInvolucradas.join(' + ') : mesa.numero}
-                      </h3>
-                    </div>
-                    <div className={`w-full flex justify-center items-center gap-1 mt-1 ${modoUnir && mesaPrincipal === mesa.id ? 'text-white/80' : (tema === 'dark' ? 'text-neutral-500' : 'text-gray-400')}`}>
-                      <span className="text-[10px] font-bold">👥 {mesa.capacidadTotal || mesa.capacidad} pax</span>
-                    </div>
-                  </button>
-                );
-              })}
+                      <div className="flex-1 flex items-center justify-center w-full">
+                        <h3 className={`font-black tracking-tight leading-none ${mesa.esGigante ? 'text-2xl' : 'text-xl'} ${titleStyle}`}>
+                          {mesa.esGigante ? mesa.mesasInvolucradas.join(' + ') : mesa.numero}
+                        </h3>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             {/* ========================================== */}
-            {/* 💻 GRID PC (Lineal, sin huecos)              */}
+            {/* 💻 GRID PC (Lineal, aprovecha todo el ancho) */}
             {/* ========================================== */}
-            <div className="hidden md:grid grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 pb-10">
+            <div className="hidden md:grid grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 pb-10 w-full">
               {mesasOrdenadasPC.map((mesa) => {
                 const esOcupada = mesa.estado === 'ocupada';
+                const esTomandoPedido = mesa.estado === 'tomando_pedido';
+                const esCobrando = mesa.estado === 'cobrando';
                 let cardStyle = tema === 'dark' ? "bg-[#161616] border-[#2a2a2a] hover:bg-[#1a1a1a]" : "bg-white border-gray-200 shadow-sm hover:shadow-md"; 
                 let badgeStyle = tema === 'dark' ? "bg-[#222222] text-neutral-400" : "bg-gray-100 text-gray-500";
                 let titleStyle = tema === 'dark' ? "text-white" : "text-gray-900";
                 let inlineCardStyle = {};
+                let icono = null;
+                let labelEstado = mesa.estado;
 
                 if (esOcupada) {
-                  cardStyle = ""; 
+                  cardStyle = "";
                   inlineCardStyle = { backgroundColor: tema === 'dark' ? `${colorPrimario}0D` : `${colorPrimario}0A`, borderColor: `${colorPrimario}60`, boxShadow: `0 4px 20px ${colorPrimario}10` };
                   badgeStyle = "";
+                  icono = '🍴'; labelEstado = 'ocupada';
                 }
-
+                if (esTomandoPedido) {
+                  cardStyle = "";
+                  inlineCardStyle = { backgroundColor: tema === 'dark' ? '#fbbf2408' : '#fef9c3', borderColor: '#fbbf24aa', boxShadow: '0 4px 20px #fbbf2415' };
+                  badgeStyle = "bg-yellow-400/20 text-yellow-400";
+                  icono = '📝'; labelEstado = 'pidiendo';
+                }
+                if (esCobrando) {
+                  cardStyle = "";
+                  inlineCardStyle = { backgroundColor: tema === 'dark' ? '#a855f708' : '#faf5ff', borderColor: '#a855f7aa', boxShadow: '0 4px 20px #a855f715' };
+                  badgeStyle = "bg-purple-400/20 text-purple-400";
+                  icono = '💳'; labelEstado = 'cobrando';
+                }
                 if (modoUnir && mesaPrincipal === mesa.id) {
                   cardStyle = "scale-105 z-10 text-white";
                   inlineCardStyle = { backgroundColor: colorPrimario, borderColor: colorPrimario, boxShadow: `0 10px 30px ${colorPrimario}60` };
@@ -537,13 +670,10 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
                     <div className="flex justify-between items-start w-full mb-2">
                       <div className="flex gap-2 flex-wrap">
                         <span className={`text-[10px] font-black px-2.5 py-1.5 rounded-lg uppercase tracking-widest ${badgeStyle}`} style={esOcupada && !modoUnir ? { backgroundColor: `${colorPrimario}20`, color: colorPrimario } : {}}>
-                          {mesa.esGigante ? 'GRUPO' : mesa.estado}
+                          {mesa.esGigante ? 'GRUPO' : labelEstado}
                         </span>
-                        {mesa.esGigante && !modoUnir && (
-                          <button onClick={(e) => { e.stopPropagation(); separarMesas(mesa.id); }} className="text-[10px] font-black px-2 py-1.5 rounded-lg bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500 hover:text-white transition-colors z-20">✂️</button>
-                        )}
                       </div>
-                      {esOcupada && !modoUnir && <span style={{ color: colorPrimario }} className="opacity-50 text-sm">🍴</span>}
+                      {icono && !modoUnir && <span className="opacity-50 text-sm">{icono}</span>}
                     </div>
                     <div className="flex-1 flex items-center justify-center w-full">
                       <h3 className={`font-black tracking-tight ${mesa.esGigante ? 'text-4xl' : 'text-3xl'} ${titleStyle}`}>
@@ -558,7 +688,6 @@ function MesasView({ onSeleccionarMesa, rolUsuario, onIrAErp }) {
                 );
               })}
             </div>
-
           </div>
         );
       })()}

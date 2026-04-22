@@ -1,92 +1,74 @@
 import React, { useState, useEffect } from 'react';
-import MesasView from './MesasView';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+
+// Importamos tus vistas actuales
 import KdsView from './KdsView';
 import ErpDashboard from './ErpDashboard';
 import LoginView from './LoginView';
-import PosView from './PosView';
+import PublicMenu from './components/PublicMenu';
 
-export default function App() {
+// ✨ IMPORTAMOS EL NUEVO CONTENEDOR DIVIDIDO
+import PosTerminal from './PosTerminal'; 
+
+const VistaInternaPOS = () => {
   const [vista, setVista] = useState('login');
-  const [mesaActual, setMesaActual] = useState(null);
+  // 🗑️ Ya no necesitamos mesaActual aquí, PosTerminal se encarga de eso.
   const [rolUsuario, setRolUsuario] = useState(null);
 
-  // ✨ AUTO-LOGIN: Si recargas la página, leemos la memoria para dejarte donde estabas
   useEffect(() => {
     const token = localStorage.getItem('tablet_token');
     const rol = localStorage.getItem('rol_usuario');
     
     if (token && rol) {
       setRolUsuario(rol);
-      if (rol === 'Dueño') {
-        setVista('erp');
-      } else if (rol === 'Cocinero' || rol === 'Cocina') {
-        setVista('cocina');
-      } else {
-        setVista('login'); // Los mortales (meseros) siempre deben poner su PIN al recargar
-      }
+      const rolLimpio = rol.toLowerCase().trim();
+      if (rolLimpio === 'dueño') setVista('erp');
+      else if (rolLimpio === 'cocinero' || rolLimpio === 'cocina') setVista('cocina');
+      else setVista('terminal'); // ✨ Cambiamos 'mesas' por 'terminal'
     }
   }, []);
 
   return (
-    <div className="bg-[#121212] min-h-screen text-neutral-100 font-sans flex flex-col relative pb-28 overflow-hidden">
+    // ✨ Le quitamos el padding bottom (pb-28) general para que la pantalla dividida use el 100% del alto
+    <div className="bg-[#121212] h-screen text-neutral-100 font-sans flex flex-col relative overflow-hidden">
       
-      {/* 1. LOGIN / VINCULACIÓN */}
+      {/* 1. LOGIN */}
       {vista === 'login' && (
-        <LoginView 
-          onAccesoConcedido={(rolDesdeLogin) => {
-            // 🕵️‍♂️ EL TRUCO: Leemos directamente de la memoria por si el componente olvidó mandarlo
-            const rolReal = localStorage.getItem('rol_usuario') || rolDesdeLogin || '';
-            
-            setRolUsuario(rolReal);
-            
-            // Lo limpiamos para evitar errores de espacios o mayúsculas
-            const rolLimpio = rolReal.toLowerCase().trim();
-            
-            // 🚦 EL SEMÁFORO BLINDADO 🚦
-            if (rolLimpio === 'dueño') {
-              setVista('erp'); // 👑 Pasa directo a su oficina
-            } else if (rolLimpio === 'cocinero' || rolLimpio === 'cocina') {
-              setVista('cocina');
-            } else {
-              setVista('mesas');
-            }
-          }} 
-        />
+        <LoginView onAccesoConcedido={(rol) => {
+          setRolUsuario(rol);
+          const r = rol.toLowerCase().trim();
+          if (r === 'dueño') setVista('erp');
+          else if (r === 'cocinero' || r === 'cocina') setVista('cocina');
+          else setVista('terminal'); // ✨ Los cajeros/meseros van al terminal
+        }} />
       )}
 
-      {/* 2. SALÓN (MESAS) */}
-      {vista === 'mesas' && (
-        <MesasView 
+      {/* 2. TERMINAL POS (PANTALLA DIVIDIDA: MESAS + MENÚ) */}
+      {vista === 'terminal' && (
+        <PosTerminal 
           rolUsuario={rolUsuario} 
           onIrAErp={() => setVista('erp')} 
-          onSeleccionarMesa={(idMesa) => {
-            setMesaActual(idMesa);
-            setVista('menu'); 
-          }} 
         />
       )}
 
-      {/* 3. POS (CAJA / MENÚ) */}
-      {vista === 'menu' && (
-        <PosView 
-          mesaId={mesaActual} 
-          onVolver={() => setVista('mesas')} 
-        />
-      )}
+      {/* 3. KDS (COCINA) */}
+      {vista === 'cocina' && <KdsView onVolver={() => setVista('login')} />}
 
-      {/* 4. KDS (PANTALLA DE COCINA) */}
-      {vista === 'cocina' && (
-         <KdsView onVolver={() => setVista('login')} /> 
-      )}
-
-      {/* 5. ERP (PANEL DE ADMINISTRADOR) */}
+      {/* 4. ERP */}
       {vista === 'erp' && (
-        <ErpDashboard 
-          rolUsuario={rolUsuario} // ✨ ¡Vital para que el botón aparezca!
-          onVolverAlPos={() => setVista('mesas')} 
-        />
+        <ErpDashboard onVolverAlPos={() => setVista('terminal')} />
       )}
-      
     </div>
+  );
+};
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<VistaInternaPOS />} />
+        <Route path="/menu/:negocioId/:sedeId/:mesaId" element={<PublicMenu />} />
+      </Routes>
+    </BrowserRouter>
   );
 }

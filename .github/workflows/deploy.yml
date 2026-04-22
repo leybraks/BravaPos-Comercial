@@ -1,0 +1,23 @@
+name: Deploy Brava POS
+
+on:
+  push:
+    branches:
+      - V2-Estable-Cloud
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd BravaPos-Comercial
+            git checkout V2-Estable-Cloud
+            git pull origin V2-Estable-Cloud
+            sudo docker compose up -d --build
+            sudo docker compose exec -T backend python manage.py migrate
