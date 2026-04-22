@@ -19,7 +19,5 @@ jobs:
             cd BravaPos-Comercial
             git checkout V2-Estable-Cloud
             git pull origin V2-Estable-Cloud
-            sudo docker-compose exec -T backend python manage.py migrate
-            sudo docker-compose build backend frontend
-            sudo docker-compose up -d
-            
+            sudo docker compose up -d --build
+            sudo docker compose exec -T backend python manage.py migrate
