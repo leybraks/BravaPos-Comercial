@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import usePosStore from './store/usePosStore';
-import { getCatalogoGlobal, actualizarVariacionesProducto } from './api/api';
+import usePosStore from '../store/usePosStore';
+import { getCatalogoGlobal, actualizarVariacionesProducto } from '../api/api';
 
 export default function ModalVariaciones({ isOpen, onClose, producto }) {
   // ✨ EXTRAEMOS EL COLOR GLOBAL DE ZUSTAND ✨

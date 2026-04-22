@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 // ✨ 1. Agregamos getSedes aquí
-import { getMesas, getSedes } from './api/api'; 
+import { getMesas, getSedes } from '../api/api'; 
 import { QRCodeSVG } from 'qrcode.react'; 
 
 export default function DashboardCartaQR({ config }) { 

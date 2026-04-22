@@ -6,10 +6,35 @@ import { getProductos, crearOrden, actualizarOrden, getOrdenes, getCategorias, c
 
 export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
   // ✨ 1. EXTRAEMOS EL TEMA Y COLOR GLOBAL DE ZUSTAND ✨
-  const { estadoCaja, configuracionGlobal, carrito, agregarProducto, editarNotaItem, restarProducto, eliminarProducto, obtenerTotalItems, restarDesdeGrid, obtenerTotalDinero, vaciarCarrito, actualizarItemCompleto, sumarUnidad } = usePosStore();
+  const { estadoCaja, configuracionGlobal, carrito, agregarProducto,esDueño,sedes,manejarCambioSede, editarNotaItem, restarProducto, eliminarProducto, obtenerTotalItems, restarDesdeGrid, obtenerTotalDinero, vaciarCarrito, actualizarItemCompleto, sumarUnidad } = usePosStore();
   const tema = configuracionGlobal?.temaFondo || 'dark';
   const colorPrimario = configuracionGlobal?.colorPrimario || '#ff5a1f';
+  // ✨ ESTADOS PARA EL BUSCADOR INTELIGENTE
+  const [busqueda, setBusqueda] = useState('');
+  const [inputBusquedaActivo, setInputBusquedaActivo] = useState(false);
+  
+  // El "Cerebro" que recuerda qué escoge la gente según lo que escribe
+  const [cerebroBusqueda, setCerebroBusqueda] = useState(() => {
+    const memoria = localStorage.getItem('pos_cerebro');
+    return memoria ? JSON.parse(memoria) : {};
+  });
 
+  // Función que "aprende" silenciosamente cuando el mesero toca un producto
+  const aprenderSeleccion = (productoId, termino) => {
+    if (!termino || termino.trim().length < 2) return; // Solo aprende si escribieron al menos 2 letras
+    const terminoLower = termino.trim().toLowerCase();
+
+    setCerebroBusqueda(prev => {
+      const nuevoCerebro = { ...prev };
+      if (!nuevoCerebro[terminoLower]) nuevoCerebro[terminoLower] = {};
+      
+      // Suma 1 punto de "frecuencia" a este producto para esta palabra exacta
+      nuevoCerebro[terminoLower][productoId] = (nuevoCerebro[terminoLower][productoId] || 0) + 1;
+      
+      localStorage.setItem('pos_cerebro', JSON.stringify(nuevoCerebro));
+      return nuevoCerebro;
+    });
+  };
   const [categoriaActiva, setCategoriaActiva] = useState('Todos');
   const [categoriasExpandidas, setCategoriasExpandidas] = useState(false);
   const [modificadoresGlobales, setModificadoresGlobales] = useState([]);
@@ -162,7 +187,7 @@ export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
 
   const manejarEnviarCocina = async () => {
     if (!sedeActualId) {
-      alert("⚠️ Modo Dueño: Debes seleccionar o asignarte una Sede activa antes de registrar ventas.");
+      alert("⚠️ No has seleccionado una sede. Por favor, elige una en la parte superior antes de continuar.");
       return; 
     }
 
@@ -269,109 +294,220 @@ export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
   
 
   
-  const productosFiltrados = productosBase.filter(plato => {
-    if (categoriaActiva === 'Todas' || categoriaActiva === 'Todos') return true;
-    const nombreCatDelPlato = categoriasReales.find(c => String(c.id) === String(plato.categoria))?.nombre || plato.categoria;
-    return nombreCatDelPlato === categoriaActiva;
-  });
+  // ✨ FILTRO Y ORDENAMIENTO INTELIGENTE
+  // ✨ FILTRO, BÚSQUEDA POR VARIACIONES Y ORDENAMIENTO INTELIGENTE
+  // ✨ FILTRO, BÚSQUEDA POR VARIACIONES Y ORDENAMIENTO INTELIGENTE
+  const productosFiltrados = productosBase
+    .filter(plato => {
+      // 1. Filtro de Categoría
+      const nombreCatDelPlato = categoriasReales.find(c => String(c.id) === String(plato.categoria))?.nombre || plato.categoria;
+      const pasaCategoria = (categoriaActiva === 'Todas' || categoriaActiva === 'Todos') || nombreCatDelPlato === categoriaActiva;
+      
+      const termino = busqueda.trim().toLowerCase();
+
+      // 2. Filtro del Buscador (Por Nombre)
+      const pasaNombre = busqueda === '' || plato.nombre.toLowerCase().includes(termino);
+      
+      // 3. Filtro por Variaciones (Extras específicos del producto)
+      // Buscamos si este plato tiene alguna variación que coincida con lo que el mesero escribe
+      const modificadoresDelPlato = modificadoresGlobales.filter(m => String(m.producto_id) === String(plato.id) || String(m.producto) === String(plato.id));
+      const variacionCoincidente = modificadoresDelPlato.find(m => m.nombre.toLowerCase().includes(termino));
+      
+      const pasaVariacion = busqueda !== '' && !!variacionCoincidente;
+
+      // Guardamos la coincidencia en el objeto del plato para mostrarlo en la tarjeta
+      if (pasaVariacion && !pasaNombre) {
+        plato._coincidenciaVariacion = variacionCoincidente.nombre;
+      } else {
+        plato._coincidenciaVariacion = null;
+      }
+
+      return pasaCategoria && (pasaNombre || pasaVariacion);
+    })
+    .sort((a, b) => {
+      // 4. El "Cerebro Local" ordena: Los más tocados para esta palabra van primero
+      if (busqueda.trim().length >= 2) {
+        const termino = busqueda.trim().toLowerCase();
+        const scoreA = cerebroBusqueda[termino]?.[a.id] || 0;
+        const scoreB = cerebroBusqueda[termino]?.[b.id] || 0;
+        if (scoreA !== scoreB) return scoreB - scoreA; 
+      }
+      return 0; 
+    });
+  
+  useEffect(() => {
+    // 🛡️ Solo actuamos si es Dueño y hay sedes cargadas
+    if (esDueño && sedes?.length > 0) {
+      const hoy = new Date().toLocaleDateString();
+      const ultimaFecha = localStorage.getItem('pos_ultima_fecha');
+      const ultimaSedeId = localStorage.getItem('sede_id');
+
+      // 1. ¿Es la primera vez que entra hoy?
+      if (ultimaFecha !== hoy) {
+        localStorage.setItem('pos_ultima_fecha', hoy);
+
+        // 2. Si ya tenía una sede guardada, le avisamos para evitar errores
+        if (ultimaSedeId) {
+          const sedeEncontrada = sedes.find(s => String(s.id) === String(ultimaSedeId));
+          if (sedeEncontrada) {
+            // Usamos un alert o podrías usar un componente de notificación más bonito
+            alert(`✅ Bienvenido de nuevo. Estás operando en: ${sedeEncontrada.nombre}.\n\nSi necesitas cambiar de local, usa el menú superior.`);
+          }
+        }
+      }
+
+      // 3. Si por alguna razón no hay sede seleccionada (ej. borró caché), 
+      // autoseleccionamos la primera pero le pedimos confirmación silenciosa
+      if (!ultimaSedeId && sedes.length > 0) {
+        manejarCambioSede(sedes[0].id);
+      }
+    }
+  }, [sedes, esDueño, manejarCambioSede]);
   
   return (
     <div className={`relative h-full flex flex-col overflow-hidden font-sans transition-colors duration-500 ${tema === 'dark' ? 'bg-[#0a0a0a] text-neutral-100' : 'bg-[#f4f4f5] text-gray-900'}`}>
       
-      {/* ======================= HEADER TEMATIZADO ======================= */}
-      {!esModoTerminal && <header className={`p-4 shadow-xl sticky top-0 z-10 border-b transition-colors ${tema === 'dark' ? 'bg-[#0a0a0a] border-[#222]' : 'bg-white border-gray-200'}`}>
-        <div className="flex justify-between items-center mb-4 gap-3">
-          <div className="flex items-center gap-3">
-             <button onClick={onVolver} className={`lg:hidden w-10 h-10 border rounded-xl flex items-center justify-center transition-colors font-black text-xl active:scale-95 ${tema === 'dark' ? 'bg-[#1a1a1a] hover:bg-[#222] border-[#222] text-white' : 'bg-gray-100 hover:bg-gray-200 border-gray-200 text-gray-800'}`}>←</button>
-             <div>
-                <span className={`text-[10px] font-bold tracking-widest uppercase ${tema === 'dark' ? 'text-neutral-500' : 'text-gray-500'}`}>
-                  {esParaLlevar ? 'Cajón delivery' : '🍽️ SALÓN'}
-                </span>
-                <h1 className={`text-xl font-black uppercase tracking-tight ${tema === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                  {esParaLlevar ? nombreLlevar : `Mesa ${mesaId}`}
-                </h1>
-             </div>
+      {/* ======================= HEADER TEMATIZADO (MÓVIL) ======================= */}
+      {!esModoTerminal && <header className={`p-4 shadow-sm sticky top-0 z-10 border-b transition-colors ${tema === 'dark' ? 'bg-[#0a0a0a] border-[#222]' : 'bg-white border-gray-200'}`}>
+        <div className="flex justify-between items-center mb-3 gap-3">
+          <div className="flex items-center gap-3 flex-1">
+             <button onClick={onVolver} className={`shrink-0 w-10 h-10 border rounded-xl flex items-center justify-center transition-colors font-black text-xl active:scale-95 ${tema === 'dark' ? 'bg-[#1a1a1a] hover:bg-[#222] border-[#222] text-white' : 'bg-gray-100 hover:bg-gray-200 border-gray-200 text-gray-800'}`}>←</button>
+             
+             {/* ✨ HEADER MUTANTE: Título o Buscador Ninja */}
+             {inputBusquedaActivo ? (
+                <div className="flex-1 flex items-center gap-2">
+                  <input 
+                    autoFocus
+                    type="text"
+                    value={busqueda}
+                    onChange={(e) => setBusqueda(e.target.value)}
+                    placeholder="Buscar plato..."
+                    className={`w-full h-10 px-4 rounded-xl font-bold text-sm border focus:outline-none focus:border-[#ff5a1f] ${tema === 'dark' ? 'bg-[#111] border-[#333] text-white' : 'bg-white border-gray-300 text-gray-900'}`}
+                    style={{ borderColor: busqueda ? colorPrimario : '' }}
+                  />
+                  <button onClick={() => { setInputBusquedaActivo(false); setBusqueda(''); }} className={`text-xl px-2 font-black active:scale-90 ${tema === 'dark' ? 'text-neutral-400' : 'text-gray-500'}`}>✕</button>
+                </div>
+             ) : (
+               <div className="flex-1 flex justify-between items-center">
+                 <div className="min-w-0">
+                    <span className={`text-[10px] font-bold tracking-widest uppercase truncate block ${tema === 'dark' ? 'text-neutral-500' : 'text-gray-500'}`}>
+                      {esParaLlevar ? 'Cajón delivery' : '🍽️ SALÓN'}
+                    </span>
+                    <h1 className={`text-xl font-black uppercase tracking-tight truncate ${tema === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                      {esParaLlevar ? nombreLlevar : `Mesa ${mesaId}`}
+                    </h1>
+                 </div>
+                 {/* LUPA PARA ACTIVAR BUSCADOR */}
+                 <button onClick={() => setInputBusquedaActivo(true)} className={`shrink-0 w-10 h-10 rounded-xl flex items-center justify-center text-lg active:scale-95 transition-colors ${tema === 'dark' ? 'bg-[#1a1a1a] border border-[#2a2a2a] text-neutral-300' : 'bg-gray-100 border border-gray-200 text-gray-600'}`}>
+                   🔍
+                 </button>
+               </div>
+             )}
           </div>
         </div>
 
-        {/* FILTRO DE CATEGORÍAS */}
-        <div className="mb-2 relative z-20">
+        {/* ✨ BARRIDO DE CATEGORÍAS (1 FILA TIPO PÍLDORA + FILTRO INTELIGENTE) */}
+        <div className="flex overflow-x-auto gap-2 pb-2 scrollbar-hide snap-x">
           <button 
-            onClick={() => setCategoriasExpandidas(!categoriasExpandidas)} 
-            className={`w-full flex justify-between items-center px-4 py-3 h-14 rounded-2xl border transition-colors shadow-sm active:scale-[0.99] ${tema === 'dark' ? 'bg-[#1a1a1a] text-neutral-200 border-[#2a2a2a] hover:bg-[#222]' : 'bg-white text-gray-800 border-gray-200 hover:bg-gray-50'}`}
+            onClick={() => setCategoriaActiva('Todas')}
+            className={`snap-start shrink-0 px-5 py-2.5 rounded-full font-black text-[10px] sm:text-xs uppercase tracking-widest transition-all active:scale-95 border ${
+              categoriaActiva === 'Todas' 
+                ? `text-white shadow-md border-transparent` 
+                : (tema === 'dark' ? 'bg-[#1a1a1a] text-neutral-400 border-[#333]' : 'bg-gray-100 text-gray-500 border-gray-200')
+            }`}
+            style={categoriaActiva === 'Todas' ? { backgroundColor: colorPrimario } : {}}
           >
-            <span className="font-semibold text-sm">
-              Categoría: 
-              <span className="ml-1 uppercase tracking-widest font-bold text-xs" style={{ color: colorPrimario }}>
-                {categoriaActiva === 'Todas' ? 'Todas' : categoriaActiva}
-              </span>
-            </span>
-            <svg className={`w-5 h-5 transform transition-transform duration-200 ${categoriasExpandidas ? 'rotate-180' : ''}`} style={categoriasExpandidas ? { color: colorPrimario } : { color: tema === 'dark' ? '#737373' : '#9ca3af' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
-            </svg>
+            TODAS
           </button>
           
-          {categoriasExpandidas && (
-            <div className={`absolute top-full left-0 w-full border rounded-2xl mt-2 p-2 grid grid-cols-2 gap-2 shadow-2xl animate-fadeIn z-50 ${tema === 'dark' ? 'bg-[#111] border-[#222]' : 'bg-white border-gray-100'}`}>
-                <button 
-                  onClick={() => { setCategoriaActiva('Todas'); setCategoriasExpandidas(false); }} 
-                  className={`py-3.5 px-3 rounded-xl text-xs font-black transition-colors border text-center uppercase tracking-wider col-span-2 ${categoriaActiva === 'Todas' ? 'text-white shadow-md' : (tema === 'dark' ? 'bg-[#1a1a1a] text-neutral-400 border-[#222] hover:bg-[#222] hover:text-white' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100 hover:text-gray-800')}`}
-                  style={categoriaActiva === 'Todas' ? { backgroundColor: colorPrimario, borderColor: colorPrimario } : {}}
-                >
-                    🍔 TODAS
-                </button>
-                
-                {categoriasReales.map((cat, index) => {
-                    const nombreMostrar = cat.nombre || cat; 
-                    const keyUnica = cat.id || `cat-${index}`; 
-
-                    return (
-                        <button 
-                          key={keyUnica} 
-                          onClick={() => { setCategoriaActiva(nombreMostrar); setCategoriasExpandidas(false); }} 
-                          className={`py-3.5 px-3 rounded-xl text-xs font-black transition-colors border text-center uppercase tracking-wider ${categoriaActiva === nombreMostrar ? 'text-white shadow-md' : (tema === 'dark' ? 'bg-[#1a1a1a] text-neutral-400 border-[#222] hover:bg-[#222] hover:text-white' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100 hover:text-gray-800')}`}
-                          style={categoriaActiva === nombreMostrar ? { backgroundColor: colorPrimario, borderColor: colorPrimario } : {}}
-                        >
-                            {nombreMostrar}
-                        </button>
-                    )
-                })}
-            </div>
-          )}
+          {categoriasReales
+            .filter(cat => productosBase.some(prod => String(prod.categoria) === String(cat.id) || prod.categoria === cat.nombre || prod.categoria === cat))
+            .map((cat, index) => {
+            const nombreMostrar = cat.nombre || cat;
+            const keyUnica = cat.id || `cat-${index}`;
+            return (
+              <button 
+                key={keyUnica} 
+                onClick={() => setCategoriaActiva(nombreMostrar)}
+                className={`snap-start shrink-0 px-5 py-2.5 rounded-full font-black text-[10px] sm:text-xs uppercase tracking-widest transition-all active:scale-95 border ${
+                  categoriaActiva === nombreMostrar
+                    ? `text-white shadow-md border-transparent` 
+                    : (tema === 'dark' ? 'bg-[#1a1a1a] text-neutral-400 border-[#333]' : 'bg-gray-100 text-gray-500 border-gray-200')
+                }`}
+                style={categoriaActiva === nombreMostrar ? { backgroundColor: colorPrimario } : {}}
+              >
+                {nombreMostrar}
+              </button>
+            )
+          })}
         </div>
       </header>}
 
-      {/* HEADER MODO TERMINAL: solo filtro de categorías, sin título duplicado */}
+      {/* ======================= HEADER MODO TERMINAL (PC PANTALLA DIVIDIDA) ======================= */}
       {esModoTerminal && (
-        <div className={`p-4 sticky top-0 z-10 border-b transition-colors ${tema === 'dark' ? 'bg-[#0d0d0d] border-[#222]' : 'bg-[#fcfcfc] border-gray-200'}`}>
-          <div className="relative z-20">
-            <button 
-              onClick={() => setCategoriasExpandidas(!categoriasExpandidas)} 
-              className={`w-full flex justify-between items-center px-4 py-3 h-14 rounded-2xl border transition-colors shadow-sm active:scale-[0.99] ${tema === 'dark' ? 'bg-[#1a1a1a] text-neutral-200 border-[#2a2a2a] hover:bg-[#222]' : 'bg-white text-gray-800 border-gray-200 hover:bg-gray-50'}`}
-            >
-              <span className="font-semibold text-sm">
-                Categoría: 
-                <span className="ml-1 uppercase tracking-widest font-bold text-xs" style={{ color: colorPrimario }}>
-                  {categoriaActiva === 'Todas' ? 'Todas' : categoriaActiva}
-                </span>
-              </span>
-              <svg className={`w-5 h-5 transform transition-transform duration-200 ${categoriasExpandidas ? 'rotate-180' : ''}`} style={categoriasExpandidas ? { color: colorPrimario } : { color: tema === 'dark' ? '#737373' : '#9ca3af' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
-              </svg>
-            </button>
-            {categoriasExpandidas && (
-              <div className={`absolute top-full left-0 w-full border rounded-2xl mt-2 p-2 grid grid-cols-2 gap-2 shadow-2xl animate-fadeIn z-50 ${tema === 'dark' ? 'bg-[#111] border-[#222]' : 'bg-white border-gray-100'}`}>
-                <button onClick={() => { setCategoriaActiva('Todas'); setCategoriasExpandidas(false); }} className={`py-3.5 px-3 rounded-xl text-xs font-black transition-colors border text-center uppercase tracking-wider col-span-2 ${categoriaActiva === 'Todas' ? 'text-white shadow-md' : (tema === 'dark' ? 'bg-[#1a1a1a] text-neutral-400 border-[#222] hover:bg-[#222] hover:text-white' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100 hover:text-gray-800')}`} style={categoriaActiva === 'Todas' ? { backgroundColor: colorPrimario, borderColor: colorPrimario } : {}}>🍔 TODAS</button>
-                {categoriasReales.map((cat, index) => {
-                  const nombreMostrar = cat.nombre || cat;
-                  const keyUnica = cat.id || `cat-${index}`;
-                  return (
-                    <button key={keyUnica} onClick={() => { setCategoriaActiva(nombreMostrar); setCategoriasExpandidas(false); }} className={`py-3.5 px-3 rounded-xl text-xs font-black transition-colors border text-center uppercase tracking-wider ${categoriaActiva === nombreMostrar ? 'text-white shadow-md' : (tema === 'dark' ? 'bg-[#1a1a1a] text-neutral-400 border-[#222] hover:bg-[#222] hover:text-white' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100 hover:text-gray-800')}`} style={categoriaActiva === nombreMostrar ? { backgroundColor: colorPrimario, borderColor: colorPrimario } : {}}>{nombreMostrar}</button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+        <div className={`px-4 sm:px-6 pt-4 pb-2 sticky top-0 z-10 border-b transition-colors shadow-sm ${tema === 'dark' ? 'bg-[#0a0a0a] border-[#222]' : 'bg-white border-gray-200'}`}>
+           
+           {/* ✨ HEADER MUTANTE PC: Buscador Ninja superior */}
+           <div className="mb-4">
+             {inputBusquedaActivo ? (
+                <div className="flex items-center gap-2">
+                  <input 
+                    autoFocus
+                    type="text"
+                    value={busqueda}
+                    onChange={(e) => setBusqueda(e.target.value)}
+                    placeholder="Buscar plato rápidamente..."
+                    className={`w-full h-12 px-5 rounded-2xl font-black text-sm border focus:outline-none transition-colors ${tema === 'dark' ? 'bg-[#111] border-[#333] text-white' : 'bg-gray-50 border-gray-200 text-gray-900'}`}
+                    style={{ borderColor: busqueda ? colorPrimario : '', boxShadow: busqueda ? `0 0 0 2px ${colorPrimario}33` : '' }}
+                  />
+                  <button onClick={() => { setInputBusquedaActivo(false); setBusqueda(''); }} className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl font-black active:scale-95 ${tema === 'dark' ? 'bg-[#1a1a1a] text-neutral-400 border border-[#333]' : 'bg-gray-100 text-gray-500 border border-gray-200'}`}>✕</button>
+                </div>
+             ) : (
+                <button 
+                  onClick={() => setInputBusquedaActivo(true)} 
+                  className={`w-full h-12 px-5 rounded-2xl font-bold text-sm border flex items-center justify-between transition-colors active:scale-[0.99] ${tema === 'dark' ? 'bg-[#111] border-[#333] text-neutral-400 hover:bg-[#1a1a1a]' : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100'}`}
+                >
+                  <span>🔍 Buscar por nombre o atajo...</span>
+                  <span className={`text-[10px] font-black px-2 py-1 rounded border ${tema === 'dark' ? 'bg-[#222] border-[#444]' : 'bg-white border-gray-300'}`}>Ctrl + K</span>
+                </button>
+             )}
+           </div>
+
+           {/* ✨ BARRIDO DE CATEGORÍAS */}
+           <div className="flex overflow-x-auto gap-2 pb-2 scrollbar-hide snap-x">
+              <button 
+                onClick={() => setCategoriaActiva('Todas')}
+                className={`snap-start shrink-0 px-5 py-2.5 rounded-full font-black text-[10px] sm:text-xs uppercase tracking-widest transition-all active:scale-95 border ${
+                  categoriaActiva === 'Todas' 
+                    ? `text-white shadow-md border-transparent` 
+                    : (tema === 'dark' ? 'bg-[#1a1a1a] text-neutral-400 border-[#333]' : 'bg-gray-100 text-gray-500 border-gray-200')
+                }`}
+                style={categoriaActiva === 'Todas' ? { backgroundColor: colorPrimario } : {}}
+              >
+                TODAS
+              </button>
+
+              {categoriasReales
+                .filter(cat => productosBase.some(prod => String(prod.categoria) === String(cat.id) || prod.categoria === cat.nombre || prod.categoria === cat))
+                .map((cat, index) => {
+                const nombreMostrar = cat.nombre || cat;
+                const keyUnica = cat.id || `cat-${index}`;
+                return (
+                  <button 
+                    key={keyUnica} 
+                    onClick={() => setCategoriaActiva(nombreMostrar)}
+                    className={`snap-start shrink-0 px-5 py-2.5 rounded-full font-black text-[10px] sm:text-xs uppercase tracking-widest transition-all active:scale-95 border ${
+                      categoriaActiva === nombreMostrar
+                        ? `text-white shadow-md border-transparent` 
+                        : (tema === 'dark' ? 'bg-[#1a1a1a] text-neutral-400 border-[#333]' : 'bg-gray-100 text-gray-500 border-gray-200')
+                    }`}
+                    style={categoriaActiva === nombreMostrar ? { backgroundColor: colorPrimario } : {}}
+                  >
+                    {nombreMostrar}
+                  </button>
+                )
+              })}
+           </div>
         </div>
       )}
 
@@ -383,14 +519,18 @@ export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
             const tieneVariantes = carrito.some(item => item.id === prod.id && item.cart_id !== `base_${prod.id}`);
             const nombreCategoriaMuestra = categoriasReales.find(c => String(c.id) === String(prod.categoria))?.nombre || 'Sin categoría';
             
-            // TARJETAS CON SELECCIÓN (Variantes obligatorias)
+            // ================== TARJETAS CON SELECCIÓN ==================
             if (prod.requiere_seleccion) {
                 return (
                   <button 
                     key={prod.id} 
-                    onClick={() => prod.disponible && abrirModalParaNuevo(prod)} 
+                    onClick={() => {
+                        if (prod.disponible) {
+                            abrirModalParaNuevo(prod);
+                            aprenderSeleccion(prod.id, busqueda); // 🧠 Enseña al cerebro
+                        }
+                    }} 
                     disabled={!prod.disponible}
-                    // ✨ Altura adaptable: h-36 móvil, h-44 PC
                     className={`relative p-3 sm:p-4 rounded-3xl shadow-lg transition-all flex flex-col justify-between h-36 sm:h-44 text-left group ${
                       prod.disponible 
                         ? (tema === 'dark' ? 'bg-[#111] border border-[#222] hover:border-[#444] active:scale-95 cursor-pointer' : 'bg-white border border-gray-200 hover:shadow-xl active:scale-95 cursor-pointer') 
@@ -398,10 +538,20 @@ export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
                     }`}
                   >
                     {!prod.disponible && <div className="absolute top-3 right-3 bg-red-600 text-white text-[9px] font-black px-2 py-1 rounded uppercase tracking-widest z-10 shadow-lg">Agotado</div>}
+                    
                     <div className="flex-1 pointer-events-none flex flex-col">
                       <span className={`font-bold leading-tight text-[14px] sm:text-[16px] line-clamp-2 ${tema === 'dark' ? 'text-neutral-200 group-hover:text-white' : 'text-gray-800 group-hover:text-black'}`}>{prod.nombre}</span>
+                      
+                      {/* ✨ ETIQUETA MÁGICA DE COINCIDENCIA */}
+                      {prod._coincidenciaVariacion && (
+                        <span className="text-[10px] font-black uppercase mt-0.5 animate-pulse" style={{ color: colorPrimario }}>
+                          ↳ {prod._coincidenciaVariacion}
+                        </span>
+                      )}
+
                       <p className={`text-[9px] sm:text-[10px] mt-0.5 uppercase font-black tracking-widest truncate ${tema === 'dark' ? 'text-neutral-600' : 'text-gray-400'}`}>{nombreCategoriaMuestra}</p>
                     </div>
+                    
                     <div className="flex justify-between items-end w-full mt-1 shrink-0">
                         <span className={`text-[9px] sm:text-[10px] uppercase font-black tracking-widest px-2.5 py-1.5 rounded-lg border ${tema === 'dark' ? 'text-neutral-400 bg-[#1a1a1a] border-[#2a2a2a]' : 'text-gray-500 bg-gray-100 border-gray-200'}`}>Opciones</span>
                         {totalCantidadProd > 0 && (
@@ -412,13 +562,18 @@ export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
                 );
             }
 
-            // TARJETAS NORMALES
+            // ================== TARJETAS NORMALES ==================
             const precioAMostrar = parseFloat(prod.precio_base || prod.precio);
             return (
               <div 
                 key={prod.id} 
-                onClick={() => { if (prod.disponible) { if (ordenActiva) notificarEstadoMesa('tomando_pedido', totalMesa); agregarProducto(prod); } }} 
-                // ✨ Altura adaptable: h-36 móvil, h-44 PC
+                onClick={() => { 
+                  if (prod.disponible) { 
+                    if (ordenActiva) notificarEstadoMesa('tomando_pedido', totalMesa); 
+                    agregarProducto(prod); 
+                    aprenderSeleccion(prod.id, busqueda); // 🧠 Enseña al cerebro
+                  } 
+                }}
                 className={`relative p-2.5 sm:p-4 rounded-3xl shadow-lg transition-all flex flex-col text-left justify-between overflow-hidden h-36 sm:h-44 ${
                   prod.disponible 
                     ? (tema === 'dark' ? 'bg-[#111] border border-[#222] hover:bg-[#151515] cursor-pointer' : 'bg-white border border-gray-200 hover:shadow-xl cursor-pointer hover:bg-gray-50') 
@@ -427,17 +582,22 @@ export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
               >
                 {!prod.disponible && <div className="absolute top-3 right-3 bg-red-600 text-white text-[9px] font-black px-2 py-1 rounded uppercase tracking-widest z-10 shadow-lg">Agotado</div>}
                 
-                {/* INFO DEL PRODUCTO (Alineada arriba, precio abajo usando mt-auto) */}
                 <div className='flex-1 mb-1 pointer-events-none flex flex-col'>
                   <span className={`font-bold leading-tight text-[14px] sm:text-[16px] line-clamp-2 ${tema === 'dark' ? 'text-neutral-200' : 'text-gray-800'}`}>{prod.nombre}</span>
+                  
+                  {/* ✨ ETIQUETA MÁGICA DE COINCIDENCIA */}
+                  {prod._coincidenciaVariacion && (
+                    <span className="text-[10px] font-black uppercase mt-0.5 animate-pulse" style={{ color: colorPrimario }}>
+                      ↳ {prod._coincidenciaVariacion}
+                    </span>
+                  )}
+
                   <p className={`text-[9px] mt-0.5 uppercase font-black tracking-widest truncate ${tema === 'dark' ? 'text-neutral-600' : 'text-gray-400'}`}>{nombreCategoriaMuestra}</p>
                   <p className="font-mono text-xs sm:text-sm font-bold mt-auto pb-1" style={{ color: colorPrimario }}>{formatearSoles(precioAMostrar)}</p>
                 </div>
                 
-                {/* BOTONERA INFERIOR INTELIGENTE */}
                 <div className={`flex flex-row items-center justify-between gap-1.5 pt-1.5 border-t shrink-0 ${!prod.disponible ? 'pointer-events-none' : ''} ${tema === 'dark' ? 'border-[#1a1a1a]' : 'border-gray-100'}`}>
                     
-                    {/* Controles de Cantidad (Flex-1 para que tomen el espacio) */}
                     {totalCantidadProd > 0 && (
                       <div className='flex-1 flex items-center justify-between gap-1'>
                         <button onClick={(e) => { e.stopPropagation(); restarDesdeGrid(prod.id); }} disabled={!prod.disponible} className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center font-black text-lg transition-all border bg-red-500/10 text-red-500 border-red-500/20 hover:bg-red-500 hover:text-white disabled:opacity-50">-</button>
@@ -449,27 +609,22 @@ export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
                       </div>
                     )}
                     
-                    {/* Botones de Acción (Mutan según el espacio) */}
                     {prod.tiene_variaciones ? (
                       totalCantidadProd > 0 ? (
-                        // MODO COMPACTO: Solo icono porque ya hay botones de cantidad
                         <button onClick={(e) => { e.stopPropagation(); abrirModalParaNuevo(prod); }} disabled={!prod.disponible} className="shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-lg border transition-colors flex items-center justify-center hover:brightness-110" style={{ color: colorPrimario, backgroundColor: colorPrimario + '1A', borderColor: colorPrimario + '4D' }}>
                           ⚙️
                         </button>
                       ) : (
-                        // MODO EXPANDIDO: Botón grande para llamar la atención
                         <button onClick={(e) => { e.stopPropagation(); abrirModalParaNuevo(prod); }} disabled={!prod.disponible} className="w-full text-[10px] sm:text-[11px] font-black uppercase tracking-widest py-2 sm:py-2.5 rounded-lg border transition-colors hover:brightness-110" style={{ color: colorPrimario, backgroundColor: colorPrimario + '1A', borderColor: colorPrimario + '4D' }}>
                           ⚙️ Variantes / Opc.
                         </button>
                       )
                     ) : (
                       totalCantidadProd > 0 ? (
-                        // MODO COMPACTO: Icono de nota cuadrado
                         <button onClick={(e) => { e.stopPropagation(); abrirModalParaNuevo(prod); }} disabled={!prod.disponible} className={`shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-lg border transition-colors flex items-center justify-center disabled:opacity-50 ${tema === 'dark' ? 'bg-[#1a1a1a] border-[#2a2a2a] hover:border-[#444]' : 'bg-gray-100 border-gray-200 hover:border-gray-300'}`} title="Agregar Nota">
                           📝
                         </button>
                       ) : (
-                        // MODO VACÍO: Solo el icono alineado a la derecha sin estorbar
                         <div className="w-full flex justify-end">
                           <button onClick={(e) => { e.stopPropagation(); abrirModalParaNuevo(prod); }} disabled={!prod.disponible} className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg border transition-colors flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest disabled:opacity-50 ${tema === 'dark' ? 'text-neutral-500 bg-[#1a1a1a] border-[#2a2a2a] hover:text-white' : 'text-gray-500 bg-gray-100 border-gray-200 hover:text-gray-800'}`}>
                             📝 <span className="hidden sm:inline">Nota</span>
@@ -703,7 +858,7 @@ export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
         isOpen={modalModsAbierto}
         onClose={() => setModalModsAbierto(false)}
         producto={productoParaModificar}
-        modificadoresGlobales={["Sin cebolla", "Sin ají", "Para llevar", "Poco arroz", "Salsas aparte"]}
+        modificadoresGlobales={modificadoresGlobales} // 🌟 Le pasamos la variable de estado que descargaste en cargarData()
         onAgregarAlCarrito={manejarAgregarAlCarritoDesdeModal}
       />
     </div>

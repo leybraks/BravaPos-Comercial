@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import usePosStore from './store/usePosStore';
+import usePosStore from '../store/usePosStore';
 
 export default function EditorMenu({ 
   categorias, 

@@ -33,8 +33,18 @@ export default function ModalModificadores({ isOpen, onClose, producto, modifica
   if (!isOpen || !producto) return null;
 
   // Filtramos la base de datos (Gratis vs Pagos)
-  const notasGratis = modificadoresGlobales.filter(m => parseFloat(m.precio || 0) === 0);
-  const agregadosPagos = modificadoresGlobales.filter(m => parseFloat(m.precio || 0) > 0);
+  const modificadoresPermitidos = modificadoresGlobales.filter(mod => {
+    // Si la API no envía 'categorias_aplicables' o el array está vacío -> Es 100% Global
+    if (!mod.categorias_aplicables || mod.categorias_aplicables.length === 0) {
+      return true; 
+    }
+    // Si el modificador tiene categorías asignadas, revisamos si la categoría de ESTE plato está ahí
+    return mod.categorias_aplicables.some(catId => String(catId) === String(producto.categoria));
+  });
+
+  // ✨ 2. Separamos Gratis vs Pagos PERO usando solo lFsFos permitidos
+  const notasGratis = modificadoresPermitidos.filter(m => parseFloat(m.precio || 0) === 0);
+  const agregadosPagos = modificadoresPermitidos.filter(m => parseFloat(m.precio || 0) > 0);
 
   // --- LÓGICA DE PRECIOS ---
   const precioBase = parseFloat(producto.precio_base || producto.precio || 0);

@@ -483,31 +483,43 @@ class EmpleadoViewSet(viewsets.ModelViewSet):
         
         # 🛡️ EL DETECTOR DE MORTALES
         empleado_solicitante_id = self.request.headers.get('X-Empleado-Id')
+        es_admin_o_dueno = False
 
         if empleado_solicitante_id:
-            # 🛑 ES UN EMPLEADO: Solo ve a sus compañeros de la misma sede
             try:
                 empleado_actual = Empleado.objects.get(id=empleado_solicitante_id)
-                queryset = queryset.filter(sede=empleado_actual.sede)
+                # ✨ LA SOLUCIÓN: Revisamos si es el dueño camuflado como empleado
+                nombre_rol = empleado_actual.rol.nombre if empleado_actual.rol else ''
+                
+                if 'Dueño' in nombre_rol or 'Admin' in nombre_rol:
+                    es_admin_o_dueno = True
+                else:
+                    # 🛑 ES UN EMPLEADO NORMAL: Solo ve a sus compañeros de la misma sede
+                    queryset = queryset.filter(sede=empleado_actual.sede)
             except Empleado.DoesNotExist:
                 return queryset.none()
         else:
-            # 👑 ES EL DUEÑO: Puede filtrar por la Sede que elija o ver todo el Negocio
+            # 👑 Si no hay PIN, asumimos que entró directo por la web como Dueño
+            es_admin_o_dueno = True
+            
+        # 👑 SI ES DUEÑO/ADMIN, LE HACEMOS CASO A LOS FILTROS DE REACT
+        if es_admin_o_dueno:
             sede_id = self.request.query_params.get('sede_id')
             negocio_id = self.request.query_params.get('negocio_id')
             
+            # Si React manda una Sede, filtramos por esa sede
             if sede_id and str(sede_id).lower() not in ['null', 'undefined', '']:
                 queryset = queryset.filter(sede_id=sede_id)
+            # Si React dice "Todas" (no manda sede, pero manda negocio), mostramos todo el negocio
             elif negocio_id and str(negocio_id).lower() not in ['null', 'undefined', '']:
                 queryset = queryset.filter(negocio_id=negocio_id)
 
-        # Filtro opcional de activos (lo mantienes igual)
+        # Filtro opcional de activos
         solo_activos = self.request.query_params.get('solo_activos')
         if solo_activos == 'true':
             queryset = queryset.filter(activo=True)
             
         return queryset
-    
 
     @action(detail=False, methods=['POST'], permission_classes=[AllowAny], url_path='validar_pin')
     def validar_pin(self, request):
@@ -544,7 +556,8 @@ class EmpleadoViewSet(viewsets.ModelViewSet):
             'nombre': empleado_valido.nombre,
             'rol_nombre': empleado_valido.rol.nombre if empleado_valido.rol else 'Sin Rol', # 👈 CAMBIADO A 'rol_nombre'
         }, status=status.HTTP_200_OK)
-    
+
+
 class SesionCajaViewSet(viewsets.ModelViewSet):
     queryset = SesionCaja.objects.none()
     serializer_class = SesionCajaSerializer

@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import usePosStore from './store/usePosStore';
-import { getInsumosSede, getCatalogoGlobal, getSedes, registrarIngresoMasivo } from './api/api';
-import ModalIngresoMercaderia from './ModalIngresoMercaderia';
-import ModalNuevoInsumoBase from './ModalNuevoInsumoBase';
+import usePosStore from '../store/usePosStore';
+import { getInsumosSede, getCatalogoGlobal, getSedes, registrarIngresoMasivo } from '../api/api';
+import ModalIngresoMercaderia from '../ModalIngresoMercaderia';
+import ModalNuevoInsumoBase from '../ModalNuevoInsumoBase';
 
 export default function InventarioView() {
   const { configuracionGlobal } = usePosStore();
