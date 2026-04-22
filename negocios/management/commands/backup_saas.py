@@ -60,7 +60,7 @@ class Command(BaseCommand):
             filename = f"ML_DATA_{negocio.id}_{negocio.nombre.replace(' ', '_')}_{fecha_str}.json"
             
             # Asegúrate de que la carpeta exista en tu servidor
-            path = f"/home/ubuntu/backups/ml_datasets/{fecha_str}/"
+            path = f"/app/backups/ml_datasets/{fecha_str}/"
             os.makedirs(path, exist_ok=True)
 
             with open(os.path.join(path, filename), "w", encoding="utf-8") as f:
