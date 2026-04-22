@@ -31,3 +31,4 @@ pos-frontend/npm-debug.log*
 .vscode/
 .idea/
 !pos-frontend/.env.production
+/Scripts/
