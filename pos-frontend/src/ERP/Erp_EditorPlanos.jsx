@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { getMesas, actualizarMesa, crearMesa, getSedes, actualizarSede } from './api/api';
-import usePosStore from './store/usePosStore';
+import { getMesas, actualizarMesa, crearMesa, getSedes, actualizarSede } from '../api/api';
+import usePosStore from '../store/usePosStore';
 
 export default function EditorPlanos() {
   const { configuracionGlobal } = usePosStore();

@@ -304,6 +304,10 @@ class ModificadorRapido(models.Model):
     negocio = models.ForeignKey(Negocio, on_delete=models.CASCADE)
     nombre = models.CharField(max_length=50)
     precio = models.DecimalField(max_digits=6, decimal_places=2, default=0.00)
+    
+    # ✨ EL NUEVO CAMPO MÁGICO: Relación con las categorías
+    # blank=True permite que lo dejes vacío si quieres que el modificador sea 100% Global
+    categorias_aplicables = models.ManyToManyField('Categoria', blank=True, related_name='modificadores_rapidos')
 
     def __str__(self):
         if self.precio > 0:

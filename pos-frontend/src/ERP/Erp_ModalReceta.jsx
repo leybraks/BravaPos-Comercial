@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getCatalogoGlobal, guardarReceta, getReceta} from './api/api';
+import { getCatalogoGlobal, guardarReceta, getReceta} from '../api/api';
 
 export default function ModalConfigurarReceta({ isOpen, onClose, producto, config }) {
   const [catalogo, setCatalogo] = useState([]);
