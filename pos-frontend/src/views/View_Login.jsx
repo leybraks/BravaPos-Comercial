@@ -1,6 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { loginAdministrador, validarPinEmpleado, getEstadoCaja, abrirCajaBD, getSedes } from '../api/api';
 
+// =========================================================
+// ✨ HELPER DE SEGURIDAD (Desencripta el JWT de forma segura)
+// =========================================================
+const decodificarToken = (token) => {
+  try {
+    const base64Url = token.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+    }).join(''));
+    return JSON.parse(jsonPayload);
+  } catch (error) {
+    return null;
+  }
+};
+
 export default function LoginView({ onAccesoConcedido }) {
   // =========================================================
   // 1. MÁQUINA DE ESTADOS (Lobby Gateway)
@@ -23,6 +39,11 @@ export default function LoginView({ onAccesoConcedido }) {
 
   const negocioInfo = { marca: 'CAÑA BRAVA', sede: localStorage.getItem('sede_nombre') || 'Sede Principal' };
 
+  // Limpieza de memoria fantasma al montar el componente
+  useEffect(() => {
+    localStorage.removeItem('rol_usuario'); // Destruimos cualquier rol falso que haya quedado
+  }, []);
+
   useEffect(() => {
     if (modo !== 'empleado') return; 
     const verificarCaja = async () => {
@@ -42,38 +63,33 @@ export default function LoginView({ onAccesoConcedido }) {
   const handleLoginSubmit = async (e, destino) => {
     e.preventDefault();
     setLoadingAuth(true);
-    
+  
     try {
+      // loginAdministrador guarda tablet_token y tablet_refresh_token (Seguro)
       const res = await loginAdministrador({ username: email, password: password });
-      console.log("🔥 RESPUESTA DE DJANGO:", res.data);
-      
-      // 1. Guardamos solo los datos globales de conexión
-      localStorage.setItem('tablet_token', res.data.token);
       localStorage.setItem('negocio_id', res.data.negocio_id);
-
+  
       if (destino === 'erp') {
-         // 👑 CAMINO A: El Jefe va a su oficina
-         // Aquí SÍ guardamos el rol para que App.jsx te deje pasar
-         const rolAsignado = res.data.rol || 'Dueño';
-         localStorage.setItem('rol_usuario', rolAsignado); 
-         onAccesoConcedido(rolAsignado); 
-         
-      } else {
-         // 🔒 CAMINO B: Vinculando tablet para el local
-         // Borramos cualquier rastro de poderes especiales
-         localStorage.removeItem('rol_usuario'); 
-         localStorage.removeItem('empleado_id');
+        // ✨ SEGURIDAD ALTA: Extraemos el rol directo del token in-hackeable
+        const infoUsuario = decodificarToken(res.data.access);
+        const rolSeguro = infoUsuario?.rol || res.data.rol || 'Dueño';
+        
+        // Lo pasamos a la RAM, NO al localStorage
+        onAccesoConcedido(rolSeguro); 
 
-         const sedesRes = await getSedes();
-         setSedesDisponibles(sedesRes.data);
-         if (sedesRes.data.length > 0) setSedeSeleccionada(sedesRes.data[0].id); 
-         setModo('setup_sede');
+      } else {
+        // MODO TERMINAL
+        localStorage.removeItem('empleado_id');
+        const sedesRes = await getSedes();
+        setSedesDisponibles(sedesRes.data);
+        if (sedesRes.data.length > 0) setSedeSeleccionada(sedesRes.data[0].id);
+        setModo('setup_sede');
       }
-      
+  
     } catch (error) {
       alert('❌ Error: Credenciales incorrectas.');
-    } finally { 
-      setLoadingAuth(false); 
+    } finally {
+      setLoadingAuth(false);
     }
   };
 
@@ -98,21 +114,27 @@ export default function LoginView({ onAccesoConcedido }) {
     try {
       const respuesta = await validarPinEmpleado({ pin, accion });
       const empleado = respuesta.data;
+      
+      // Guardamos IDs, NO ROLES en localStorage
       localStorage.setItem('empleado_id', empleado.id);
       localStorage.setItem('empleado_nombre', empleado.nombre);
-      localStorage.setItem('rol_usuario', empleado.rol_nombre); // ✨ ¡Agrega esta línea vital!
+      
       if (accion === 'asistencia') {
         alert(`🕒 Asistencia: ${empleado.nombre}`); setPin(''); return;
       }
+      
       if (accion === 'entrar') {
         if (['Cocina', 'Cocinero'].includes(empleado.rol_nombre)) {
+          // El rol va a la RAM directamente
           onAccesoConcedido(empleado.rol_nombre); return;
         }
+        
         if (estadoLocal === 'cerrado') {
           if (['Administrador', 'Cajero', 'Admin'].includes(empleado.rol_nombre)) {
             setEmpleadoActual(empleado); setModalApertura(true);      
           } else { alert(`Caja cerrada.`); setPin(''); }
         } else {
+          // El rol va a la RAM directamente
           onAccesoConcedido(empleado.rol_nombre);
         }
       }
@@ -126,6 +148,7 @@ export default function LoginView({ onAccesoConcedido }) {
       localStorage.setItem('sesion_caja_id', respuesta.data.id);
       setEstadoLocal('abierto');
       setModalApertura(false);
+      // Pasamos el rol a la RAM
       onAccesoConcedido(empleadoActual.rol_nombre); 
     } catch (error) { alert("Error al abrir caja."); }
   };
@@ -239,7 +262,7 @@ export default function LoginView({ onAccesoConcedido }) {
               <p className="text-neutral-400 text-sm mb-10">{modo === 'login_erp' ? 'Ingresa para administrar tu negocio.' : 'Ingresa para vincular este dispositivo.'}</p>
               
               <div className="flex gap-4 mb-8">
-                <button onClick={() => handleGoogleLogin(esERP ? 'erp' : 'pos')} className="flex-1 bg-transparent border border-[#333] hover:bg-[#161616] py-3.5 rounded-xl flex items-center justify-center gap-3 transition-colors text-sm font-bold">
+                <button onClick={() => handleGoogleLogin()} className="flex-1 bg-transparent border border-[#333] hover:bg-[#161616] py-3.5 rounded-xl flex items-center justify-center gap-3 transition-colors text-sm font-bold">
                   <svg className="w-5 h-5" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
                   Google
                 </button>
@@ -305,17 +328,13 @@ export default function LoginView({ onAccesoConcedido }) {
         <div className="absolute w-[700px] h-[700px] bg-[#ff5a1f] opacity-[0.12] rounded-full blur-[150px]" />
         <div className="absolute w-[500px] h-[500px] bg-[#e0155b] opacity-[0.12] rounded-full blur-[130px] translate-x-32 translate-y-20" />
 
-        {/* CONTENEDOR PRINCIPAL DEL ARTE
-            Mantenemos scale-110 para que se vea grande y nítido.
-        */}
+        {/* CONTENEDOR PRINCIPAL DEL ARTE */}
         <div className="relative z-10 flex items-end justify-center gap-0 scale-110 xl:scale-125 origin-center transition-transform duration-500">
 
           {/* ── LAPTOP (FONDO) ── */}
           <div className="relative mr-[-60px] mb-8 z-10">
-            {/* Pantalla */}
             <div className="w-[420px] h-[260px] bg-[#111] rounded-t-2xl border-[3px] border-[#2a2a2a] overflow-hidden shadow-2xl">
               <div className="bg-[#0d0d0d] w-full h-full p-4">
-                {/* Top bar macOS style */}
                 <div className="flex justify-between items-center mb-4">
                   <div className="flex gap-1.5">
                     <div className="w-2.5 h-2.5 rounded-full bg-[#ff5a1f] opacity-80" />
@@ -325,7 +344,6 @@ export default function LoginView({ onAccesoConcedido }) {
                   <div className="w-32 h-2 bg-[#1a1a1a] rounded-full" />
                   <div className="w-16 h-2 bg-[#1a1a1a] rounded-full" />
                 </div>
-                {/* Cards de métricas */}
                 <div className="grid grid-cols-2 gap-3 mb-3">
                   <div className="bg-[#161616] border border-[#222] rounded-xl p-3 shadow-inner">
                     <p className="text-[10px] text-neutral-600 font-mono uppercase tracking-widest font-bold">Ventas Hoy</p>
@@ -338,7 +356,6 @@ export default function LoginView({ onAccesoConcedido }) {
                     <p className="text-[9px] text-green-500 font-mono mt-1">5 pendientes</p>
                   </div>
                 </div>
-                {/* Mini gráfico de barras */}
                 <div className="bg-[#161616] border border-[#222] rounded-xl p-3 flex items-end gap-2 h-[75px] shadow-inner">
                   <span className="text-[9px] text-neutral-700 font-mono mr-1 self-center">Sem.</span>
                   {[60,80,50,90,100,65,40].map((h, i) => (
@@ -351,20 +368,15 @@ export default function LoginView({ onAccesoConcedido }) {
                 </div>
               </div>
             </div>
-            {/* Bisagra */}
             <div className="w-[420px] h-2 bg-[#1c1c1c] border-x-[3px] border-[#2a2a2a]" />
-            {/* Base */}
             <div className="w-[420px] h-3.5 bg-[#181818] rounded-b-lg border-[3px] border-[#2a2a2a] border-t-0" />
-            {/* Pata central */}
             <div className="w-32 h-2 bg-[#1a1a1a] rounded-b-lg mx-auto border-2 border-[#2a2a2a] border-t-0" />
           </div>
 
           {/* ── TELÉFONO (FRENTE) ── */}
           <div className="relative z-20">
             <div className="w-[200px] h-[400px] bg-[#111] rounded-[32px] border-[4px] border-[#2a2a2a] overflow-hidden shadow-[0_30px_60px_rgba(0,0,0,0.8)] relative">
-              {/* Dynamic island */}
               <div className="absolute top-3 left-1/2 -translate-x-1/2 w-14 h-4 bg-black rounded-full z-10" />
-              {/* Pantalla del Celular (POS Mockup) */}
               <div className="bg-[#0d0d0d] w-full h-full pt-[32px] px-3 pb-3 overflow-hidden flex flex-col">
                 <div className="flex justify-between mb-4">
                   <span className="text-[10px] text-neutral-600 font-mono">9:41</span>
@@ -376,7 +388,6 @@ export default function LoginView({ onAccesoConcedido }) {
                 <p className="text-[10px] text-neutral-500 font-mono uppercase tracking-widest font-bold">Hola,</p>
                 <p className="text-lg text-white font-black mb-4 font-mono tracking-tighter">BravaPOS</p>
                 
-                {/* Balance card con gradiente oficial */}
                 <div className="rounded-2xl p-4 mb-4 bg-gradient-to-br from-[#ff5a1f] to-[#e0155b] shadow-lg">
                   <p className="text-[9px] text-white/70 font-mono font-bold uppercase tracking-widest">Caja Hoy</p>
                   <p className="text-2xl text-white font-black font-mono mt-1">S/. 4,821</p>
@@ -385,7 +396,6 @@ export default function LoginView({ onAccesoConcedido }) {
                   </div>
                 </div>
                 
-                {/* Stats rápidos */}
                 <div className="grid grid-cols-2 gap-2 mb-3">
                   <div className="bg-[#161616] rounded-xl p-3 border border-[#222] shadow-inner">
                     <p className="text-[9px] text-neutral-600 font-mono uppercase font-bold tracking-widest">Mesas</p>
@@ -396,24 +406,14 @@ export default function LoginView({ onAccesoConcedido }) {
                     <p className="text-lg text-green-500 font-black font-mono mt-1">7</p>
                   </div>
                 </div>
-                
-                {/* Notificación interna eliminada para limpiar y enfocar el pop-out */}
               </div>
             </div>
             
-            {/* Botones físicos laterales del iPhone */}
             <div className="absolute right-[-4px] top-24 w-[4px] h-12 bg-[#222] rounded-r-md" />
             <div className="absolute left-[-4px] top-20 w-[4px] h-8 bg-[#222] rounded-l-md" />
             <div className="absolute left-[-4px] top-[120px] w-[4px] h-8 bg-[#222] rounded-l-md" />
 
-            {/* ========================================================= */}
-            {/* CARD FLOTANTE ESTÁTICA Y SUPERPUESTA (Mesa 3)              */}
-            {/* ========================================================= */}
-            {/* - Ajustamos z-index a 30 (mayor que el celular que es 20)
-                - Cambiamos right de -32 a -16 (o un valor positivo) para que se meta dentro del borde del celular.
-                - Quitamos 'animate-bounce'.
-            */}
-            <div className="absolute -top-16 -right-28 bg-[#0f0f0f]/90 backdrop-blur border border-white/10 rounded-2xl p-4 shadow-2xl w-44 z-30  transition-transform cursor-pointer">
+            <div className="absolute -top-16 -right-28 bg-[#0f0f0f]/90 backdrop-blur border border-white/10 rounded-2xl p-4 shadow-2xl w-44 z-30 transition-transform cursor-pointer">
               <div className="flex items-center gap-2.5 mb-3">
                 <div className="w-8 h-8 rounded-full bg-[#ff5a1f] flex items-center justify-center text-[10px] text-white font-black shadow-lg">AJ</div>
                 <div>
@@ -428,10 +428,6 @@ export default function LoginView({ onAccesoConcedido }) {
               </div>
             </div>
 
-            {/* ========================================================= */}
-            {/* CARD FLOTANTE ESTÁTICA (Caja Abierta)                      */}
-            {/* ========================================================= */}
-            {/* - Quitamos 'animate-bounce'. */}
             <div className="absolute bottom-1 -left-36 xl:-left-44 bg-[#0f0f0f]/90 backdrop-blur-xl border border-white/10 rounded-2xl p-4 shadow-2xl w-40 z-30 cursor-pointer">
               <p className="text-white text-xs font-bold mb-1">Caja Abierta</p>
               <p className="text-neutral-500 text-[9px] mb-3 font-mono">Turno mañana</p>
