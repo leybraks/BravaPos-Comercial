@@ -8,27 +8,62 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
-            cd BravaPos-Comercial
+      - name: 🔔 Notificar inicio
+        run: |
+          curl -H "Content-Type: application/json" \
+          -d '{"content": "🚀 Iniciando deploy de Brava POS..."}' \
+          ${{ secrets.DISCORD_WEBHOOK }}
+
+      - name: 📦 Backup DB
+        run: |
+          curl -H "Content-Type: application/json" \
+          -d '{"content": "📦 Iniciando backup de base de datos..."}' \
+          ${{ secrets.DISCORD_WEBHOOK }}
+
+          ssh -i "${{ secrets.SSH_PRIVATE_KEY }}" -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "
+            cd BravaPos-Comercial &&
             sudo docker compose exec -T db pg_dump -U bravapos_user bravapos_db > pre_deploy.sql
-            
-            if ! (git pull origin V2-Estable-Cloud && \
-                  sudo docker compose up -d --build && \
-                  sudo docker compose exec -T backend python manage.py migrate); then
-              
-              echo "⚠️ Error detectado. Iniciando Rollback de Base de Datos..."
-              
-              cat pre_deploy.sql | sudo docker compose exec -T db psql -U bravapos_user bravapos_db
-              
-              echo "✅ Rollback completado. El sistema volvió al estado anterior."
-              exit 1
-            fi
-            
-            echo "🚀 Brava POS actualizado con éxito."
+          "
+
+          curl -H "Content-Type: application/json" \
+          -d '{"content": "✅ Backup completado"}' \
+          ${{ secrets.DISCORD_WEBHOOK }}
+
+      - name: 🔄 Deploy
+        id: deploy_step
+        run: |
+          curl -H "Content-Type: application/json" \
+          -d '{"content": "🔄 Ejecutando deploy..."}' \
+          ${{ secrets.DISCORD_WEBHOOK }}
+
+          ssh -i "${{ secrets.SSH_PRIVATE_KEY }}" -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "
+            cd BravaPos-Comercial &&
+            git pull origin V2-Estable-Cloud &&
+            sudo docker compose up -d --build &&
+            sudo docker compose exec -T backend python manage.py migrate
+          "
+
+      - name: ❌ Rollback si falla
+        if: failure()
+        run: |
+          curl -H "Content-Type: application/json" \
+          -d '{"content": "⚠️ Error detectado. Ejecutando rollback..."}' \
+          ${{ secrets.DISCORD_WEBHOOK }}
+
+          ssh -i "${{ secrets.SSH_PRIVATE_KEY }}" -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "
+            cd BravaPos-Comercial &&
+            cat pre_deploy.sql | sudo docker compose exec -T db psql -U bravapos_user bravapos_db
+          "
+
+          curl -H "Content-Type: application/json" \
+          -d '{"content": "✅ Rollback completado"}' \
+          ${{ secrets.DISCORD_WEBHOOK }}
+
+      - name: ✅ Deploy exitoso
+        if: success()
+        run: |
+          curl -H "Content-Type: application/json" \
+          -d '{"content": "🚀 Brava POS actualizado con éxito"}' \
+          ${{ secrets.DISCORD_WEBHOOK }}
