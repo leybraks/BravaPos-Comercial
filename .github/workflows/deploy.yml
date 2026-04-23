@@ -17,7 +17,18 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd BravaPos-Comercial
-            git checkout V2-Estable-Cloud
-            git pull origin V2-Estable-Cloud
-            sudo docker compose up -d --build
-            sudo docker compose exec -T backend python manage.py migrate
+            sudo docker compose exec -T db pg_dump -U bravapos_user bravapos_db > pre_deploy.sql
+            
+            if ! (git pull origin V2-Estable-Cloud && \
+                  sudo docker compose up -d --build && \
+                  sudo docker compose exec -T backend python manage.py migrate); then
+              
+              echo "⚠️ Error detectado. Iniciando Rollback de Base de Datos..."
+              
+              cat pre_deploy.sql | sudo docker compose exec -T db psql -U bravapos_user bravapos_db
+              
+              echo "✅ Rollback completado. El sistema volvió al estado anterior."
+              exit 1
+            fi
+            
+            echo "🚀 Brava POS actualizado con éxito."

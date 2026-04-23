@@ -2,13 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 
 // Importamos tus vistas actuales
-import KdsView from './KdsView';
-import ErpDashboard from './ErpDashboard';
-import LoginView from './LoginView';
-import PublicMenu from './components/PublicMenu';
+import KdsView from './views/View_Kds';
+import ErpDashboard from './views/View_Erp';
+import LoginView from './views/View_Login';
+import PublicMenu from './features/public/PublicMenu';
 
 // ✨ IMPORTAMOS EL NUEVO CONTENEDOR DIVIDIDO
-import PosTerminal from './PosTerminal'; 
+import PosTerminal from './features/POS/Pos_Terminal'; 
 
 const VistaInternaPOS = () => {
   const [vista, setVista] = useState('login');
