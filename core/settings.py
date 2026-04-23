@@ -218,4 +218,5 @@ SIMPLE_JWT = {
     'BLACKLIST_AFTER_ROTATION': True,
     'ROTATE_REFRESH_TOKENS': True,                 # Rota la llave maestra por seguridad
     'UPDATE_LAST_LOGIN': True,
+    'TOKEN_OBTAIN_SERIALIZER': 'negocios.serializers.CustomTokenObtainPairSerializer',
 }
