@@ -4,6 +4,8 @@ from .models import (
     ModificadorRapido, GrupoVariacion, OpcionVariacion, Rol, Empleado, SesionCaja,
     DetalleOrdenOpcion , Categoria, RecetaOpcion
 )
+
+
 class PlanSaaSSerializer(serializers.ModelSerializer):
     class Meta:
         model = PlanSaaS
@@ -216,3 +218,5 @@ class InsumoSedeSerializer(serializers.ModelSerializer):
     class Meta:
         model = InsumoSede
         fields = '__all__'
+
+

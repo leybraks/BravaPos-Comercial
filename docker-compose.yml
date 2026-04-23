@@ -4,9 +4,9 @@ services:
   db:
     image: postgres:15-alpine
     environment:
-      POSTGRES_DB: bravapos_db
-      POSTGRES_USER: bravapos_user
-      POSTGRES_PASSWORD: bravapos_password
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: always
@@ -20,14 +20,17 @@ services:
     command: daphne -b 0.0.0.0 -p 8000 core.asgi:application
     volumes:
       - .:/app
+    env_file:
+      - .env                          # ✅ Lee todo el .env automáticamente
     environment:
-      - DATABASE_URL=postgres://bravapos_user:bravapos_password@db:5432/bravapos_db
+      - DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       - REDIS_URL=redis://redis:6379/0
     ports:
       - "8000:8000"
     depends_on:
       - db
       - redis
+    restart: always
 
   frontend:
     build: ./pos-frontend
@@ -35,6 +38,7 @@ services:
       - "80:80"
     depends_on:
       - backend
+    restart: always
 
 volumes:
   postgres_data:
