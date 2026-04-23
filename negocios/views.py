@@ -521,8 +521,9 @@ class EmpleadoViewSet(viewsets.ModelViewSet):
             
         return queryset
 
-    @action(detail=False, methods=['POST'], permission_classes=[AllowAny], url_path='validar_pin')
+    @action(detail=False, methods=['POST'], permission_classes=[IsAuthenticated], url_path='validar_pin')
     def validar_pin(self, request):
+        import hmac
         pin_ingresado = request.data.get('pin')
         sede_id = request.data.get('sede_id')
         accion = request.data.get('accion')
@@ -535,12 +536,12 @@ class EmpleadoViewSet(viewsets.ModelViewSet):
         empleado_valido = None
 
         for emp in empleados:
-            # 1. Comparamos si está en texto plano (Ej: si lo creaste desde el /admin como '1111')
-            if emp.pin == pin_ingresado:
+            # Comparamos usando check_password (hash) o compare_digest (texto plano legacy)
+            # para evitar timing attacks en ambos casos
+            if check_password(pin_ingresado, emp.pin):
                 empleado_valido = emp
                 break
-            # 2. Comparamos por si acaso está encriptado (Hash)
-            elif check_password(pin_ingresado, emp.pin):
+            elif hmac.compare_digest(emp.pin, pin_ingresado):
                 empleado_valido = emp
                 break
 
@@ -605,7 +606,7 @@ class SesionCajaViewSet(viewsets.ModelViewSet):
         return Response({'estado': 'cerrado'})
 
     # ✨ PERMISO AÑADIDO
-    @action(detail=False, methods=['post'], permission_classes=[AllowAny])
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
     def abrir_caja(self, request):
         empleado_id = request.data.get('empleado_id')
         sede_id = request.data.get('sede_id')
@@ -623,7 +624,7 @@ class SesionCajaViewSet(viewsets.ModelViewSet):
         return Response({'mensaje': 'Caja abierta con éxito', 'id': sesion.id})
     
     # ✨ CÁLCULO DE DIFERENCIAS DIGITALES
-    @action(detail=False, methods=['post'], permission_classes=[AllowAny])
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
     def cerrar_caja(self, request):
         sede_id = request.data.get('sede_id')
         empleado_id = request.data.get('empleado_id')

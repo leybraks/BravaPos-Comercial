@@ -30,5 +30,4 @@ pos-frontend/npm-debug.log*
 .DS_Store
 .vscode/
 .idea/
-!pos-frontend/.env.production
 /Scripts/
