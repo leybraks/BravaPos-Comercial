@@ -18,7 +18,7 @@ export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
   const { estadoCaja, configuracionGlobal, carrito, agregarProducto, esDueño, sedes, manejarCambioSede, restarProducto, obtenerTotalItems, restarDesdeGrid, obtenerTotalDinero, vaciarCarrito, actualizarItemCompleto, sumarUnidad } = usePosStore();
   const tema = configuracionGlobal?.temaFondo || 'dark';
   const colorPrimario = configuracionGlobal?.colorPrimario || '#ff5a1f';
-  
+  const [wsListo, setWsListo] = useState(false);
   const sedeActualId = localStorage.getItem('sede_id');
   const esParaLlevar = (typeof mesaId === 'object' && mesaId?.id === 'llevar') || mesaId === 'llevar';
   const nombreLlevar = typeof mesaId === 'object' ? mesaId.cliente : 'Cliente (🛍️ Llevar)';
@@ -64,8 +64,13 @@ export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
       
       ws = new WebSocket(wsUrl);
       wsRef.current = ws;
-      
-      ws.onclose = () => { if (!unmounted) setTimeout(conectar, 3000); };
+      ws.onopen = () => {
+        setWsListo(true); 
+      };
+      ws.onclose = () => { 
+        setWsListo(false);
+        if (!unmounted) setTimeout(conectar, 3000); 
+      };
       ws.onerror = () => ws.close();
     };
 
@@ -89,20 +94,30 @@ export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
   };
 
   // Notificar al Salón apenas termine de cargar la data
+  // Notificar al Salón basándose en la carga de datos, el carrito y el WebSocket
   useEffect(() => {
-    if (cargando) return; 
+    // 🚨 FRENO DE SEGURIDAD: 
+    // Esperamos a que la base de datos cargue Y que el WebSocket esté conectado
+    if (cargando || !wsListo) return; 
     
     if (ordenActiva) {
+      // 1. La mesa ya tiene un pedido en la base de datos
       estadoMesaRef.current = 'ocupada';
-      // Solo abrimos la mesa, están mirando el menú de nuevo
-      notificarEstadoMesa('pidiendo', parseFloat(ordenActiva.total || 0));
+      
+      // 2. ¿Hay cosas nuevas en el carrito? 
+      // Si carrito.length es 0, solo estamos viendo la cuenta -> 'cobrando'
+      // Si es > 0, el mesero está marcando algo nuevo -> 'pidiendo'
+      const estadoActual = carrito.length > 0 ? 'pidiendo' : 'cobrando';
+      
+      notificarEstadoMesa(estadoActual, parseFloat(ordenActiva.total || 0));
     } else {
+      // 3. Mesa libre -> El mesero entró a tomar el primer pedido
       estadoMesaRef.current = 'libre';
-      // Nombre exacto aceptado por Django
       notificarEstadoMesa('pidiendo', 0);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cargando, ordenActiva]);
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cargando, ordenActiva, carrito.length, wsListo]); // 👈 Dependencias clave
 
   // ====================== CÁLCULOS ======================
   const totalOrdenActiva = ordenActiva ? ordenActiva.detalles.reduce((acc, d) => acc + parseFloat(d.precio_unitario || 0) * (d.cantidad || 1), 0) : 0;
