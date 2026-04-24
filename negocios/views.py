@@ -207,7 +207,7 @@ class OrdenViewSet(viewsets.ModelViewSet):
                 try:
                     producto = Producto.objects.get(id=d['producto'])
                 except Producto.DoesNotExist:
-                    raise ValueError(f"Producto {d['producto']} no existe.")
+                    raise ValueError("Uno de los productos de la orden no existe.")
                 precio_real = producto.precio_base
 
                 detalle = DetalleOrden.objects.create(
@@ -516,7 +516,13 @@ class EmpleadoViewSet(viewsets.ModelViewSet):
 
         if empleado_solicitante_id:
             try:
-                empleado_actual = Empleado.objects.get(id=empleado_solicitante_id)
+                empleado_actual = Empleado.objects.select_related('rol', 'negocio').get(
+                    id=empleado_solicitante_id
+                )
+                # Verificar que el empleado pertenezca al negocio del usuario JWT
+                if not self.request.user.is_superuser and hasattr(self.request.user, 'negocio'):
+                    if empleado_actual.negocio_id != self.request.user.negocio.id:
+                        return queryset.none()
                 nombre_rol = empleado_actual.rol.nombre if empleado_actual.rol else ''
                 if 'Dueño' in nombre_rol or 'Admin' in nombre_rol:
                     es_admin_o_dueno = True
@@ -526,6 +532,13 @@ class EmpleadoViewSet(viewsets.ModelViewSet):
                 return queryset.none()
         else:
             es_admin_o_dueno = True
+
+        # Restringir al negocio del usuario autenticado
+        if not self.request.user.is_superuser:
+            if hasattr(self.request.user, 'negocio'):
+                queryset = queryset.filter(negocio=self.request.user.negocio)
+            elif not empleado_solicitante_id:
+                return queryset.none()
 
         if es_admin_o_dueno:
             sede_id = self.request.query_params.get('sede_id')
@@ -891,9 +904,15 @@ def registrar_movimiento_caja(request):
 
         if empleado_id_solicitante:
             try:
-                empleado = Empleado.objects.get(id=empleado_id_solicitante)
+                empleado = Empleado.objects.select_related('sede').get(id=empleado_id_solicitante)
             except Empleado.DoesNotExist:
                 return Response({'error': 'Empleado no encontrado.'}, status=403)
+            # Verificar que el empleado pertenezca al mismo negocio que la sesión de caja
+            if empleado.sede.negocio_id != sesion.sede.negocio_id:
+                return Response(
+                    {'error': 'No tienes permiso para registrar movimientos en esta sede.'},
+                    status=403
+                )
             if sesion.sede_id != empleado.sede_id:
                 return Response(
                     {'error': 'No tienes permiso para registrar movimientos en esta sede.'},

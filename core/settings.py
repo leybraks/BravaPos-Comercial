@@ -217,12 +217,20 @@ REST_FRAMEWORK = {
     },
 }
 
+def _env_int(name, default):
+    """Lee una variable de entorno como entero; usa el default si el valor no es válido."""
+    try:
+        return int(os.environ.get(name, default))
+    except (ValueError, TypeError):
+        return int(default)
+
+
 SIMPLE_JWT = {
     # Tiempos de vida leídos de .env para facilitar ajuste sin redespliegue.
     # ACCESS corto (15 min) limita la ventana de abuso si un token es robado.
     # REFRESH de 7 días obliga a re-login semanal y reduce el riesgo de tokens eternos.
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=int(os.environ.get('JWT_ACCESS_MINUTES', '15'))),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=int(os.environ.get('JWT_REFRESH_DAYS', '7'))),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=_env_int('JWT_ACCESS_MINUTES', 15)),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=_env_int('JWT_REFRESH_DAYS', 7)),
     'AUTH_HEADER_TYPES': ('Bearer',),
     'BLACKLIST_AFTER_ROTATION': True,
     'ROTATE_REFRESH_TOKENS': True,
