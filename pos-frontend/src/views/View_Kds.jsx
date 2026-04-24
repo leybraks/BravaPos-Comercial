@@ -63,7 +63,14 @@ export default function KdsView({ onVolver }) {
   useEffect(() => {
     if (!accesoPermitido) return; // Si no hay permiso, cortamos aquí
 
-    ws.current = new WebSocket(`${wsUrl}/ws/cocina/${sedeActualId}/`);
+    // ✨ EXTRAEMOS EL TOKEN
+    const token = localStorage.getItem('tablet_token') || localStorage.getItem('access_token');
+    if (!token) return;
+
+    // ✨ INYECTAMOS EL TOKEN A LA COCINA
+    const urlCocina = `${wsUrl}/ws/cocina/${sedeActualId}/?token=${token}`;
+    ws.current = new WebSocket(urlCocina);
+    
     ws.current.onopen = () => console.log(`🔥 KDS Conectado a la Cocina (Sede ${sedeActualId})`);
 
     ws.current.onmessage = (event) => {
