@@ -7,16 +7,14 @@ from . import views
 # El Router crea las URLs mágicamente
 router = DefaultRouter()
 
-# Rutas normales
-router.register(r'negocios', views.NegocioViewSet)
+# Rutas protegidas y dinámicas (Todas con 'basename' para evitar AssertionError)
+router.register(r'negocios', views.NegocioViewSet, basename='negocio')
 router.register(r'sedes', views.SedeViewSet, basename='sede')
-router.register(r'detalles', views.DetalleOrdenViewSet)
-router.register(r'pagos', views.PagoViewSet)
-router.register(r'roles', views.RolViewSet)
-router.register(r'sesiones_caja', views.SesionCajaViewSet)
+router.register(r'detalles', views.DetalleOrdenViewSet, basename='detalleorden')
+router.register(r'pagos', views.PagoViewSet, basename='pago')
+router.register(r'roles', views.RolViewSet, basename='rol')
+router.register(r'sesiones_caja', views.SesionCajaViewSet, basename='sesioncaja')
 router.register(r'categorias', views.CategoriaViewSet, basename='categoria')
-
-# Rutas dinámicas (filtran por Sede/Negocio)
 router.register(r'mesas', views.MesaViewSet, basename='mesa')
 router.register(r'productos', views.ProductoViewSet, basename='producto')
 router.register(r'ordenes', views.OrdenViewSet, basename='orden')
@@ -24,7 +22,9 @@ router.register(r'empleados', views.EmpleadoViewSet, basename='empleado')
 router.register(r'insumo-base', views.InsumoBaseViewSet, basename='insumobase')
 router.register(r'insumo-sede', views.InsumoSedeViewSet, basename='insumosede')
 router.register(r'modificadores-rapidos', views.ModificadorRapidoViewSet, basename='modificadorrapido')
-
+router.register(r'grupos-variacion', views.GrupoVariacionViewSet, basename='grupovariacion')
+router.register(r'opciones-variacion', views.OpcionVariacionViewSet, basename='opcionvariacion')
+router.register(r'recetas-opcion', views.RecetaOpcionViewSet, basename='recetaopcion')
 
 urlpatterns = [
     path('', include(router.urls)),
@@ -42,6 +42,6 @@ urlpatterns = [
     path('movimientos-caja/', views.registrar_movimiento_caja, name='registrar_movimiento_caja'),
 
     # Rutas públicas (sin token — carta QR)
-    path('menu-publico/<int:sede_id>/', views.menu_publico),
-    path('orden-publica/<int:sede_id>/<int:mesa_id>/', views.orden_publica),
+    path('menu-publico/<int:sede_id>/', views.menu_publico, name='menu_publico'),
+    path('orden-publica/<int:sede_id>/<int:mesa_id>/', views.orden_publica, name='orden_publica'),
 ]
