@@ -21,7 +21,6 @@ export const useTerminalWS = (sedeActualId, setMesas, setOrdenesLlevar) => {
       
       // ✨ LE INYECTAMOS EL TOKEN AL FINAL DE LA URL
       const wsUrl = `${baseUrl}/ws/salon/${sedeActualId}/?token=${token}`;
-      console.log("🚨 ALERTA: Intentando conectar WS a:", wsUrl);
       ws = new WebSocket(wsUrl);
       wsRef.current = ws;// Guardamos la referencia para poder usarla fuera si es necesario
 

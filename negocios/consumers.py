@@ -20,12 +20,21 @@ def _usuario_valido(scope):
 
 @database_sync_to_async
 def _tiene_acceso_sede(user, sede_id):
-    """Verifica que el usuario tiene acceso a la sede solicitada."""
-    from negocios.models import Sede
+    """
+    Verifica que el usuario tiene acceso a la sede solicitada.
+    """
+    # 1. Si eres el SuperAdmin (IT), pasas directo
     if user.is_superuser:
         return True
-    if hasattr(user, 'negocio'):
-        return Sede.objects.filter(id=sede_id, negocio=user.negocio).exists()
+        
+    # 2. Si eres un Dueño, buscamos tu negocio en la base de datos
+    from .models import Negocio, Sede
+    negocio_del_usuario = Negocio.objects.filter(propietario=user).first()
+    
+    if negocio_del_usuario:
+        # Validamos que la sede a la que intentas entrar le pertenezca a tu negocio
+        return Sede.objects.filter(id=sede_id, negocio=negocio_del_usuario).exists()
+        
     return False
 
 
