@@ -60,19 +60,24 @@ ASGI_APPLICATION = 'core.asgi.application'
 # ============================================================
 # CHANNEL LAYERS
 # ============================================================
-# En producción usa Redis (descomenta y configura REDIS_URL):
-# REDIS_URL = os.environ.get('REDIS_URL', 'redis://127.0.0.1:6379')
-# CHANNEL_LAYERS = {
-#     "default": {
-#         "BACKEND": "channels_redis.core.RedisChannelLayer",
-#         "CONFIG": {"hosts": [REDIS_URL]},
-#     },
-# }
-CHANNEL_LAYERS = {
-    "default": {
-        "BACKEND": "channels.layers.InMemoryChannelLayer"
+REDIS_URL = os.environ.get('REDIS_URL', 'redis://redis:6379')  # 'redis' = nombre del servicio en docker-compose
+
+if os.environ.get('USE_REDIS', 'True') == 'True':
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {
+                "hosts": [REDIS_URL],
+            },
+        },
     }
-}
+else:
+    # Solo para desarrollo local sin Docker
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels.layers.InMemoryChannelLayer"
+        }
+    }
 
 # ============================================================
 # MIDDLEWARE

@@ -5,116 +5,143 @@ from rest_framework.response import Response
 from rest_framework import viewsets
 from django.utils import timezone
 from django.db import models
-from django.contrib.auth import authenticate
 from django.db import transaction
 from decimal import Decimal
 from django.db.models import F
-from rest_framework.views import APIView
-from rest_framework_simplejwt.tokens import RefreshToken
+import logging
 from django.db.models import Sum
 from django.contrib.auth.hashers import check_password, make_password
-from rest_framework.permissions import AllowAny
-from rest_framework.decorators import action , permission_classes,api_view, throttle_classes
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.decorators import action, permission_classes, api_view, throttle_classes
 from rest_framework.throttling import ScopedRateThrottle
-from rest_framework.throttling import ScopedRateThrottle
-import time 
-from rest_framework.permissions import IsAuthenticated
 from .permissions import EsDuenioOsoloLectura
-from .models import (GrupoVariacion, InsumoBase, InsumoSede, Negocio, Sede, Mesa, Producto, Orden, DetalleOrden, Pago, ModificadorRapido,DetalleOrdenOpcion, 
-GrupoVariacion, OpcionVariacion,MovimientoCaja,RecetaDetalle, Rol, Empleado, SesionCaja, Categoria, RecetaOpcion,RegistroAuditoria)
+from .models import (
+    GrupoVariacion, InsumoBase, InsumoSede, Negocio, Sede, Mesa, Producto,
+    Orden, DetalleOrden, Pago, ModificadorRapido, DetalleOrdenOpcion,
+    OpcionVariacion, MovimientoCaja, RecetaDetalle, Rol, Empleado,
+    SesionCaja, Categoria, RecetaOpcion, RegistroAuditoria
+)
 from .serializers import (
-    InsumoBaseSerializer, InsumoSedeSerializer, NegocioSerializer, SedeSerializer, MesaSerializer,
-    ProductoSerializer, ModificadorRapidoSerializer, GrupoVariacionSerializer, OpcionVariacionSerializer,
-    OrdenSerializer, DetalleOrdenSerializer, PagoSerializer, RolSerializer, EmpleadoSerializer, SesionCajaSerializer, CategoriaSerializer, RecetaOpcionSerializer
+    InsumoBaseSerializer, InsumoSedeSerializer, NegocioSerializer, SedeSerializer,
+    MesaSerializer, ProductoSerializer, ModificadorRapidoSerializer,
+    GrupoVariacionSerializer, OpcionVariacionSerializer, OrdenSerializer,
+    DetalleOrdenSerializer, PagoSerializer, RolSerializer, EmpleadoSerializer,
+    SesionCajaSerializer, CategoriaSerializer, RecetaOpcionSerializer
 )
 
+logger = logging.getLogger(__name__)
+
+
+# ============================================================
+# HELPERS
+# ============================================================
+
+def es_valor_nulo(valor):
+    """Devuelve True si el valor es None, vacío, 'null' o 'undefined'."""
+    return not valor or str(valor).lower() in ['null', 'undefined', '']
+
+
+def get_empleado_desde_header(request):
+    """Retorna el Empleado desde el header X-Empleado-Id, o None si no existe."""
+    empleado_id = request.headers.get('X-Empleado-Id')
+    if empleado_id:
+        try:
+            return Empleado.objects.get(id=empleado_id)
+        except Empleado.DoesNotExist:
+            return None
+    return None
+
+
+# ============================================================
+# NEGOCIO
+# ============================================================
+
 class NegocioViewSet(viewsets.ModelViewSet):
-    queryset = Negocio.objects.all()
     serializer_class = NegocioSerializer
+
+    def get_queryset(self):
+        if self.request.user.is_superuser:
+            return Negocio.objects.all()
+        if hasattr(self.request.user, 'negocio'):
+            return Negocio.objects.filter(propietario=self.request.user)
+        return Negocio.objects.none()
+
+
+# ============================================================
+# SEDE
+# ============================================================
 
 class SedeViewSet(viewsets.ModelViewSet):
     serializer_class = SedeSerializer
 
     def get_queryset(self):
-        queryset = Sede.objects.all()
-        negocio_id = self.request.query_params.get('negocio_id')
-        if negocio_id:
-            queryset = queryset.filter(negocio_id=negocio_id)
-        return queryset
+        # ✅ FIX: Ya no devuelve todas las sedes — filtra por negocio del usuario
+        if self.request.user.is_superuser:
+            return Sede.objects.all()
+        if hasattr(self.request.user, 'negocio'):
+            return Sede.objects.filter(negocio=self.request.user.negocio)
+        return Sede.objects.none()
+
+
+# ============================================================
+# MESA
+# ============================================================
 
 class MesaViewSet(viewsets.ModelViewSet):
     serializer_class = MesaSerializer
 
     def get_queryset(self):
-        # ✨ AQUÍ ESTÁ EL CAMBIO: Le decimos que las ordene por el mapa
         queryset = Mesa.objects.filter(activo=True).order_by('posicion_x')
-        
-        empleado_id = self.request.headers.get('X-Empleado-Id')
-        
-        if empleado_id:
-            try:
-                empleado = Empleado.objects.get(id=empleado_id)
-                return queryset.filter(sede=empleado.sede)
-            except Empleado.DoesNotExist:
-                return queryset.none()
-        
-        else:
-            sede_id = self.request.query_params.get('sede_id')
-            
-            # ✨ AQUÍ ESTÁ LA MAGIA ANTI-NULL ✨
-            if sede_id and str(sede_id).lower() not in ['null', 'undefined', '']:
-                queryset = queryset.filter(sede_id=sede_id)
-                
-            return queryset
-        
+        empleado = get_empleado_desde_header(self.request)
+
+        if empleado:
+            return queryset.filter(sede=empleado.sede)
+
+        sede_id = self.request.query_params.get('sede_id')
+        if not es_valor_nulo(sede_id):
+            queryset = queryset.filter(sede_id=sede_id)
+        return queryset
+
+
+# ============================================================
+# PRODUCTO
+# ============================================================
 
 class ProductoViewSet(viewsets.ModelViewSet):
     serializer_class = ProductoSerializer
-    
-    # 🛡️ ¡LA MAGIA OCURRE AQUÍ! Le ponemos el escudo al ViewSet entero
     permission_classes = [EsDuenioOsoloLectura]
 
     def get_queryset(self):
-        queryset = Producto.objects.filter(activo=True) 
-        
+        queryset = Producto.objects.filter(activo=True)
         negocio_id = self.request.query_params.get('negocio_id')
-        
-        # 💉 Vacuna anti-null aplicada para el ERP del Dueño
-        if negocio_id and str(negocio_id).lower() not in ['null', 'undefined', '']:
+        if not es_valor_nulo(negocio_id):
             queryset = queryset.filter(negocio_id=negocio_id)
-            
         return queryset
+
     @action(detail=True, methods=['post'])
     def configurar_receta(self, request, pk=None):
-        producto = self.get_object() # 1. Atrapamos el plato (Ej: Lomo Saltado)
-        ingredientes_data = request.data.get('ingredientes', []) # 2. Recibimos la lista de ingredientes de React
-
+        producto = self.get_object()
+        ingredientes_data = request.data.get('ingredientes', [])
         try:
             with transaction.atomic():
-                # 3. Limpiamos la "olla" (borramos la receta vieja si existía para no duplicar)
                 RecetaDetalle.objects.filter(producto=producto).delete()
-
-                # 4. Metemos los ingredientes nuevos uno por uno
                 for ing in ingredientes_data:
                     insumo_id = ing.get('insumo_id')
                     cantidad = ing.get('cantidad_necesaria')
-                    
                     if insumo_id and float(cantidad) > 0:
                         RecetaDetalle.objects.create(
                             producto=producto,
                             insumo_id=insumo_id,
                             cantidad_necesaria=cantidad
                         )
-
             return Response({"mensaje": f"Receta de {producto.nombre} guardada con éxito."})
-
         except Exception as e:
-            return Response({"error": str(e)}, status=400)
-    
+            logger.error(f"Error crítico en configurar_receta: {str(e)}")
+            return Response({"error": "Ocurrió un error interno en el servidor."}, status=500)
+
     @action(detail=True, methods=['get'])
     def obtener_receta(self, request, pk=None):
         producto = self.get_object()
-        # Buscamos los ingredientes y los empaquetamos igual a como los lee React
         ingredientes = RecetaDetalle.objects.filter(producto=producto)
         data = [{
             "insumo_id": ing.insumo.id,
@@ -122,35 +149,31 @@ class ProductoViewSet(viewsets.ModelViewSet):
             "unidad": ing.insumo.unidad_medida,
             "cantidad_necesaria": float(ing.cantidad_necesaria)
         } for ing in ingredientes]
-        
         return Response(data)
+
+
+# ============================================================
+# ORDEN
+# ============================================================
 
 class OrdenViewSet(viewsets.ModelViewSet):
     serializer_class = OrdenSerializer
 
     def get_queryset(self):
-        # Precargamos las relaciones para que sea rapidísimo
-        queryset = Orden.objects.prefetch_related('detalles__producto', 'detalles__opciones_seleccionadas').all()
-        
-        # 🛡️ EL DETECTOR DE MORTALES
-        empleado_id = self.request.headers.get('X-Empleado-Id')
+        queryset = Orden.objects.prefetch_related(
+            'detalles__producto', 'detalles__opciones_seleccionadas'
+        ).all()
+
+        empleado = get_empleado_desde_header(self.request)
         sede_id_filtrar = None
 
-        if empleado_id:
-            # 🛑 ES UN EMPLEADO: Le imponemos SU sede, sin importar qué pida React
-            try:
-                empleado = Empleado.objects.get(id=empleado_id)
-                sede_id_filtrar = empleado.sede_id
-            except Empleado.DoesNotExist:
-                return queryset.none() # Hacker bloqueado
+        if empleado:
+            sede_id_filtrar = empleado.sede_id
         else:
-            # 👑 ES EL DUEÑO: Confiamos en el menú desplegable del ERP
-            sede_id_filtrar = self.request.query_params.get('sede_id')
+            sede_id_raw = self.request.query_params.get('sede_id')
+            if not es_valor_nulo(sede_id_raw):
+                sede_id_filtrar = sede_id_raw
 
-            if not sede_id_filtrar or str(sede_id_filtrar).lower() in ['null', 'undefined', '']:
-                sede_id_filtrar = None
-
-        # Aplicamos los filtros de fecha y estado SOLO a la sede permitida
         if sede_id_filtrar:
             hoy = timezone.now().date()
             queryset = queryset.filter(
@@ -160,21 +183,14 @@ class OrdenViewSet(viewsets.ModelViewSet):
             ).filter(
                 models.Q(estado_pago='pendiente') | models.Q(creado_en__date=hoy)
             ).order_by('-creado_en')
-            
+
         return queryset
+
     def perform_create(self, serializer):
-        empleado_id = self.request.headers.get('X-Empleado-Id')
-        empleado_instancia = None
-        
-        if empleado_id:
-            try:
-                empleado_instancia = Empleado.objects.get(id=empleado_id)
-            except Empleado.DoesNotExist:
-                pass
+        empleado = get_empleado_desde_header(self.request)
+
         with transaction.atomic():
-            orden = serializer.save(mesero=empleado_instancia)
-            orden = serializer.save()
-            
+            orden = serializer.save(mesero=empleado)
             detalles_data = self.request.data.get('detalles', [])
             nuevo_total = Decimal('0.00')
 
@@ -187,9 +203,7 @@ class OrdenViewSet(viewsets.ModelViewSet):
                     notas_y_modificadores=d.get('notas_y_modificadores', {}),
                     notas_cocina=d.get('notas_cocina', '')
                 )
-
-                opciones_ids = d.get('opciones', [])
-                for opc_id in opciones_ids:
+                for opc_id in d.get('opciones', []):
                     try:
                         opcion = OpcionVariacion.objects.get(id=opc_id)
                         DetalleOrdenOpcion.objects.create(
@@ -198,126 +212,58 @@ class OrdenViewSet(viewsets.ModelViewSet):
                             precio_adicional_aplicado=opcion.precio_adicional
                         )
                     except OpcionVariacion.DoesNotExist:
-                        pass 
-
+                        pass
                 nuevo_total += Decimal(str(d['precio_unitario'])) * int(d['cantidad'])
 
             orden.total = nuevo_total
             orden.save()
 
-        # El envío por WS se hace FUERA del atomic block, cuando los datos ya son reales en la BD
-        orden_data = self.get_serializer(orden).data 
+        orden_data = self.get_serializer(orden).data
         channel_layer = get_channel_layer()
+
         async_to_sync(channel_layer.group_send)(
-            f"cocina_sede_{orden.sede_id}", 
-            {
-                "type": "orden_nueva", 
-                "orden": orden_data
-            }
+            f"cocina_sede_{orden.sede_id}",
+            {"type": "orden_nueva", "orden": orden_data}
         )
         if orden.mesa_id:
             async_to_sync(channel_layer.group_send)(
                 f"salon_sede_{orden.sede_id}",
-                {
-                    "type": "mesa_actualizada",
-                    "mesa_id": orden.mesa_id,
-                    "estado": "ocupada",
-                    "total": float(orden.total),
-                }
+                {"type": "mesa_actualizada", "mesa_id": orden.mesa_id, "estado": "ocupada", "total": float(orden.total)}
             )
         if orden.tipo == 'llevar':
             async_to_sync(channel_layer.group_send)(
                 f"salon_sede_{orden.sede_id}",
-                {
-                    "type": "orden_llevar_actualizada",
-                    "accion": "nueva",
-                    "orden": orden_data,
-                }
+                {"type": "orden_llevar_actualizada", "accion": "nueva", "orden": orden_data}
             )
-        # Notificamos a todos los meseros del salón que esta mesa cambió de estado
-        if orden.mesa_id:
-            async_to_sync(channel_layer.group_send)(
-                f"salon_sede_{orden.sede_id}",
-                {
-                    "type": "mesa_actualizada",
-                    "mesa_id": orden.mesa_id,
-                    "estado": "ocupada",
-                    "total": float(orden.total),
-                }
-            )
-        # Si es para llevar, notificamos la lista de delivery
-        if orden.tipo == 'llevar':
-            orden_data = self.get_serializer(orden).data
-            async_to_sync(channel_layer.group_send)(
-                f"salon_sede_{orden.sede_id}",
-                {
-                    "type": "orden_llevar_actualizada",
-                    "accion": "nueva",
-                    "orden": orden_data,
-                }
-            )
-    def perform_update(self, serializer):
-        instance = serializer.save()
-        channel_layer = get_channel_layer()
-        estados_libres = {'completado', 'cancelado'}
-        # Si la orden se completa, cancela o se paga → la mesa vuelve a libre
-        if instance.estado in estados_libres or instance.estado_pago == 'pagado':
-            if instance.mesa_id:
-                async_to_sync(channel_layer.group_send)(
-                    f"salon_sede_{instance.sede_id}",
-                    {
-                        "type": "mesa_actualizada",
-                        "mesa_id": instance.mesa_id,
-                        "estado": "libre",
-                        "total": 0,
-                    }
-                )
-            # Si es para llevar, notificamos que se completó/canceló
-            if instance.tipo == 'llevar':
-                orden_data = self.get_serializer(instance).data
-                accion = 'completada' if instance.estado in estados_libres or instance.estado_pago == 'pagado' else 'actualizada'
-                async_to_sync(channel_layer.group_send)(
-                    f"salon_sede_{instance.sede_id}",
-                    {
-                        "type": "orden_llevar_actualizada",
-                        "accion": accion,
-                        "orden": orden_data,
-                    }
-                )
 
     def perform_update(self, serializer):
         instance = serializer.save()
         channel_layer = get_channel_layer()
         estados_libres = {'completado', 'cancelado'}
+
         if instance.estado in estados_libres or instance.estado_pago == 'pagado':
             if instance.mesa_id:
                 async_to_sync(channel_layer.group_send)(
                     f"salon_sede_{instance.sede_id}",
-                    {
-                        "type": "mesa_actualizada",
-                        "mesa_id": instance.mesa_id,
-                        "estado": "libre",
-                        "total": 0,
-                    }
+                    {"type": "mesa_actualizada", "mesa_id": instance.mesa_id, "estado": "libre", "total": 0}
                 )
             if instance.tipo == 'llevar':
                 orden_data = self.get_serializer(instance).data
                 accion = 'completada' if instance.estado in estados_libres or instance.estado_pago == 'pagado' else 'actualizada'
                 async_to_sync(channel_layer.group_send)(
                     f"salon_sede_{instance.sede_id}",
-                    {
-                        "type": "orden_llevar_actualizada",
-                        "accion": accion,
-                        "orden": orden_data,
-                    }
+                    {"type": "orden_llevar_actualizada", "accion": accion, "orden": orden_data}
                 )
 
     @action(detail=True, methods=['post'])
     def agregar_productos(self, request, pk=None):
         orden = self.get_object()
-        
+
         if orden.estado == 'cancelado' or orden.estado_pago == 'pagado':
-            return Response({'error': 'No se pueden agregar productos a una orden cerrada o pagada.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {'error': 'No se pueden agregar productos a una orden cerrada o pagada.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         detalles_data = request.data.get('detalles', [])
         detalles_creados = []
@@ -325,7 +271,6 @@ class OrdenViewSet(viewsets.ModelViewSet):
         with transaction.atomic():
             for detalle_data in detalles_data:
                 opciones_data = detalle_data.pop('opciones_seleccionadas', [])
-                
                 nuevo_detalle = DetalleOrden.objects.create(
                     orden=orden,
                     producto_id=detalle_data['producto'],
@@ -335,7 +280,6 @@ class OrdenViewSet(viewsets.ModelViewSet):
                     notas_cocina=detalle_data.get('notas_cocina', '')
                 )
                 detalles_creados.append(nuevo_detalle)
-                
                 for opcion in opciones_data:
                     try:
                         opcion_obj = OpcionVariacion.objects.get(id=opcion)
@@ -345,73 +289,61 @@ class OrdenViewSet(viewsets.ModelViewSet):
                             precio_adicional_aplicado=opcion_obj.precio_adicional
                         )
                     except OpcionVariacion.DoesNotExist:
-                        pass 
+                        pass
 
-            # ✨ 3. MAGIA 1: Sumamos directamente desde la base de datos (ignorando el caché)
             detalles_db = DetalleOrden.objects.filter(orden=orden)
             nuevo_total = sum(d.cantidad * d.precio_unitario for d in detalles_db)
-            
             for d in detalles_db:
                 variaciones = DetalleOrdenOpcion.objects.filter(detalle_orden=d)
                 nuevo_total += sum(v.precio_adicional_aplicado for v in variaciones) * d.cantidad
-
             orden.total = nuevo_total
             orden.save()
 
-        # ✨ AVISO A LA COCINA (WebSockets)
         nuevos_detalles_json = DetalleOrdenSerializer(detalles_creados, many=True).data
         channel_layer = get_channel_layer()
         async_to_sync(channel_layer.group_send)(
-            f"cocina_sede_{orden.sede_id}", 
+            f"cocina_sede_{orden.sede_id}",
             {
-                "type": "orden_nueva", 
+                "type": "orden_nueva",
                 "orden": {
-                    "id": orden.id, 
-                    "es_actualizacion": True, 
+                    "id": orden.id,
+                    "es_actualizacion": True,
                     "mesa": f"{orden.mesa.numero_o_nombre} (AGREGADO)" if orden.mesa else "LLEVAR (AGREGADO)",
                     "detalles": nuevos_detalles_json
                 }
             }
         )
-        
-        # ✨ 4. MAGIA 2: Volvemos a pedirle la orden a la BD para borrar la memoria vieja
-        # Así aseguramos que a React le llegue la lista completa y el precio final real
+
         orden_fresca = Orden.objects.prefetch_related(
-            'detalles__producto', 
-            'detalles__opciones_seleccionadas'
+            'detalles__producto', 'detalles__opciones_seleccionadas'
         ).get(id=orden.id)
 
-        # Notificamos al salón que el total de esta mesa se actualizó
         if orden.mesa_id:
             async_to_sync(channel_layer.group_send)(
                 f"salon_sede_{orden.sede_id}",
-                {
-                    "type": "mesa_actualizada",
-                    "mesa_id": orden.mesa_id,
-                    "estado": "ocupada",
-                    "total": float(orden_fresca.total),
-                }
+                {"type": "mesa_actualizada", "mesa_id": orden.mesa_id, "estado": "ocupada", "total": float(orden_fresca.total)}
             )
-        
-        serializer = self.get_serializer(orden_fresca)
+
         return Response({
             'status': 'Productos agregados correctamente',
-            'orden': serializer.data
+            'orden': self.get_serializer(orden_fresca).data
         }, status=status.HTTP_200_OK)
-    
+
     @action(detail=True, methods=['post'])
     def anular_item(self, request, pk=None):
         orden = self.get_object()
         detalle_id = request.data.get('detalle_id')
         motivo = request.data.get('motivo', 'No especificado')
-        empleado_nombre = request.data.get('empleado_nombre', 'Admin')
+
+        # ✅ FIX #6: empleado_nombre viene del header verificado, no del body del cliente
+        empleado = get_empleado_desde_header(request)
+        empleado_nombre = empleado.nombre if empleado else request.user.username or 'Admin'
 
         try:
             with transaction.atomic():
                 detalle = orden.detalles.get(id=detalle_id)
                 nombre_plato = detalle.producto.nombre
-                
-                # 1. Registrar en Auditoría (La prueba del delito)
+
                 RegistroAuditoria.objects.create(
                     sede=orden.sede,
                     empleado_nombre=empleado_nombre,
@@ -419,114 +351,170 @@ class OrdenViewSet(viewsets.ModelViewSet):
                     descripcion=f"Anuló {detalle.cantidad}x {nombre_plato} de Orden #{orden.id}. Motivo: {motivo}"
                 )
 
-                # 2. Borrar el plato y recalcular total
                 detalle.delete()
-                
-                # Recalculamos el total real desde la base de datos
+
                 detalles_vivos = orden.detalles.all()
                 nuevo_total = sum(d.cantidad * d.precio_unitario for d in detalles_vivos)
-                
-                # Sumar variaciones si existen
                 for d in detalles_vivos:
-                    nuevo_total += sum(v.precio_adicional_aplicado for v in d.opciones_seleccionadas.all()) * d.cantidad
-
+                    nuevo_total += sum(
+                        v.precio_adicional_aplicado for v in d.opciones_seleccionadas.all()
+                    ) * d.cantidad
                 orden.total = nuevo_total
                 orden.save()
 
-            # 3. Respuesta fresca para React
-            # IMPORTANTE: Re-fetch desde BD para limpiar el caché en memoria de Django
-            # sin esto, orden.detalles.all() puede devolver el detalle borrado
             orden_fresca = Orden.objects.prefetch_related(
-                'detalles__producto',
-                'detalles__opciones_seleccionadas'
+                'detalles__producto', 'detalles__opciones_seleccionadas'
             ).get(id=orden.id)
-            serializer = self.get_serializer(orden_fresca)
             return Response({
                 'status': 'Plato anulado y auditado',
-                'orden': serializer.data
+                'orden': self.get_serializer(orden_fresca).data
             }, status=status.HTTP_200_OK)
 
         except DetalleOrden.DoesNotExist:
             return Response({'error': 'El plato no existe'}, status=status.HTTP_400_BAD_REQUEST)
 
+
+# ============================================================
+# DETALLE ORDEN
+# ============================================================
+
 class DetalleOrdenViewSet(viewsets.ModelViewSet):
-    queryset = DetalleOrden.objects.all()
     serializer_class = DetalleOrdenSerializer
 
+    def get_queryset(self):
+        if self.request.user.is_superuser:
+            return DetalleOrden.objects.all()
+        if hasattr(self.request.user, 'negocio'):
+            return DetalleOrden.objects.filter(orden__sede__negocio=self.request.user.negocio)
+        return DetalleOrden.objects.none()
+
+
+# ============================================================
+# PAGO
+# ============================================================
+
 class PagoViewSet(viewsets.ModelViewSet):
-    queryset = Pago.objects.all()
     serializer_class = PagoSerializer
 
+    def get_queryset(self):
+        if self.request.user.is_superuser:
+            return Pago.objects.all()
+        if hasattr(self.request.user, 'negocio'):
+            return Pago.objects.filter(orden__sede__negocio=self.request.user.negocio)
+        return Pago.objects.none()
+
+
+# ============================================================
+# MODIFICADOR RAPIDO
+# ============================================================
+
 class ModificadorRapidoViewSet(viewsets.ModelViewSet):
-    queryset = ModificadorRapido.objects.all()
     serializer_class = ModificadorRapidoSerializer
 
+    def get_queryset(self):
+        if self.request.user.is_superuser:
+            return ModificadorRapido.objects.all()
+        if hasattr(self.request.user, 'negocio'):
+            return ModificadorRapido.objects.filter(negocio=self.request.user.negocio)
+        return ModificadorRapido.objects.none()
+
+
+# ============================================================
+# VARIACIONES
+# ============================================================
+
 class GrupoVariacionViewSet(viewsets.ModelViewSet):
-    queryset = GrupoVariacion.objects.all()
     serializer_class = GrupoVariacionSerializer
 
+    def get_queryset(self):
+        if self.request.user.is_superuser:
+            return GrupoVariacion.objects.all()
+        if hasattr(self.request.user, 'negocio'):
+            return GrupoVariacion.objects.filter(producto__negocio=self.request.user.negocio)
+        return GrupoVariacion.objects.none()
+
+
 class OpcionVariacionViewSet(viewsets.ModelViewSet):
-    queryset = OpcionVariacion.objects.all()
     serializer_class = OpcionVariacionSerializer
 
+    def get_queryset(self):
+        if self.request.user.is_superuser:
+            return OpcionVariacion.objects.all()
+        if hasattr(self.request.user, 'negocio'):
+            return OpcionVariacion.objects.filter(grupo__producto__negocio=self.request.user.negocio)
+        return OpcionVariacion.objects.none()
+
+
 class RecetaOpcionViewSet(viewsets.ModelViewSet):
-    queryset = RecetaOpcion.objects.all()
     serializer_class = RecetaOpcionSerializer
 
+    def get_queryset(self):
+        if self.request.user.is_superuser:
+            return RecetaOpcion.objects.all()
+        if hasattr(self.request.user, 'negocio'):
+            return RecetaOpcion.objects.filter(opcion__grupo__producto__negocio=self.request.user.negocio)
+        return RecetaOpcion.objects.none()
+
+
+# ============================================================
+# ROL
+# ============================================================
+
 class RolViewSet(viewsets.ModelViewSet):
-    queryset = Rol.objects.all()
     serializer_class = RolSerializer
+
+    def get_queryset(self):
+        if self.request.user.is_superuser:
+            return Rol.objects.all()
+        if hasattr(self.request.user, 'negocio'):
+            return Rol.objects.filter(negocio=self.request.user.negocio)
+        return Rol.objects.none()
+
+
+# ============================================================
+# EMPLEADO
+# ============================================================
 
 class PinRateThrottle(ScopedRateThrottle):
     scope = 'intentos_pin'
+
 
 class EmpleadoViewSet(viewsets.ModelViewSet):
     serializer_class = EmpleadoSerializer
 
     def get_queryset(self):
         queryset = Empleado.objects.all()
-        
-        # 🛡️ EL DETECTOR DE MORTALES
         empleado_solicitante_id = self.request.headers.get('X-Empleado-Id')
         es_admin_o_dueno = False
 
         if empleado_solicitante_id:
             try:
                 empleado_actual = Empleado.objects.get(id=empleado_solicitante_id)
-                # ✨ LA SOLUCIÓN: Revisamos si es el dueño camuflado como empleado
                 nombre_rol = empleado_actual.rol.nombre if empleado_actual.rol else ''
-                
                 if 'Dueño' in nombre_rol or 'Admin' in nombre_rol:
                     es_admin_o_dueno = True
                 else:
-                    # 🛑 ES UN EMPLEADO NORMAL: Solo ve a sus compañeros de la misma sede
                     queryset = queryset.filter(sede=empleado_actual.sede)
             except Empleado.DoesNotExist:
                 return queryset.none()
         else:
-            # 👑 Si no hay PIN, asumimos que entró directo por la web como Dueño
             es_admin_o_dueno = True
-            
-        # 👑 SI ES DUEÑO/ADMIN, LE HACEMOS CASO A LOS FILTROS DE REACT
+
         if es_admin_o_dueno:
             sede_id = self.request.query_params.get('sede_id')
             negocio_id = self.request.query_params.get('negocio_id')
-            
-            # Si React manda una Sede, filtramos por esa sede
-            if sede_id and str(sede_id).lower() not in ['null', 'undefined', '']:
+            if not es_valor_nulo(sede_id):
                 queryset = queryset.filter(sede_id=sede_id)
-            # Si React dice "Todas" (no manda sede, pero manda negocio), mostramos todo el negocio
-            elif negocio_id and str(negocio_id).lower() not in ['null', 'undefined', '']:
+            elif not es_valor_nulo(negocio_id):
                 queryset = queryset.filter(negocio_id=negocio_id)
 
-        # Filtro opcional de activos
-        solo_activos = self.request.query_params.get('solo_activos')
-        if solo_activos == 'true':
+        if self.request.query_params.get('solo_activos') == 'true':
             queryset = queryset.filter(activo=True)
-            
+
         return queryset
 
     @action(detail=False, methods=['POST'], permission_classes=[AllowAny], url_path='validar_pin')
+    @throttle_classes([PinRateThrottle])
     def validar_pin(self, request):
         pin_ingresado = request.data.get('pin')
         sede_id = request.data.get('sede_id')
@@ -535,66 +523,22 @@ class EmpleadoViewSet(viewsets.ModelViewSet):
         if not pin_ingresado or not sede_id:
             return Response({'error': 'PIN y sede_id son obligatorios'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Buscamos en la sede específica
         empleados = Empleado.objects.filter(sede_id=sede_id, activo=True)
         empleado_valido = None
 
         for emp in empleados:
-            # 1. Comparamos si está en texto plano (Ej: si lo creaste desde el /admin como '1111')
             if emp.pin == pin_ingresado:
                 empleado_valido = emp
-                break
-            # 2. Comparamos por si acaso está encriptado (Hash)
-            elif check_password(pin_ingresado, emp.pin):
-                empleado_valido = emp
-                break
-
-        if not empleado_valido:
-            return Response({'error': 'PIN incorrecto o inactivo'}, status=status.HTTP_404_NOT_FOUND)
-            
-        if accion == 'asistencia':
-            empleado_valido.ultimo_ingreso = timezone.now()
-            empleado_valido.save()
-
-        return Response({
-            'id': empleado_valido.id,
-            'nombre': empleado_valido.nombre,
-            'rol_nombre': empleado_valido.rol.nombre if empleado_valido.rol else 'Sin Rol', # 👈 CAMBIADO A 'rol_nombre'
-        }, status=status.HTTP_200_OK)
-    
-    @action(detail=False, methods=['POST'], permission_classes=[AllowAny], url_path='validar_pin')
-    @throttle_classes([PinRateThrottle]) # ✨ AQUÍ ACTIVAMOS EL ESCUDO
-    def validar_pin(self, request):
-        pin_ingresado = request.data.get('pin')
-        sede_id = request.data.get('sede_id')
-        accion = request.data.get('accion')
-
-        if not pin_ingresado or not sede_id:
-            return Response({'error': 'PIN y sede_id son obligatorios'}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Buscamos en la sede específica
-        empleados = Empleado.objects.filter(sede_id=sede_id, activo=True)
-        empleado_valido = None
-
-        for emp in empleados:
-            # 1. Comparamos si está en texto plano (Ej: si lo creaste desde el /admin como '1111')
-            if emp.pin == pin_ingresado:
-                empleado_valido = emp
-                
-                # 🥷 ACTUALIZACIÓN SILENCIOSA: Lo encriptamos para el futuro
                 emp.pin = make_password(pin_ingresado)
-                emp.save(update_fields=['pin']) 
+                emp.save(update_fields=['pin'])
                 break
-                
-            # 2. Comparamos por si acaso está encriptado (Hash Seguro)
             elif check_password(pin_ingresado, emp.pin):
                 empleado_valido = emp
                 break
 
         if not empleado_valido:
-            # Si llega aquí, el Throttle anota 1 "strike" a la IP de la tablet
             return Response({'error': 'PIN incorrecto o inactivo'}, status=status.HTTP_401_UNAUTHORIZED)
-            
+
         if accion == 'asistencia':
             empleado_valido.ultimo_ingreso = timezone.now()
             empleado_valido.save(update_fields=['ultimo_ingreso'])
@@ -606,59 +550,51 @@ class EmpleadoViewSet(viewsets.ModelViewSet):
         }, status=status.HTTP_200_OK)
 
 
+# ============================================================
+# SESION CAJA
+# ============================================================
+
 class SesionCajaViewSet(viewsets.ModelViewSet):
     queryset = SesionCaja.objects.none()
     serializer_class = SesionCajaSerializer
-    permission_classes = [IsAuthenticated] # 🔒 Adiós AllowAny
+    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         queryset = SesionCaja.objects.all().order_by('-fecha_apertura')
-        empleado_id = self.request.headers.get('X-Empleado-Id')
+        empleado = get_empleado_desde_header(self.request)
 
-        if empleado_id:
-            # 🛑 MODO MORTAL: Solo ve las cajas de su propia sede
-            try:
-                empleado = Empleado.objects.get(id=empleado_id)
-                return queryset.filter(sede=empleado.sede)
-            except Empleado.DoesNotExist:
-                return queryset.none()
-        else:
-            # 👑 MODO DUEÑO: Panel ERP
-            sede_id_raw = self.request.query_params.get('sede_id')
-            if sede_id_raw and str(sede_id_raw).lower() not in ['null', 'undefined', '']:
-                queryset = queryset.filter(sede_id=sede_id_raw)
-            return queryset
+        if empleado:
+            return queryset.filter(sede=empleado.sede)
+
+        sede_id_raw = self.request.query_params.get('sede_id')
+        if not es_valor_nulo(sede_id_raw):
+            queryset = queryset.filter(sede_id=sede_id_raw)
+        return queryset
 
     @action(detail=False, methods=['get'])
     def estado_actual(self, request):
-        # 💉 Vacuna Anti-Null para la sede
-        sede_id_raw = request.query_params.get('sede_id')
-        
-        # Si es empleado, forzamos su sede real desde la cabecera
-        empleado_id = request.headers.get('X-Empleado-Id')
-        if empleado_id:
-            try:
-                sede_id = Empleado.objects.get(id=empleado_id).sede_id
-            except Empleado.DoesNotExist:
-                return Response({'error': 'Empleado inválido'}, status=403)
+        empleado = get_empleado_desde_header(request)
+
+        if empleado:
+            sede_id = empleado.sede_id
         else:
-            sede_id = sede_id_raw if str(sede_id_raw).lower() not in ['null', 'undefined', ''] else None
+            sede_id_raw = request.query_params.get('sede_id')
+            sede_id = None if es_valor_nulo(sede_id_raw) else sede_id_raw
 
         if not sede_id:
             return Response({'error': 'Se requiere sede_id válida'}, status=400)
-            
+
         sesion = SesionCaja.objects.filter(sede_id=sede_id, estado='abierta').first()
         if sesion:
             return Response({'estado': 'abierto', 'fondo': sesion.fondo_inicial, 'id': sesion.id})
         return Response({'estado': 'cerrado'})
 
-    # ✨ PERMISO AÑADIDO
-    @action(detail=False, methods=['post'], permission_classes=[AllowAny])
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
     def abrir_caja(self, request):
         empleado_id = request.data.get('empleado_id')
         sede_id = request.data.get('sede_id')
         fondo = request.data.get('fondo_inicial', 0)
-        
+
         if not sede_id:
             return Response({'error': 'Falta sede_id'}, status=400)
 
@@ -669,63 +605,59 @@ class SesionCajaViewSet(viewsets.ModelViewSet):
             estado='abierta'
         )
         return Response({'mensaje': 'Caja abierta con éxito', 'id': sesion.id})
-    
-    # ✨ CÁLCULO DE DIFERENCIAS DIGITALES
-    @action(detail=False, methods=['post'], permission_classes=[AllowAny])
+
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
     def cerrar_caja(self, request):
         sede_id = request.data.get('sede_id')
         empleado_id = request.data.get('empleado_id')
-        
-        if not sede_id:
-             return Response({'error': 'Se requiere sede_id'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # ✨ MAGIA NIVEL DIOS: Transacción + Bloqueo de fila. 
-        # Si dos cajeros le dan click a "Cerrar" a la vez, Django pone al segundo en fila de espera.
+        if not sede_id:
+            return Response({'error': 'Se requiere sede_id'}, status=status.HTTP_400_BAD_REQUEST)
+
         with transaction.atomic():
             sesion = SesionCaja.objects.select_for_update().filter(sede_id=sede_id, estado='abierta').first()
             if not sesion:
-                return Response({'error': 'No hay caja abierta en esta sede o ya fue cerrada.'}, status=status.HTTP_400_BAD_REQUEST)
+                return Response(
+                    {'error': 'No hay caja abierta en esta sede o ya fue cerrada.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
             pagos_turno = Pago.objects.filter(sesion_caja=sesion)
-            movimientos_turno = MovimientoCaja.objects.filter(sesion_caja=sesion) # ✨ Obtenemos la caja chica
-            # ✨ MATEMÁTICA PURA: Usamos Decimal estricto para evitar errores de redondeo de Python
+            movimientos_turno = MovimientoCaja.objects.filter(sesion_caja=sesion)
+
             total_efectivo = pagos_turno.filter(metodo='efectivo').aggregate(Sum('monto'))['monto__sum'] or Decimal('0.00')
-            total_yape = pagos_turno.filter(metodo='yape_plin').aggregate(Sum('monto'))['monto__sum'] or Decimal('0.00')
-            total_tarjeta = pagos_turno.filter(metodo='tarjeta').aggregate(Sum('monto'))['monto__sum'] or Decimal('0.00')
-            total_digital = total_yape + total_tarjeta
+            total_yape     = pagos_turno.filter(metodo='yape_plin').aggregate(Sum('monto'))['monto__sum'] or Decimal('0.00')
+            total_tarjeta  = pagos_turno.filter(metodo='tarjeta').aggregate(Sum('monto'))['monto__sum'] or Decimal('0.00')
+            total_digital  = total_yape + total_tarjeta
 
             ingresos_caja_chica = movimientos_turno.filter(tipo='ingreso').aggregate(Sum('monto'))['monto__sum'] or Decimal('0.00')
-            egresos_caja_chica = movimientos_turno.filter(tipo='egreso').aggregate(Sum('monto'))['monto__sum'] or Decimal('0.00')
-            # Convertimos lo que mandó React a Decimal seguro
-            conteo_efectivo = Decimal(str(request.data.get('conteo_efectivo', '0.00')))
-            conteo_yape = Decimal(str(request.data.get('conteo_yape', '0.00')))
-            conteo_tarjeta = Decimal(str(request.data.get('conteo_tarjeta', '0.00')))
-            
-            esperado_efectivo = Decimal(str(sesion.fondo_inicial)) + total_efectivo + ingresos_caja_chica - egresos_caja_chica
-            
-            diferencia_efectivo = conteo_efectivo - esperado_efectivo
-            diferencia_yape = conteo_yape - total_yape
-            diferencia_tarjeta = conteo_tarjeta - total_tarjeta
+            egresos_caja_chica  = movimientos_turno.filter(tipo='egreso').aggregate(Sum('monto'))['monto__sum'] or Decimal('0.00')
 
-            sesion.empleado_cierra_id = empleado_id
-            sesion.hora_cierre = timezone.now()
-            
-            sesion.ventas_efectivo = total_efectivo
-            sesion.ventas_digitales = total_digital
-            sesion.esperado_efectivo = esperado_efectivo
-            sesion.esperado_digital = total_digital
-            
-            sesion.declarado_efectivo = conteo_efectivo
-            sesion.declarado_yape = conteo_yape
-            sesion.declarado_tarjeta = conteo_tarjeta
-            
-            sesion.diferencia = diferencia_efectivo 
-            sesion.estado = 'cerrada'
+            conteo_efectivo = Decimal(str(request.data.get('conteo_efectivo', '0.00')))
+            conteo_yape     = Decimal(str(request.data.get('conteo_yape', '0.00')))
+            conteo_tarjeta  = Decimal(str(request.data.get('conteo_tarjeta', '0.00')))
+
+            esperado_efectivo   = Decimal(str(sesion.fondo_inicial)) + total_efectivo + ingresos_caja_chica - egresos_caja_chica
+            diferencia_efectivo = conteo_efectivo - esperado_efectivo
+            diferencia_yape     = conteo_yape - total_yape
+            diferencia_tarjeta  = conteo_tarjeta - total_tarjeta
+
+            sesion.empleado_cierra_id  = empleado_id
+            sesion.hora_cierre         = timezone.now()
+            sesion.ventas_efectivo     = total_efectivo
+            sesion.ventas_digitales    = total_digital
+            sesion.esperado_efectivo   = esperado_efectivo
+            sesion.esperado_digital    = total_digital
+            sesion.declarado_efectivo  = conteo_efectivo
+            sesion.declarado_yape      = conteo_yape
+            sesion.declarado_tarjeta   = conteo_tarjeta
+            sesion.diferencia          = diferencia_efectivo
+            sesion.estado              = 'cerrada'
             sesion.save()
 
         return Response({
-            'mensaje': 'Caja cerrada correctamente', 
-            'diferencia': float(diferencia_efectivo), # Lo mandamos como float solo para que React lo pinte fácil
+            'mensaje': 'Caja cerrada correctamente',
+            'diferencia': float(diferencia_efectivo),
             'diferencia_yape': float(diferencia_yape),
             'diferencia_tarjeta': float(diferencia_tarjeta),
             'resumen': {
@@ -734,232 +666,37 @@ class SesionCajaViewSet(viewsets.ModelViewSet):
             }
         })
 
+
+# ============================================================
+# CATEGORIA
+# ============================================================
+
 class CategoriaViewSet(viewsets.ModelViewSet):
-    # Traemos todas las categorías activas
-    queryset = Categoria.objects.filter(activo=True)
     serializer_class = CategoriaSerializer
-# ==========================================
-# VISTAS INDEPENDIENTES (ERP Y DASHBOARD)
-# ==========================================
 
-@api_view(['GET'])
-@permission_classes([IsAuthenticated]) # 🔒 1. LA BOVEDA CERRADA: Solo usuarios logueados
-def metricas_dashboard(request):
-    # 2. Atrapamos lo que manda React
-    sede_id_raw = request.query_params.get('sede_id')
-    sede_id = None
-    
-    # 💉 3. LA VACUNA: Solo asignamos la sede si NO es la palabra basura "null"
-    if sede_id_raw and str(sede_id_raw).lower() not in ['null', 'undefined', '']:
-        sede_id = sede_id_raw
-
-    hoy = timezone.now().date()
-    
-    # 4. Buscamos todas las ventas exitosas de hoy (Base)
-    ordenes_base = Orden.objects.filter(
-        creado_en__date=hoy, 
-        estado_pago='pagado'
-    ).exclude(estado='cancelado').order_by('-creado_en')
-    
-    # 5. EL ESCUDO DUEÑO/ADMINISTRADOR
-    if sede_id:
-        # Si eligió una sede (o es un Administrador de local), filtramos por esa
-        ordenes_hoy = ordenes_base.filter(sede_id=sede_id)
-    else:
-        # Si NO hay sede (El Dueño recién entra al ERP), sumamos TODO el negocio 💰
-        ordenes_hoy = ordenes_base
-    
-    total_ordenes = ordenes_hoy.count()
-    ventas_totales = float(ordenes_hoy.aggregate(Sum('total'))['total__sum'] or 0.00)
-    ticket_promedio = (ventas_totales / total_ordenes) if total_ordenes > 0 else 0.00
-    
-    ultimas_ordenes = ordenes_hoy[:5]
-    actividad_reciente = []
-    
-    for o in ultimas_ordenes:
-        origen = f"Mesa {o.mesa.numero_o_nombre}" if o.mesa else (o.cliente_nombre or "Para Llevar")
-        actividad_reciente.append({
-            'id': o.id,
-            'origen': origen,
-            'total': float(o.total),
-            'hora': o.creado_en.strftime("%H:%M") 
-        })
-    
-    return Response({
-        'ventas': ventas_totales,
-        'ordenes': total_ordenes,
-        'ticketPromedio': ticket_promedio,
-        'actividadReciente': actividad_reciente 
-    }) 
-
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def configuracion_negocio(request):
-    negocio_id = request.query_params.get('negocio_id')
-    
-    if not negocio_id:
-        return Response({'error': 'Debe enviar el parametro negocio_id'}, status=status.HTTP_400_BAD_REQUEST)
-
-    try:
-        negocio = Negocio.objects.get(id=negocio_id, activo=True)
-        # OJO: Cuando uses el modelo Suscripcion, aquí revisarías si su plan está activo
-        return Response({
-            'nombre': negocio.nombre,
-            'modulos': {
-                'cocina': negocio.mod_cocina_activo,
-                'inventario': negocio.mod_inventario_activo,
-                'delivery': negocio.mod_delivery_activo,
-            }
-        })
-    except Negocio.DoesNotExist:
-        return Response({'error': 'Negocio no encontrado o inactivo'}, status=status.HTTP_404_NOT_FOUND)
+    def get_queryset(self):
+        if self.request.user.is_superuser:
+            return Categoria.objects.filter(activo=True)
+        if hasattr(self.request.user, 'negocio'):
+            return Categoria.objects.filter(negocio=self.request.user.negocio, activo=True)
+        return Categoria.objects.none()
 
 
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated]) # 🔒 Seguridad activada
-def registrar_movimiento_caja(request):
-    try:
-        data = request.data
-        sesion_id = data.get('sesion_caja_id')
-        empleado_id_solicitante = request.headers.get('X-Empleado-Id')
-        
-        # 1. Obtenemos la sesión
-        sesion = SesionCaja.objects.get(id=sesion_id)
-        
-        # 🛡️ 2. EL ESCUDO MULTI-TENANT
-        if empleado_id_solicitante:
-            empleado = Empleado.objects.get(id=empleado_id_solicitante)
-            # Verificamos que la caja que quiere tocar sea de SU sede
-            if sesion.sede_id != empleado.sede_id:
-                return Response({'error': 'No tienes permiso para registrar movimientos en esta sede.'}, status=403)
-
-        # 3. Si pasó el escudo, creamos el movimiento
-        movimiento = MovimientoCaja.objects.create(
-            sede=sesion.sede,
-            sesion_caja=sesion,
-            empleado_id=data.get('empleado_id'), # El ID del que pone el PIN en el modal
-            tipo=data.get('tipo'),
-            monto=data.get('monto'),
-            concepto=data.get('concepto')
-        )
-        
-        return Response({'mensaje': 'Movimiento registrado con éxito', 'id': movimiento.id}, status=201)
-        
-    except SesionCaja.DoesNotExist:
-        return Response({'error': 'La sesión de caja no existe.'}, status=404)
-
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def menu_publico(request, sede_id):
-    # Endpoint publico para la carta QR, no requiere token
-    # Productos pertenecen al negocio, no a la sede directamente
-    # Buscamos el negocio a través de la sede
-    try:
-        sede = Sede.objects.get(id=sede_id)
-        productos = Producto.objects.filter(negocio=sede.negocio, activo=True, disponible=True)
-        categorias_ids = list(productos.values_list('categoria', flat=True).distinct())
-        from .models import Categoria
-        from .serializers import CategoriaSerializer
-        categorias = Categoria.objects.filter(id__in=categorias_ids)
-        return Response({
-            'negocio_nombre': sede.negocio.nombre,
-            'productos': ProductoSerializer(productos, many=True).data,
-            'categorias': CategoriaSerializer(categorias, many=True).data,
-        })
-    except Sede.DoesNotExist:
-        return Response({'error': 'Sede no encontrada'}, status=404)
-    except Exception as e:
-        return Response({'error': str(e)}, status=400)
-
-
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def orden_publica(request, sede_id, mesa_id):
-    # Endpoint publico para ver la cuenta desde la carta QR
-    try:
-        orden = Orden.objects.prefetch_related(
-            'detalles__producto', 'detalles__opciones_seleccionadas'
-        ).filter(
-            sede_id=sede_id,
-            mesa_id=mesa_id,
-            estado_pago='pendiente'
-        ).exclude(estado__in=['cancelado', 'completado']).first()
-        if not orden:
-            return Response({'orden': None})
-        return Response({'orden': OrdenSerializer(orden).data})
-    except Exception as e:
-        return Response({'error': str(e)}, status=400)
-
-
-class LoginAdministradorView(APIView):
-    permission_classes = [AllowAny]
-
-    def post(self, request):
-        # 1. Recibimos el usuario y contraseña desde React
-        username = request.data.get('username')
-        password = request.data.get('password')
-
-        # 2. Le preguntamos a Django si son correctos
-        user = authenticate(username=username, password=password)
-
-        if user is not None:
-            # 3. Buscamos si este usuario es dueño de algún negocio
-            negocio = Negocio.objects.filter(propietario=user).first()
-            
-            if not negocio:
-                return Response(
-                    {'error': 'Este usuario no tiene un negocio asociado.'}, 
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-            # 4. ¡Magia! Generamos el Token de SimpleJWT
-            refresh = RefreshToken.for_user(user)
-
-            # 5. Se lo enviamos a React
-            return Response({
-                'token': str(refresh.access_token),
-                'refresh': str(refresh),
-                'rol': 'Dueño',
-                'negocio_id': negocio.id,
-                'negocio_nombre': negocio.nombre
-            }, status=status.HTTP_200_OK)
-            
-        else:
-            # Si se equivoca de contraseña
-            return Response(
-                {'error': 'Credenciales incorrectas.'}, 
-                status=status.HTTP_401_UNAUTHORIZED
-            )
-        
+# ============================================================
+# INSUMOS
+# ============================================================
 
 class InsumoBaseViewSet(viewsets.ModelViewSet):
-    queryset = InsumoBase.objects.all()
     serializer_class = InsumoBaseSerializer
 
+    # ✅ FIX #3: Antes devolvía InsumoBase.objects.all() sin filtro de negocio
+    def get_queryset(self):
+        if self.request.user.is_superuser:
+            return InsumoBase.objects.all()
+        if hasattr(self.request.user, 'negocio'):
+            return InsumoBase.objects.filter(negocio=self.request.user.negocio)
+        return InsumoBase.objects.none()
 
-# negocios/views.py o un archivo de servicios
-
-def registrar_ingreso_maestro(insumo_base_id, reparticion):
-    """
-    'reparticion' es un objeto como: { 1: 50, 2: 50 } 
-    donde la clave es la sede_id y el valor es la cantidad.
-    """
-    insumo_base = InsumoBase.objects.get(id=insumo_base_id)
-    
-    for sede_id, cantidad in reparticion.items():
-        # ✨ get_or_create: Si no existe en la sede, lo crea. Si existe, lo trae.
-        obj, created = InsumoSede.objects.get_or_create(
-            insumo_base=insumo_base,
-            sede_id=sede_id,
-            defaults={'stock_actual': 0, 'stock_minimo': 5}
-        )
-        
-        # Actualizamos el stock (usando F para evitar errores de concurrencia)
-        from django.db.models import F
-        InsumoSede.objects.filter(id=obj.id).update(
-            stock_actual=F('stock_actual') + cantidad
-        )
 
 class InsumoSedeViewSet(viewsets.ModelViewSet):
     serializer_class = InsumoSedeSerializer
@@ -977,36 +714,29 @@ class InsumoSedeViewSet(viewsets.ModelViewSet):
             if not insumo_base_id:
                 return Response({"error": "Falta el ID del insumo."}, status=400)
 
-            # 1. Obtenemos el insumo
             insumo_base = InsumoBase.objects.get(id=insumo_base_id)
-            
-            # 2. Hacemos la matemática en Python (números reales, nada de fórmulas aún)
-            stock_actual_matriz = float(insumo_base.stock_general)
-            nuevo_ingreso = float(request.data.get('ingreso_global', 0) or 0)
-            
-            # Proyectamos cuánto habría en la Matriz antes de repartir
+
+            stock_actual_matriz   = float(insumo_base.stock_general)
+            nuevo_ingreso         = float(request.data.get('ingreso_global', 0) or 0)
             stock_proyectado_matriz = stock_actual_matriz + nuevo_ingreso
-            
-            # Calculamos cuánto queremos repartir a los locales
-            distribucion = request.data.get('distribucion', {})
-            total_a_repartir = sum(float(v) for v in distribucion.values() if v and float(v) > 0)
 
-            # 3. Seguro de Vida: ¿Nos alcanza? (Aquí comparamos Float vs Float, 100% seguro)
+            distribucion       = request.data.get('distribucion', {})
+            total_a_repartir   = sum(float(v) for v in distribucion.values() if v and float(v) > 0)
+
             if total_a_repartir > stock_proyectado_matriz:
-                raise ValueError(f"No hay suficiente stock. Quieres repartir {total_a_repartir}, pero solo tendrás {stock_proyectado_matriz} en Matriz.")
+                raise ValueError(
+                    f"No hay suficiente stock. Quieres repartir {total_a_repartir}, "
+                    f"pero solo tendrás {stock_proyectado_matriz} en Matriz."
+                )
 
-            # 4. Transacción atómica (Guardamos todo a la vez)
             with transaction.atomic():
-                
-                # Actualizamos la Matriz (Lo que había + lo nuevo - lo repartido)
                 insumo_base.stock_general = stock_proyectado_matriz - total_a_repartir
                 insumo_base.save()
 
-                # Repartimos a las sedes (Aquí sí usamos F() porque no necesitamos leer el valor inmediatamente)
                 for sede_id_str, cantidad in distribucion.items():
                     cant_float = float(cantidad) if cantidad else 0.0
                     if cant_float > 0:
-                        obj, created = InsumoSede.objects.get_or_create(
+                        obj, _ = InsumoSede.objects.get_or_create(
                             insumo_base=insumo_base,
                             sede_id=int(sede_id_str),
                             defaults={'stock_actual': 0, 'stock_minimo': 5, 'costo_unitario': 0}
@@ -1014,12 +744,181 @@ class InsumoSedeViewSet(viewsets.ModelViewSet):
                         InsumoSede.objects.filter(id=obj.id).update(
                             stock_actual=F('stock_actual') + cant_float
                         )
-            
+
             return Response({"mensaje": "Operación logística completada."})
-            
+
         except InsumoBase.DoesNotExist:
             return Response({"error": "El insumo maestro no existe."}, status=400)
         except ValueError as e:
             return Response({"error": str(e)}, status=400)
         except Exception as e:
-            return Response({"error": str(e)}, status=400)
+            logger.error(f"Error crítico en ingreso_masivo: {str(e)}")
+            return Response({"error": "Ocurrió un error interno en el servidor."}, status=500)
+
+
+# ============================================================
+# FUNCIÓN AUXILIAR DE INVENTARIO
+# ============================================================
+
+def registrar_ingreso_maestro(insumo_base_id, reparticion):
+    """
+    reparticion = { sede_id: cantidad, ... }
+    """
+    insumo_base = InsumoBase.objects.get(id=insumo_base_id)
+    for sede_id, cantidad in reparticion.items():
+        obj, _ = InsumoSede.objects.get_or_create(
+            insumo_base=insumo_base,
+            sede_id=sede_id,
+            defaults={'stock_actual': 0, 'stock_minimo': 5}
+        )
+        InsumoSede.objects.filter(id=obj.id).update(
+            stock_actual=F('stock_actual') + cantidad
+        )
+
+
+# ============================================================
+# VISTAS INDEPENDIENTES
+# ============================================================
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def metricas_dashboard(request):
+    sede_id_raw = request.query_params.get('sede_id')
+    sede_id = None if es_valor_nulo(sede_id_raw) else sede_id_raw
+
+    hoy = timezone.now().date()
+    ordenes_base = Orden.objects.filter(
+        creado_en__date=hoy,
+        estado_pago='pagado'
+    ).exclude(estado='cancelado').order_by('-creado_en')
+
+    ordenes_hoy = ordenes_base.filter(sede_id=sede_id) if sede_id else ordenes_base
+
+    total_ordenes  = ordenes_hoy.count()
+    ventas_totales = float(ordenes_hoy.aggregate(Sum('total'))['total__sum'] or 0.00)
+    ticket_promedio = (ventas_totales / total_ordenes) if total_ordenes > 0 else 0.00
+
+    actividad_reciente = [
+        {
+            'id': o.id,
+            'origen': f"Mesa {o.mesa.numero_o_nombre}" if o.mesa else (o.cliente_nombre or "Para Llevar"),
+            'total': float(o.total),
+            'hora': o.creado_en.strftime("%H:%M")
+        }
+        for o in ordenes_hoy[:5]
+    ]
+
+    return Response({
+        'ventas': ventas_totales,
+        'ordenes': total_ordenes,
+        'ticketPromedio': ticket_promedio,
+        'actividadReciente': actividad_reciente
+    })
+
+
+# ✅ FIX #2: configuracion_negocio ahora requiere autenticación
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def configuracion_negocio(request):
+    negocio_id = request.query_params.get('negocio_id')
+
+    if not negocio_id:
+        return Response({'error': 'Debe enviar el parámetro negocio_id'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        negocio = Negocio.objects.get(id=negocio_id, activo=True)
+        return Response({
+            'nombre': negocio.nombre,
+            'modulos': {
+                'cocina':      negocio.mod_cocina_activo,
+                'inventario':  negocio.mod_inventario_activo,
+                'delivery':    negocio.mod_delivery_activo,
+            }
+        })
+    except Negocio.DoesNotExist:
+        return Response({'error': 'Negocio no encontrado o inactivo'}, status=status.HTTP_404_NOT_FOUND)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def registrar_movimiento_caja(request):
+    try:
+        data = request.data
+        sesion_id = data.get('sesion_caja_id')
+        empleado_id_solicitante = request.headers.get('X-Empleado-Id')
+
+        sesion = SesionCaja.objects.get(id=sesion_id)
+
+        if empleado_id_solicitante:
+            empleado = Empleado.objects.get(id=empleado_id_solicitante)
+            if sesion.sede_id != empleado.sede_id:
+                return Response(
+                    {'error': 'No tienes permiso para registrar movimientos en esta sede.'},
+                    status=403
+                )
+
+        movimiento = MovimientoCaja.objects.create(
+            sede=sesion.sede,
+            sesion_caja=sesion,
+            empleado_id=data.get('empleado_id'),
+            tipo=data.get('tipo'),
+            monto=data.get('monto'),
+            concepto=data.get('concepto')
+        )
+
+        return Response({'mensaje': 'Movimiento registrado con éxito', 'id': movimiento.id}, status=201)
+
+    except SesionCaja.DoesNotExist:
+        return Response({'error': 'La sesión de caja no existe.'}, status=404)
+
+
+# ============================================================
+# ENDPOINTS PÚBLICOS (sin token — carta QR)
+# ============================================================
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def menu_publico(request, sede_id):
+    try:
+        sede = Sede.objects.get(id=sede_id)
+        productos = Producto.objects.filter(negocio=sede.negocio, activo=True, disponible=True)
+        categorias_ids = list(productos.values_list('categoria', flat=True).distinct())
+        categorias = Categoria.objects.filter(id__in=categorias_ids)
+        return Response({
+            'negocio_nombre': sede.negocio.nombre,
+            'productos': ProductoSerializer(productos, many=True).data,
+            'categorias': CategoriaSerializer(categorias, many=True).data,
+        })
+    except Sede.DoesNotExist:
+        return Response({'error': 'Sede no encontrada'}, status=404)
+    except Exception as e:
+        logger.error(f"Error crítico en menu_publico: {str(e)}")
+        return Response({"error": "Ocurrió un error interno en el servidor."}, status=500)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def orden_publica(request, sede_id, mesa_id):
+    try:
+        orden = Orden.objects.prefetch_related(
+            'detalles__producto', 'detalles__opciones_seleccionadas'
+        ).filter(
+            sede_id=sede_id,
+            mesa_id=mesa_id,
+            estado_pago='pendiente'
+        ).exclude(estado__in=['cancelado', 'completado']).first()
+
+        if not orden:
+            return Response({'orden': None})
+        return Response({'orden': OrdenSerializer(orden).data})
+    except Exception as e:
+        logger.error(f"Error crítico en orden_publica: {str(e)}")
+        return Response({"error": "Ocurrió un error interno en el servidor."}, status=500)
+
+
+# ============================================================
+# ✅ FIX #1: LoginAdministradorView eliminada.
+# El login ahora lo maneja CustomTokenObtainPairView en serializers_jwt.py
+# que está registrado en urls.py como:
+#   path('login-admin/', CustomTokenObtainPairView.as_view())
+# ============================================================
