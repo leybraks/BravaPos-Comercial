@@ -208,6 +208,7 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'anon': '60/hour',   # Ajusta según necesidad (✅ FIX #10 PIN sin rate limit)
         'user': '1000/hour',
+        'intentos_pin': '5/minute'
     },
 }
 
