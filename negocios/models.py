@@ -1,6 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import User
-from django.contrib.auth.hashers import make_password, is_password_usable
+from django.contrib.auth.hashers import make_password, identify_hasher
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 
@@ -151,17 +151,19 @@ class Empleado(models.Model):
         pass
     
     def save(self, *args, **kwargs):
-        # Si el PIN no empieza con la firma del hasher de Django, significa que es un PIN nuevo en texto plano. Lo encriptamos.
         if self.pin:
             self.pin = self.pin.strip()
-            
-        # 2. EL ESCUDO: Solo evaluamos si REALMENTE hay un texto.
-        # Si self.pin está vacío (""), esta condición se salta y no arruina la contraseña.
-        if self.pin and not is_password_usable(self.pin):
-            # Además, verificamos que sea cortito (un PIN real) para evitar doble encriptación
-            if len(self.pin) < 30:
+
+        # Hash the PIN if it is not already a recognized Django hash.
+        # identify_hasher() raises ValueError when the value is not a valid hash,
+        # which means it is a plain-text PIN and must be hashed before storage.
+        if self.pin:
+            try:
+                identify_hasher(self.pin)
+                # Already a valid hash — do not re-hash
+            except ValueError:
                 self.pin = make_password(self.pin)
-                
+
         super().save(*args, **kwargs)
 
     def __str__(self):

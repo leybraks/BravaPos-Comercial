@@ -159,12 +159,11 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # ✅ FIX #3: NUNCA usar CORS_ALLOW_ALL_ORIGINS = True en producción
 CORS_ALLOW_ALL_ORIGINS = False
 
-# Agrega orígenes extra desde .env:  CORS_EXTRA_ORIGINS=https://mi-app.com
 _extra_cors = os.environ.get('CORS_EXTRA_ORIGINS', '')
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-] + [o.strip() for o in _extra_cors.split(',') if o.strip()]
+# localhost solo está permitido en desarrollo (DEBUG=True).
+# En producción solo se aceptan los orígenes declarados en CORS_EXTRA_ORIGINS.
+_dev_cors = ["http://localhost:5173", "http://127.0.0.1:5173"] if DEBUG else []
+CORS_ALLOWED_ORIGINS = _dev_cors + [o.strip() for o in _extra_cors.split(',') if o.strip()]
 
 CORS_ALLOW_HEADERS = [
     'accept',
@@ -211,18 +210,22 @@ REST_FRAMEWORK = {
         'rest_framework.throttling.UserRateThrottle',
     ],
     'DEFAULT_THROTTLE_RATES': {
-        'anon': '60/hour',   # Ajusta según necesidad (✅ FIX #10 PIN sin rate limit)
+        'anon': '60/hour',
         'user': '1000/hour',
-        'intentos_pin': '5/minute'
+        'intentos_pin': '5/minute',
+        'login': '10/hour',        # Protege /api/token/ y /api/login-tablet/ contra fuerza bruta
     },
 }
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),    # La llave rápida (Segura)
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=365), # La llave maestra (Comodidad de 1 año)
+    # Tiempos de vida leídos de .env para facilitar ajuste sin redespliegue.
+    # ACCESS corto (15 min) limita la ventana de abuso si un token es robado.
+    # REFRESH de 7 días obliga a re-login semanal y reduce el riesgo de tokens eternos.
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=int(os.environ.get('JWT_ACCESS_MINUTES', '15'))),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=int(os.environ.get('JWT_REFRESH_DAYS', '7'))),
     'AUTH_HEADER_TYPES': ('Bearer',),
     'BLACKLIST_AFTER_ROTATION': True,
-    'ROTATE_REFRESH_TOKENS': True,                 # Rota la llave maestra por seguridad
+    'ROTATE_REFRESH_TOKENS': True,
     'UPDATE_LAST_LOGIN': True,
     'TOKEN_OBTAIN_SERIALIZER': 'negocios.serializers.CustomTokenObtainPairSerializer',
 }

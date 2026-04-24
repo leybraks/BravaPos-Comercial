@@ -10,7 +10,7 @@ from decimal import Decimal
 from django.db.models import F
 import logging
 from django.db.models import Sum
-from django.contrib.auth.hashers import check_password, make_password
+from django.contrib.auth.hashers import check_password, make_password, identify_hasher
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.decorators import action, permission_classes, api_view, throttle_classes
 from rest_framework.throttling import ScopedRateThrottle
@@ -135,8 +135,8 @@ class ProductoViewSet(viewsets.ModelViewSet):
                             cantidad_necesaria=cantidad
                         )
             return Response({"mensaje": f"Receta de {producto.nombre} guardada con éxito."})
-        except Exception as e:
-            logger.error(f"Error crítico en configurar_receta: {str(e)}")
+        except Exception:
+            logger.exception("Error en configurar_receta")
             return Response({"error": "Ocurrió un error interno en el servidor."}, status=500)
 
     @action(detail=True, methods=['get'])
@@ -162,7 +162,15 @@ class OrdenViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = Orden.objects.prefetch_related(
             'detalles__producto', 'detalles__opciones_seleccionadas'
-        ).all()
+        )
+
+        # Restringir al negocio del usuario autenticado (a menos que sea superuser)
+        if not self.request.user.is_superuser:
+            if hasattr(self.request.user, 'negocio'):
+                queryset = queryset.filter(sede__negocio=self.request.user.negocio)
+            else:
+                # Usuario sin negocio y sin ser superuser: sin acceso
+                return queryset.none()
 
         empleado = get_empleado_desde_header(self.request)
         sede_id_filtrar = None
@@ -195,14 +203,22 @@ class OrdenViewSet(viewsets.ModelViewSet):
             nuevo_total = Decimal('0.00')
 
             for d in detalles_data:
+                # Precio tomado de la BD — nunca del cliente (evita price injection)
+                try:
+                    producto = Producto.objects.get(id=d['producto'])
+                except Producto.DoesNotExist:
+                    raise ValueError(f"Producto {d['producto']} no existe.")
+                precio_real = producto.precio_base
+
                 detalle = DetalleOrden.objects.create(
                     orden=orden,
                     producto_id=d['producto'],
                     cantidad=d['cantidad'],
-                    precio_unitario=d['precio_unitario'],
+                    precio_unitario=precio_real,
                     notas_y_modificadores=d.get('notas_y_modificadores', {}),
                     notas_cocina=d.get('notas_cocina', '')
                 )
+                subtotal_opciones = Decimal('0.00')
                 for opc_id in d.get('opciones', []):
                     try:
                         opcion = OpcionVariacion.objects.get(id=opc_id)
@@ -211,9 +227,10 @@ class OrdenViewSet(viewsets.ModelViewSet):
                             opcion_variacion=opcion,
                             precio_adicional_aplicado=opcion.precio_adicional
                         )
+                        subtotal_opciones += opcion.precio_adicional
                     except OpcionVariacion.DoesNotExist:
                         pass
-                nuevo_total += Decimal(str(d['precio_unitario'])) * int(d['cantidad'])
+                nuevo_total += (precio_real + subtotal_opciones) * int(d['cantidad'])
 
             orden.total = nuevo_total
             orden.save()
@@ -271,11 +288,21 @@ class OrdenViewSet(viewsets.ModelViewSet):
         with transaction.atomic():
             for detalle_data in detalles_data:
                 opciones_data = detalle_data.pop('opciones_seleccionadas', [])
+                # Precio tomado de la BD — nunca del cliente (evita price injection)
+                try:
+                    producto = Producto.objects.get(id=detalle_data['producto'])
+                except Producto.DoesNotExist:
+                    return Response(
+                        {'error': f"Producto {detalle_data['producto']} no encontrado."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                precio_real = producto.precio_base
+
                 nuevo_detalle = DetalleOrden.objects.create(
                     orden=orden,
                     producto_id=detalle_data['producto'],
                     cantidad=detalle_data['cantidad'],
-                    precio_unitario=detalle_data['precio_unitario'],
+                    precio_unitario=precio_real,
                     notas_y_modificadores=detalle_data.get('notas_y_modificadores', ''),
                     notas_cocina=detalle_data.get('notas_cocina', '')
                 )
@@ -527,14 +554,26 @@ class EmpleadoViewSet(viewsets.ModelViewSet):
         empleado_valido = None
 
         for emp in empleados:
-            if emp.pin == pin_ingresado:
-                empleado_valido = emp
-                emp.pin = make_password(pin_ingresado)
-                emp.save(update_fields=['pin'])
-                break
-            elif check_password(pin_ingresado, emp.pin):
-                empleado_valido = emp
-                break
+            # check_password usa comparación en tiempo constante (seguro contra timing attacks).
+            # Si algún PIN quedó en texto plano (previo al fix en Empleado.save), lo
+            # detectamos con identify_hasher y lo migramos al vuelo.
+            try:
+                identify_hasher(emp.pin)
+                es_hash = True
+            except ValueError:
+                es_hash = False
+
+            if es_hash:
+                if check_password(pin_ingresado, emp.pin):
+                    empleado_valido = emp
+                    break
+            else:
+                # PIN legado en texto plano: migrar al hasheado en esta validación
+                if emp.pin == pin_ingresado:
+                    emp.pin = make_password(pin_ingresado)
+                    emp.save(update_fields=['pin'])
+                    empleado_valido = emp
+                    break
 
         if not empleado_valido:
             return Response({'error': 'PIN incorrecto o inactivo'}, status=status.HTTP_401_UNAUTHORIZED)
@@ -750,9 +789,10 @@ class InsumoSedeViewSet(viewsets.ModelViewSet):
         except InsumoBase.DoesNotExist:
             return Response({"error": "El insumo maestro no existe."}, status=400)
         except ValueError as e:
+            # ValueError viene de validaciones propias (mensajes seguros, sin datos internos)
             return Response({"error": str(e)}, status=400)
-        except Exception as e:
-            logger.error(f"Error crítico en ingreso_masivo: {str(e)}")
+        except Exception:
+            logger.exception("Error en ingreso_masivo")
             return Response({"error": "Ocurrió un error interno en el servidor."}, status=500)
 
 
@@ -847,15 +887,27 @@ def registrar_movimiento_caja(request):
         sesion_id = data.get('sesion_caja_id')
         empleado_id_solicitante = request.headers.get('X-Empleado-Id')
 
-        sesion = SesionCaja.objects.get(id=sesion_id)
+        sesion = SesionCaja.objects.select_related('sede__negocio').get(id=sesion_id)
 
         if empleado_id_solicitante:
-            empleado = Empleado.objects.get(id=empleado_id_solicitante)
+            try:
+                empleado = Empleado.objects.get(id=empleado_id_solicitante)
+            except Empleado.DoesNotExist:
+                return Response({'error': 'Empleado no encontrado.'}, status=403)
             if sesion.sede_id != empleado.sede_id:
                 return Response(
                     {'error': 'No tienes permiso para registrar movimientos en esta sede.'},
                     status=403
                 )
+        else:
+            # Sin header de empleado: el solicitante debe ser el dueño del negocio
+            if not request.user.is_superuser:
+                if not hasattr(request.user, 'negocio') or \
+                        sesion.sede.negocio.propietario_id != request.user.id:
+                    return Response(
+                        {'error': 'No tienes permiso para registrar movimientos en esta sede.'},
+                        status=403
+                    )
 
         movimiento = MovimientoCaja.objects.create(
             sede=sesion.sede,
@@ -891,8 +943,8 @@ def menu_publico(request, sede_id):
         })
     except Sede.DoesNotExist:
         return Response({'error': 'Sede no encontrada'}, status=404)
-    except Exception as e:
-        logger.error(f"Error crítico en menu_publico: {str(e)}")
+    except Exception:
+        logger.exception("Error en menu_publico")
         return Response({"error": "Ocurrió un error interno en el servidor."}, status=500)
 
 
@@ -911,8 +963,8 @@ def orden_publica(request, sede_id, mesa_id):
         if not orden:
             return Response({'orden': None})
         return Response({'orden': OrdenSerializer(orden).data})
-    except Exception as e:
-        logger.error(f"Error crítico en orden_publica: {str(e)}")
+    except Exception:
+        logger.exception("Error en orden_publica")
         return Response({"error": "Ocurrió un error interno en el servidor."}, status=500)
 
 
