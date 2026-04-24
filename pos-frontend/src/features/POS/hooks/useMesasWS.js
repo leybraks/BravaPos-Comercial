@@ -13,23 +13,13 @@ export const useMesasWS = (sedeActualId, setMesas, setOrdenesLlevar) => {
     const conectar = () => {
       if (unmounted) return;
 
-      // 1. Buscamos el token
-      const token = localStorage.getItem('tablet_token') || localStorage.getItem('access_token');
-      
-      // Si por alguna razón React es más rápido que el login y aún no hay token, esperamos 3 segundos.
-      if (!token) {
-        console.warn("⏳ Esperando token para conectar WS...");
-        reconnectTimeout = setTimeout(conectar, 3000);
-        return;
-      }
 
       // 2. Construimos la URL inteligentemente (Soporta HTTP y HTTPS en la nube)
       const apiUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
       const baseUrl = import.meta.env.VITE_WS_URL || apiUrl.replace('https://', 'wss://').replace('http://', 'ws://');
       
-      const wsUrl = `${baseUrl}/ws/salon/${sedeActualId}/?token=${token}`;
+      const wsUrl = `${baseUrl}/ws/salon/${sedeActualId}/`;
       
-      console.log("🚀 Conectando WebSocket a:", wsUrl);
       ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 

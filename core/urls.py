@@ -7,9 +7,5 @@ from rest_framework_simplejwt.views import (
 from rest_framework.authtoken import views
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
-    
-    path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
-    path('api/login-tablet/', views.obtain_auth_token, name='login_tablet'),
-    path('api/', include('negocios.urls')), # Conectamos nuestra API aquí
+    path('api/', include('negocios.urls')),
 ]

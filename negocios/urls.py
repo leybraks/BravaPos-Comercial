@@ -1,13 +1,13 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from rest_framework_simplejwt.views import TokenRefreshView
-from .serializers_jwt import CustomTokenObtainPairView
+
+# 🛡️ IMPORTAMOS TUS VISTAS SEGURAS DE COOKIES
+from .serializers_jwt import CustomTokenObtainPairView, CustomTokenRefreshView, LogoutView
 from . import views
 
 # El Router crea las URLs mágicamente
 router = DefaultRouter()
 
-# Rutas protegidas y dinámicas (Todas con 'basename' para evitar AssertionError)
 router.register(r'negocios', views.NegocioViewSet, basename='negocio')
 router.register(r'sedes', views.SedeViewSet, basename='sede')
 router.register(r'detalles', views.DetalleOrdenViewSet, basename='detalleorden')
@@ -29,19 +29,30 @@ router.register(r'recetas-opcion', views.RecetaOpcionViewSet, basename='recetaop
 urlpatterns = [
     path('', include(router.urls)),
 
-    # ✅ Login del dueño — ahora usa el serializer JWT personalizado
-    # Devuelve: access, refresh, negocio_id, negocio_nombre, rol
+    # ==========================================
+    # 🛡️ ENDPOINTS DE AUTENTICACIÓN (COOKIES)
+    # ==========================================
+    # Login: Te da las cookies HttpOnly y la info del usuario
     path('login-admin/', CustomTokenObtainPairView.as_view(), name='login-admin'),
 
-    # ✅ Refresh token — renueva el access token automáticamente desde React
-    path('token/refresh/', TokenRefreshView.as_view(), name='token-refresh'),
+    # Refresh: Renueva el Access Token leyendo la cookie de Refresh automáticamente
+    path('token/refresh/', CustomTokenRefreshView.as_view(), name='token-refresh'),
 
-    # Otras rutas
+    # Logout: Destruye las cookies en el navegador del usuario
+    path('token/logout/', LogoutView.as_view(), name='token-logout'),
+
+
+    # ==========================================
+    # RUTAS INDEPENDIENTES
+    # ==========================================
     path('negocio/configuracion/', views.configuracion_negocio, name='configuracion_negocio'),
     path('dashboard/metricas/', views.metricas_dashboard, name='metricas_dashboard'),
     path('movimientos-caja/', views.registrar_movimiento_caja, name='registrar_movimiento_caja'),
 
-    # Rutas públicas (sin token — carta QR)
+
+    # ==========================================
+    # RUTAS PÚBLICAS (Sin Token - Carta QR)
+    # ==========================================
     path('menu-publico/<int:sede_id>/', views.menu_publico, name='menu_publico'),
     path('orden-publica/<int:sede_id>/<int:mesa_id>/', views.orden_publica, name='orden_publica'),
 ]

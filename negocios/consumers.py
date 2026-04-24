@@ -101,10 +101,12 @@ class SalonConsumer(AsyncWebsocketConsumer):
     async def receive(self, text_data):
         try:
             data = json.loads(text_data)
+
             if data.get('type') == 'mesa_estado':
                 mesa_id = data.get('mesa_id')
                 estado  = data.get('estado')
 
+                # Validar estado permitido
                 if estado not in ESTADOS_MESA_VALIDOS:
                     await self.send(text_data=json.dumps({
                         'type': 'error',
@@ -112,8 +114,11 @@ class SalonConsumer(AsyncWebsocketConsumer):
                     }))
                     return
 
-                mesa_valida = await self._validar_y_actualizar_mesa(mesa_id, estado)
+                # ✨ NUEVO: Solo validamos que la mesa es tuya, sin intentar guardar en la BD
+                mesa_valida = await self._validar_mesa(mesa_id)
+
                 if mesa_valida:
+                    # Retransmitimos el estado al resto de tablets del salón
                     await self.channel_layer.group_send(
                         self.room_group_name,
                         {
@@ -128,6 +133,7 @@ class SalonConsumer(AsyncWebsocketConsumer):
                         'type': 'error',
                         'mensaje': 'Mesa no encontrada o no pertenece a esta sede.'
                     }))
+
         except json.JSONDecodeError:
             pass
 
@@ -154,13 +160,12 @@ class SalonConsumer(AsyncWebsocketConsumer):
         }))
 
     @database_sync_to_async
-    def _validar_y_actualizar_mesa(self, mesa_id, estado):
-        from negocios.models import Mesa
-        try:
-            mesa = Mesa.objects.get(id=mesa_id, sede_id=self.sede_id)
-            if mesa.estado != estado:
-                mesa.estado = estado
-                mesa.save(update_fields=['estado'])
-            return True
-        except Mesa.DoesNotExist:
-            return False
+    def _validar_mesa(self, mesa_id):
+        """
+        Solo verifica que la mesa exista en esta sede.
+        No guardamos el estado en la BD porque es un estado visual temporal de las tablets.
+        """
+        # ✨ IMPORTAMOS EL MODELO AQUÍ ADENTRO
+        from .models import Mesa
+        
+        return Mesa.objects.filter(id=mesa_id, sede_id=self.sede_id).exists()

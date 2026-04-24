@@ -64,7 +64,17 @@ export default function MesasView({ onSeleccionarMesa, onIrAErp, mesaActivaId })
   } = useMesasData(sedeActualId, triggerRecarga, setConfiguracionGlobal);
 
   useMesasWS(sedeActualId, setMesas, setOrdenesLlevar);
+  const wsRef = useMesasWS(sedeActualId, setMesas, setOrdenesLlevar);
 
+  const avisarEstadoMesa = (mesaId, nuevoEstado) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'mesa_estado',
+        mesa_id: mesaId,
+        estado: nuevoEstado
+      }));
+    }
+  };
   // ── HELPERS ─────────────────────────────────────────────────────────────────
   const manejarCambioSede = (nuevaSedeId) => {
     if (!nuevaSedeId) return;
@@ -92,6 +102,9 @@ export default function MesasView({ onSeleccionarMesa, onIrAErp, mesaActivaId })
         } catch (error) { alert("No se pudo unir las mesas."); }
       }
     } else {
+      if (mesa.estado === 'libre') {
+        avisarEstadoMesa(mesa.id, 'pidiendo');
+      }
       onSeleccionarMesa(mesa.id);
     }
   };

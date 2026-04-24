@@ -37,16 +37,19 @@ export default function MesasGrid({
   const mesasOrdenadasPC = [...mesasAgrupadas].sort((a, b) => (a.posicion_x || 0) - (b.posicion_x || 0));
 
   const getCardStyle = (mesa) => {
-    const esOcupada = mesa.estado === 'ocupada';
-    const esTomandoPedido = mesa.estado === 'tomando_pedido';
+    const estado = mesa.estado?.toLowerCase() || 'libre';
+    const esOcupada = estado === 'ocupada';
+    // ✨ AQUÍ ESTABA EL BUG: Ahora busca 'pidiendo'
+    const esPidiendo = estado === 'pidiendo'; 
+    const esCobrando = estado === 'cobrando';
     const esLaMesaActiva = mesaActivaId === mesa.id;
-    const esCobrando = mesa.estado === 'cobrando';
+
     let cardStyle = tema === 'dark' ? "bg-[#161616] border-[#2a2a2a] hover:bg-[#1a1a1a] active:bg-[#1a1a1a]" : "bg-white border-gray-200 shadow-sm hover:shadow-md active:bg-gray-50"; 
     let badgeStyle = tema === 'dark' ? "bg-[#222222] text-neutral-400" : "bg-gray-100 text-gray-500";
     let titleStyle = tema === 'dark' ? "text-white" : "text-gray-900";
     let inlineCardStyle = {};
     let icono = null;
-    let labelEstado = mesa.estado;
+    let labelEstado = estado;
 
     if (esLaMesaActiva) {
       cardStyle = "scale-105 z-10 border-white ring-2 ring-white";
@@ -55,11 +58,12 @@ export default function MesasGrid({
     if (esOcupada) {
       cardStyle = ""; inlineCardStyle = { backgroundColor: tema === 'dark' ? `${colorPrimario}0D` : `${colorPrimario}0A`, borderColor: `${colorPrimario}60`, boxShadow: `0 4px 20px ${colorPrimario}10` }; badgeStyle = ""; icono = '🍴'; labelEstado = 'ocupada';
     }
-    if (esTomandoPedido) {
+    if (esPidiendo) {
       cardStyle = ""; inlineCardStyle = { backgroundColor: tema === 'dark' ? '#fbbf2408' : '#fef9c3', borderColor: '#fbbf24aa', boxShadow: '0 4px 20px #fbbf2415' }; badgeStyle = "bg-yellow-400/20 text-yellow-400"; icono = '📝'; labelEstado = 'pidiendo';
     }
     if (esCobrando) {
-      cardStyle = ""; inlineCardStyle = { backgroundColor: tema === 'dark' ? '#a855f708' : '#faf5ff', borderColor: '#a855f7aa', boxShadow: '0 4px 20px #a855f715' }; badgeStyle = "bg-purple-400/20 text-purple-400"; icono = '💳'; labelEstado = 'cobrando';
+      // ✨ CAMBIO: Pasamos el Cobrando a color Naranja en vez de morado
+      cardStyle = ""; inlineCardStyle = { backgroundColor: tema === 'dark' ? '#f9731608' : '#fff7ed', borderColor: '#f97316aa', boxShadow: '0 4px 20px #f9731615' }; badgeStyle = "bg-orange-400/20 text-orange-400"; icono = '💳'; labelEstado = 'cobrando';
     }
     if (modoUnir && mesaPrincipal === mesa.id) {
       cardStyle = "text-white scale-[1.02] z-10"; inlineCardStyle = { backgroundColor: colorPrimario, borderColor: colorPrimario, boxShadow: `0 4px 15px ${colorPrimario}4D` }; badgeStyle = "bg-white/20 text-white"; titleStyle = "text-white";

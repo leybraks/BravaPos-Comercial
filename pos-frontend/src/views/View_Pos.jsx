@@ -18,7 +18,7 @@ export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
   const { estadoCaja, configuracionGlobal, carrito, agregarProducto, esDueño, sedes, manejarCambioSede, restarProducto, obtenerTotalItems, restarDesdeGrid, obtenerTotalDinero, vaciarCarrito, actualizarItemCompleto, sumarUnidad } = usePosStore();
   const tema = configuracionGlobal?.temaFondo || 'dark';
   const colorPrimario = configuracionGlobal?.colorPrimario || '#ff5a1f';
-  
+  const [wsListo, setWsListo] = useState(false);
   const sedeActualId = localStorage.getItem('sede_id');
   const esParaLlevar = (typeof mesaId === 'object' && mesaId?.id === 'llevar') || mesaId === 'llevar';
   const nombreLlevar = typeof mesaId === 'object' ? mesaId.cliente : 'Cliente (🛍️ Llevar)';
@@ -52,20 +52,21 @@ export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
 
     const conectar = () => {
       if (unmounted) return;
-      
-      // ✨ EXTRAEMOS EL TOKEN
-      const token = localStorage.getItem('tablet_token') || localStorage.getItem('access_token');
-      if (!token) { setTimeout(conectar, 3000); return; }
 
       const baseUrl = import.meta.env.VITE_WS_URL || import.meta.env.VITE_API_URL.replace('http', 'ws');
       
       // ✨ INYECTAMOS EL TOKEN
-      const wsUrl = `${baseUrl}/ws/salon/${sedeActualId}/?token=${token}`;
+      const wsUrl = `${baseUrl}/ws/salon/${sedeActualId}/`;
       
       ws = new WebSocket(wsUrl);
       wsRef.current = ws;
-      
-      ws.onclose = () => { if (!unmounted) setTimeout(conectar, 3000); };
+      ws.onopen = () => {
+        setWsListo(true); 
+      };
+      ws.onclose = () => { 
+        setWsListo(false);
+        if (!unmounted) setTimeout(conectar, 3000); 
+      };
       ws.onerror = () => ws.close();
     };
 
@@ -89,18 +90,30 @@ export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
   };
 
   // Notificar al Salón apenas termine de cargar la data
+  // Notificar al Salón basándose en la carga de datos, el carrito y el WebSocket
   useEffect(() => {
-    if (cargando) return; // No hacemos nada si sigue cargando
+    // 🚨 FRENO DE SEGURIDAD: 
+    // Esperamos a que la base de datos cargue Y que el WebSocket esté conectado
+    if (cargando || !wsListo) return; 
     
     if (ordenActiva) {
+      // 1. La mesa ya tiene un pedido en la base de datos
       estadoMesaRef.current = 'ocupada';
-      notificarEstadoMesa('cobrando', parseFloat(ordenActiva.total || 0));
+      
+      // 2. ¿Hay cosas nuevas en el carrito? 
+      // Si carrito.length es 0, solo estamos viendo la cuenta -> 'cobrando'
+      // Si es > 0, el mesero está marcando algo nuevo -> 'pidiendo'
+      const estadoActual = carrito.length > 0 ? 'pidiendo' : 'cobrando';
+      
+      notificarEstadoMesa(estadoActual, parseFloat(ordenActiva.total || 0));
     } else {
+      // 3. Mesa libre -> El mesero entró a tomar el primer pedido
       estadoMesaRef.current = 'libre';
-      notificarEstadoMesa('tomando_pedido', 0);
+      notificarEstadoMesa('pidiendo', 0);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cargando, ordenActiva]);
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cargando, ordenActiva, carrito.length, wsListo]); // 👈 Dependencias clave
 
   // ====================== CÁLCULOS ======================
   const totalOrdenActiva = ordenActiva ? ordenActiva.detalles.reduce((acc, d) => acc + parseFloat(d.precio_unitario || 0) * (d.cantidad || 1), 0) : 0;
@@ -160,7 +173,7 @@ export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
   };
 
   const abrirModalParaNuevo = (producto) => {
-    if (ordenActiva) notificarEstadoMesa('tomando_pedido', totalMesa);
+    if (ordenActiva) notificarEstadoMesa('pidiendo', totalMesa); // 👈 Corregido
     setProductoParaModificar(producto);
     setModalModsAbierto(true);
   };
@@ -181,6 +194,13 @@ export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
     }
   }, [sedes, esDueño, manejarCambioSede]);
   
+  // ✨ Agrega este pequeño efecto justo arriba de tus "return"
+  useEffect(() => {
+    if (modalCobroAbierto && !esParaLlevar) {
+      notificarEstadoMesa('cobrando', totalMesa);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modalCobroAbierto]);
   return (
     <div className={`relative h-full flex flex-col overflow-hidden font-sans transition-colors duration-500 ${tema === 'dark' ? 'bg-[#0a0a0a] text-neutral-100' : 'bg-[#f4f4f5] text-gray-900'}`}>
       
@@ -213,12 +233,21 @@ export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
 
       {modalCobroAbierto && (
           <ModalCobro 
-            isOpen={modalCobroAbierto} onClose={() => setModalCobroAbierto(false)} total={totalMesa} carrito={ordenActiva ? ordenActiva.detalles : []} 
+            isOpen={modalCobroAbierto} 
+            onClose={() => {
+              setModalCobroAbierto(false);
+              // Si cancelan el cobro, la mesa vuelve a estar en rojo
+              notificarEstadoMesa('ocupada', totalMesa); 
+            }} 
+            total={totalMesa} 
+            carrito={ordenActiva ? ordenActiva.detalles : []} 
             onCobroExitoso={async (datosPago) => {
               try {
                 for (const pago of datosPago) await crearPago({ orden: ordenActiva.id, metodo: pago.metodo, monto: pago.monto });
                 await actualizarOrden(ordenActiva.id, { estado: 'completado', estado_pago: 'pagado', pago_confirmado: true });
-                setModalCobroAbierto(false); vaciarCarrito(); setCarritoAbierto(false); onVolver();
+                setModalCobroAbierto(false); vaciarCarrito(); setCarritoAbierto(false); 
+                // Al volver, el unmount limpiará la mesa
+                onVolver();
               } catch (error) { alert("Hubo un error al procesar el pago"); }
             }}
           />

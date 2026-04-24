@@ -13,20 +13,13 @@ export const useTerminalWS = (sedeActualId, setMesas, setOrdenesLlevar) => {
     const conectar = () => {
       if (unmounted) return;
 
-      const token = localStorage.getItem('tablet_token') || localStorage.getItem('access_token');
       
-      if (!token) {
-        console.warn("⏳ Esperando token para conectar WS...");
-        reconnectTimeout = setTimeout(conectar, 3000);
-        return;
-      }
 
       const apiUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
       const baseUrl = import.meta.env.VITE_WS_URL || apiUrl.replace('https://', 'wss://').replace('http://', 'ws://');
       
-      const wsUrl = `${baseUrl}/ws/salon/${sedeActualId}/?token=${token}`;
+      const wsUrl = `${baseUrl}/ws/salon/${sedeActualId}/`;
       
-      console.log("🚀 Conectando WebSocket a:", wsUrl);
       ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 

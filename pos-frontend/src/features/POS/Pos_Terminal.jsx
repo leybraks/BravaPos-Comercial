@@ -23,19 +23,7 @@ export default function PosTerminal({ onIrAErp }) {
   // =========================================================
   // ✨ HELPER DE SEGURIDAD (Desencripta el JWT)
   // =========================================================
-  const decodificarToken = (token) => {
-    try {
-      if (!token) return null;
-      const base64Url = token.split('.')[1];
-      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-      const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
-          return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-      }).join(''));
-      return JSON.parse(jsonPayload);
-    } catch (error) {
-      return null;
-    }
-  };
+  
   const { estadoCaja, configuracionGlobal, setConfiguracionGlobal } = usePosStore();
   const tema = configuracionGlobal?.temaFondo || 'dark';
   const colorPrimario = configuracionGlobal?.colorPrimario || '#ff5a1f';
@@ -43,9 +31,8 @@ export default function PosTerminal({ onIrAErp }) {
   // ── Estados Locales ──────────────────────────────────────────────────────────
   const [sedeActualId, setSedeActualId] = useState(localStorage.getItem('sede_id') || '');
   // 🔒 EXTRACCIÓN SEGURA DEL ROL DESDE EL TOKEN
-  const token = localStorage.getItem('tablet_token');
-  const infoUsuario = decodificarToken(token) || {};
-  const rolUsuario = infoUsuario.rol || 'Empleado'; 
+  // 🔒 EXTRACCIÓN DEL ROL (Ahora guardado directamente en el login)
+  const rolUsuario = localStorage.getItem('usuario_rol') || 'Empleado'; 
   const esDueño = ['dueño', 'admin'].includes(rolUsuario.trim().toLowerCase());
   
   const [triggerRecarga, setTriggerRecarga] = useState(false);

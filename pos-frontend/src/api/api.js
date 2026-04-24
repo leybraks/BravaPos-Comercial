@@ -6,7 +6,10 @@ const API_URL = `${apiUrl}/api`;
 // ============================================================
 // INSTANCIA PRINCIPAL (con interceptores)
 // ============================================================
-const api = axios.create({ baseURL: API_URL });
+const api = axios.create({
+  baseURL: API_URL,
+  withCredentials: true,   // 🛡️ FIX #2: Necesario para enviar/recibir cookies HttpOnly
+});
 
 // ============================================================
 // INSTANCIA PÚBLICA (sin token — para carta QR)
@@ -16,44 +19,52 @@ const apiPublica = axios.create({ baseURL: API_URL });
 // ============================================================
 // HELPERS DE STORAGE
 // ============================================================
-const getToken        = () => localStorage.getItem('tablet_token');
-const getRefreshToken = () => localStorage.getItem('tablet_refresh_token');
-const getEmpleadoId   = () => localStorage.getItem('empleado_id');
-const getSedeId       = () => localStorage.getItem('sede_id');
-const getNegocioId    = () => localStorage.getItem('negocio_id');
+// 🛡️ FIX #2: Los tokens JWT (access + refresh) ya NO se guardan en localStorage.
+//    El backend los setea como cookies HttpOnly; Secure; SameSite=Lax.
+//    Solo guardamos datos no-sensibles aquí.
+const getEmpleadoId = () => localStorage.getItem('empleado_id');
+const getSedeId     = () => localStorage.getItem('sede_id');
+const getNegocioId  = () => localStorage.getItem('negocio_id');
 
-/** Guarda ambos tokens tras el login del dueño */
-export const guardarTokens = (access, refresh) => {
-  localStorage.setItem('tablet_token', access);
-  localStorage.setItem('tablet_refresh_token', refresh);
-};
+// ⚠️  ELIMINADO: getToken() y getRefreshToken() ya no existen.
+//    El token viaja automáticamente en la cookie HttpOnly, no en el header.
 
 /** Limpia todo y redirige al login */
-const cerrarSesionGlobal = () => {
+const cerrarSesionGlobal = async () => {
+  try {
+    // Intenta invalidar el refresh token en el servidor antes de limpiar
+    await axios.post(`${API_URL}/token/logout/`, {}, { withCredentials: true });
+  } catch (_) {
+    // Silencioso: si falla, igual limpiamos el estado local
+  }
   localStorage.clear();
   window.location.href = '/';
 };
 
 // ============================================================
-// INTERCEPTOR DE REQUEST — adjunta token, empleado y sede
+// INTERCEPTOR DE REQUEST — adjunta empleado, sede y CSRF
 // ============================================================
 api.interceptors.request.use(
   (config) => {
-    const token       = getToken();
-    const empleadoId  = getEmpleadoId();
-    const sedeIdSesion = getSedeId();
+    const empleadoId    = getEmpleadoId();
+    const sedeIdSesion  = getSedeId();
 
-    // 1. Token JWT
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
+    // 🛡️ FIX #2: Ya NO se adjunta el token JWT en el header Authorization.
+    //    La cookie HttpOnly se envía automáticamente por el navegador.
 
-    // 2. Header de empleado activo
+    // Header de empleado activo (no-sensible, solo un ID)
     if (empleadoId) {
       config.headers['X-Empleado-ID'] = empleadoId;
     }
 
-    // 3. Inyección automática de sede en GETs (solo si no viene ya)
+    // 🛡️ CSRF: axios con withCredentials no adjunta X-CSRFToken automáticamente.
+    //    Lo leemos de la cookie 'csrftoken' (no HttpOnly) que Django setea.
+    const csrfToken = getCookie('csrftoken');
+    if (csrfToken) {
+      config.headers['X-CSRFToken'] = csrfToken;
+    }
+
+    // Inyección automática de sede en GETs
     const tieneSedeEnUrl    = config.url.includes('sede_id=') || config.url.includes('sede=');
     const tieneSedeEnParams = config.params?.sede_id || config.params?.sede;
     const esRutaGlobal      = config.url.includes('negocios');
@@ -75,15 +86,23 @@ api.interceptors.request.use(
 );
 
 // ============================================================
+// HELPER: leer valor de una cookie por nombre
+// ============================================================
+function getCookie(name) {
+  const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+  return match ? decodeURIComponent(match[2]) : null;
+}
+
+// ============================================================
 // INTERCEPTOR DE RESPONSE — refresco automático de token
 // ============================================================
 let estaRefrescando = false;
-let colaDeEspera    = [];   // Requests que esperan el nuevo token
+let colaDeEspera    = [];
 
-const procesarCola = (error, nuevoToken = null) => {
+const procesarCola = (error, ok = true) => {
   colaDeEspera.forEach(({ resolve, reject }) => {
     if (error) reject(error);
-    else resolve(nuevoToken);
+    else resolve(ok);
   });
   colaDeEspera = [];
 };
@@ -93,7 +112,6 @@ api.interceptors.response.use(
   async (error) => {
     const requestOriginal = error.config;
 
-    // Solo actúa en errores 401 que NO sean del propio endpoint de refresh
     if (
       error.response?.status === 401 &&
       !requestOriginal._yaReintento &&
@@ -101,46 +119,28 @@ api.interceptors.response.use(
     ) {
       requestOriginal._yaReintento = true;
 
-      // Si ya hay un refresh en curso, encola este request
       if (estaRefrescando) {
         return new Promise((resolve, reject) => {
           colaDeEspera.push({ resolve, reject });
-        }).then((nuevoToken) => {
-          requestOriginal.headers.Authorization = `Bearer ${nuevoToken}`;
-          return api(requestOriginal);
-        });
+        }).then(() => api(requestOriginal));
       }
 
       estaRefrescando = true;
-      const refreshToken = getRefreshToken();
-
-      if (!refreshToken) {
-        // Sin refresh token → el dueño debe loguearse de nuevo
-        cerrarSesionGlobal();
-        return Promise.reject(error);
-      }
 
       try {
-        const { data } = await axios.post(`${API_URL}/token/refresh/`, {
-          refresh: refreshToken,
-        });
+        // 🛡️ FIX #2: El refresh token viaja en la cookie HttpOnly, no en el body.
+        //    El endpoint /token/refresh/ lee la cookie 'refresh_token' directamente.
+        await axios.post(
+          `${API_URL}/token/refresh/`,
+          {},
+          { withCredentials: true }
+        );
 
-        const nuevoAccess = data.access;
-        localStorage.setItem('tablet_token', nuevoAccess);
-
-        // Si Django Rotation está activo, también actualiza el refresh
-        if (data.refresh) {
-          localStorage.setItem('tablet_refresh_token', data.refresh);
-        }
-
-        procesarCola(null, nuevoAccess);
-
-        // Reintenta el request original
-        requestOriginal.headers.Authorization = `Bearer ${nuevoAccess}`;
+        procesarCola(null, true);
         return api(requestOriginal);
 
       } catch (errorRefresh) {
-        procesarCola(errorRefresh, null);
+        procesarCola(errorRefresh);
         cerrarSesionGlobal();
         return Promise.reject(errorRefresh);
 
@@ -154,13 +154,49 @@ api.interceptors.response.use(
 );
 
 // ============================================================
-// LOGIN DEL DUEÑO (usa axios directo, sin interceptor de token)
+// LOGIN DEL DUEÑO
 // ============================================================
 export const loginAdministrador = async (credenciales) => {
-  const res = await axios.post(`${API_URL}/login-admin/`, credenciales);
-  // Guardamos access + refresh automáticamente
-  guardarTokens(res.data.access, res.data.refresh);
+  // 🛡️ FIX #2: El backend setea las cookies HttpOnly como respuesta.
+  //    Ya NO llamamos a guardarTokens() — no hay nada que guardar en localStorage.
+  const res = await axios.post(`${API_URL}/login-admin/`, credenciales, {
+    withCredentials: true,
+  });
+  // Solo guardamos datos no-sensibles
+  if (res.data.negocio_id) {
+    localStorage.setItem('negocio_id', res.data.negocio_id);
+  }
   return res;
+};
+
+// ============================================================
+// WEBSOCKET — FIX #3: El token NO va en la URL
+// ============================================================
+/**
+ * Crea una conexión WebSocket segura.
+ * El token JWT se envía en la PRIMERA TRAMA después de conectar,
+ * no en la URL (lo que lo expondría en logs y Referer headers).
+ *
+ * En el backend (middleware.py) debes leer el token del primer mensaje,
+ * no del query string.
+ *
+ * @param {string} path - Ej: `/ws/salon/3/`
+ * @returns {WebSocket}
+ */
+export const crearWebSocket = (path) => {
+  const wsBase = import.meta.env.VITE_WS_URL;
+  // 🛡️ FIX #3: Sin ?token=... en la URL
+  const ws = new WebSocket(`${wsBase}${path}`);
+
+  ws.addEventListener('open', () => {
+    // Enviamos el token de autenticación en la primera trama,
+    // que el middleware del backend leerá y validará.
+    // El token viene de la cookie (el middleware lo lee server-side),
+    // por lo que desde el frontend solo mandamos un "handshake" de autenticación.
+    ws.send(JSON.stringify({ type: 'authenticate' }));
+  });
+
+  return ws;
 };
 
 // ============================================================
@@ -198,12 +234,12 @@ export const updateNegocioConfig      = (data)   => api.put(`/negocio/configurac
 // ============================================================
 // EMPLEADOS, ROLES Y SEDES
 // ============================================================
-export const getEmpleados    = (params)    => api.get(`/empleados/`, { params });
-export const crearEmpleado   = (data)      => api.post('/empleados/', data);
-export const actualizarEmpleado = (id, data) => api.patch(`/empleados/${id}/`, data);
-export const getRoles        = (params)    => api.get('/roles/', { params });
-export const getSedes        = (params)    => api.get('/sedes/', { params });
-export const actualizarSede  = (id, data)  => api.patch(`/sedes/${id}/`, data);
+export const getEmpleados       = (params)    => api.get(`/empleados/`, { params });
+export const crearEmpleado      = (data)      => api.post('/empleados/', data);
+export const actualizarEmpleado = (id, data)  => api.patch(`/empleados/${id}/`, data);
+export const getRoles           = (params)    => api.get('/roles/', { params });
+export const getSedes           = (params)    => api.get('/sedes/', { params });
+export const actualizarSede     = (id, data)  => api.patch(`/sedes/${id}/`, data);
 
 // ============================================================
 // PRODUCTOS Y CATEGORÍAS
@@ -221,7 +257,7 @@ export const actualizarVariacionesProducto = (productoId, gruposData) =>
 // ============================================================
 // NEGOCIO
 // ============================================================
-export const getNegocio        = (id)      => api.get(`/negocios/${id}/`);
+export const getNegocio        = (id)       => api.get(`/negocios/${id}/`);
 export const actualizarNegocio = (id, data) => api.patch(`/negocios/${id}/`, data);
 
 // ============================================================
