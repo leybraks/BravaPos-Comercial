@@ -36,14 +36,22 @@ jobs:
             sudo docker compose up -d --build
 
             echo "--- Esperando que el backend esté listo ---"
-            sleep 5
+            sleep 8
 
-            echo "--- Logs del backend (últimas 50 líneas) ---"
-            sudo docker compose logs --tail=50 backend
+            echo "--- Verificando que el backend esté corriendo ---"
+            if ! sudo docker compose ps backend | grep -q "Up"; then
+              echo "❌ El backend no está corriendo. Logs:"
+              sudo docker compose logs --tail=80 backend
+              exit 1
+            fi
+
+            echo "--- Logs del backend (últimas 30 líneas) ---"
+            sudo docker compose logs --tail=30 backend
 
             echo "--- Ejecutando migraciones ---"
             sudo docker compose exec -T backend python manage.py migrate
 
+            echo "--- ✅ Deploy completado ---"
             echo "--- ✅ Deploy completado ---"
 
       - name: ❌ Mostrar logs y hacer rollback si falla
