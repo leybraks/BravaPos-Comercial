@@ -32,7 +32,11 @@ jobs:
             echo "--- Pulling código nuevo ---"
             git pull origin V2-Estable-Cloud
 
-            echo "--- Construyendo imágenes ---"
+            # ✨ AQUÍ ESTÁ LA MAGIA ANTI-FANTASMAS
+            echo "--- Destruyendo caché viejo del frontend ---"
+            sudo docker compose build --no-cache frontend
+            
+            echo "--- Levantando servicios ---"
             sudo docker compose up -d --build
 
             echo "--- Esperando que el backend esté listo ---"
@@ -51,7 +55,6 @@ jobs:
             echo "--- Ejecutando migraciones ---"
             sudo docker compose exec -T backend python manage.py migrate
 
-            echo "--- ✅ Deploy completado ---"
             echo "--- ✅ Deploy completado ---"
 
       - name: ❌ Mostrar logs y hacer rollback si falla
