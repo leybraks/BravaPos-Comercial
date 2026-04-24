@@ -32,13 +32,17 @@ const getNegocioId  = () => localStorage.getItem('negocio_id');
 /** Limpia todo y redirige al login */
 const cerrarSesionGlobal = async () => {
   try {
-    // Intenta invalidar el refresh token en el servidor antes de limpiar
     await axios.post(`${API_URL}/token/logout/`, {}, { withCredentials: true });
-  } catch (_) {
-    // Silencioso: si falla, igual limpiamos el estado local
-  }
+  } catch (_) {}
+  
   localStorage.clear();
-  window.location.href = '/';
+  
+  // 🛡️ Solo redirige si NO estamos ya en la página principal
+  if (window.location.pathname !== '/') {
+    window.location.href = '/';
+  } else {
+    window.location.reload(); // Refresca suavemente
+  }
 };
 
 // ============================================================
@@ -115,7 +119,8 @@ api.interceptors.response.use(
     if (
       error.response?.status === 401 &&
       !requestOriginal._yaReintento &&
-      !requestOriginal.url?.includes('token/refresh')
+      !requestOriginal.url?.includes('token/refresh') &&
+      !requestOriginal.url?.includes('verificar-sesion') 
     ) {
       requestOriginal._yaReintento = true;
 

@@ -1,49 +1,79 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 
+// 🛡️ IMPORTAMOS TU INSTANCIA DE AXIOS SEGURA
+import api from './api/api'; 
+
 // Importamos tus vistas actuales
 import KdsView from './views/View_Kds';
 import ErpDashboard from './views/View_Erp';
 import LoginView from './views/View_Login';
 import PublicMenu from './features/public/PublicMenu';
-
-// ✨ IMPORTAMOS EL NUEVO CONTENEDOR DIVIDIDO
 import PosTerminal from './features/POS/Pos_Terminal'; 
 
 const VistaInternaPOS = () => {
   const [vista, setVista] = useState('login');
-  // 🗑️ Ya no necesitamos mesaActual aquí, PosTerminal se encarga de eso.
   const [rolUsuario, setRolUsuario] = useState(null);
+  
+  // ✨ Nuevo estado para que no parpadee el login al recargar
+  const [cargando, setCargando] = useState(true); 
 
   useEffect(() => {
-    const token = localStorage.getItem('tablet_token');
-    const rol = localStorage.getItem('rol_usuario');
-    
-    if (token && rol) {
-      setRolUsuario(rol);
-      const rolLimpio = rol.toLowerCase().trim();
-      if (rolLimpio === 'dueño') setVista('erp');
-      else if (rolLimpio === 'cocinero' || rolLimpio === 'cocina') setVista('cocina');
-      else setVista('terminal'); // ✨ Cambiamos 'mesas' por 'terminal'
-    }
+    const verificarSeguridad = async () => {
+      try {
+        // 1. Le preguntamos al backend "¿Sigo teniendo una cookie válida?"
+        // Axios enviará la cookie automáticamente
+        await api.get('/verificar-sesion/'); 
+
+        // 2. Si no tira error, estamos logueados. Recuperamos el rol.
+        // ⚠️ Nota: Asegúrate de que tu login guarda esto como 'usuario_rol' (o cámbialo a 'rol_usuario' si prefieres)
+        const rol = localStorage.getItem('usuario_rol') || localStorage.getItem('rol_usuario'); 
+        
+        if (rol) {
+          setRolUsuario(rol);
+          const rolLimpio = rol.toLowerCase().trim();
+          if (rolLimpio === 'dueño' || rolLimpio === 'admin') setVista('erp');
+          else if (rolLimpio === 'cocinero' || rolLimpio === 'cocina') setVista('cocina');
+          else setVista('terminal');
+        } else {
+          setVista('login');
+        }
+      } catch (error) {
+        // 3. Si da error (401), la cookie expiró o no existe
+        setVista('login');
+      } finally {
+        setCargando(false);
+      }
+    };
+
+    verificarSeguridad();
   }, []);
 
+  // ✨ Pantalla de carga mientras se verifica la cookie
+  if (cargando) {
+    return (
+      <div className="bg-[#121212] h-screen flex items-center justify-center text-neutral-300 font-sans">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-8 h-8 border-4 border-[#ff5a1f] border-t-transparent rounded-full animate-spin"></div>
+          <p className="animate-pulse">Verificando sesión segura...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    // ✨ Le quitamos el padding bottom (pb-28) general para que la pantalla dividida use el 100% del alto
     <div className="bg-[#121212] h-screen text-neutral-100 font-sans flex flex-col relative overflow-hidden">
       
-      {/* 1. LOGIN */}
       {vista === 'login' && (
         <LoginView onAccesoConcedido={(rol) => {
           setRolUsuario(rol);
           const r = rol.toLowerCase().trim();
-          if (r === 'dueño') setVista('erp');
+          if (r === 'dueño' || r === 'admin') setVista('erp');
           else if (r === 'cocinero' || r === 'cocina') setVista('cocina');
-          else setVista('terminal'); // ✨ Los cajeros/meseros van al terminal
+          else setVista('terminal');
         }} />
       )}
 
-      {/* 2. TERMINAL POS (PANTALLA DIVIDIDA: MESAS + MENÚ) */}
       {vista === 'terminal' && (
         <PosTerminal 
           rolUsuario={rolUsuario} 
@@ -51,10 +81,8 @@ const VistaInternaPOS = () => {
         />
       )}
 
-      {/* 3. KDS (COCINA) */}
       {vista === 'cocina' && <KdsView onVolver={() => setVista('login')} />}
 
-      {/* 4. ERP */}
       {vista === 'erp' && (
         <ErpDashboard onVolverAlPos={() => setVista('terminal')} />
       )}

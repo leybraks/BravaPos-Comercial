@@ -1015,7 +1015,21 @@ def orden_publica(request, sede_id, mesa_id):
         logger.error("Error en orden_publica para sede %s mesa %s", sede_id, mesa_id, exc_info=True)
         return Response({"error": "Ocurrió un error interno en el servidor."}, status=500)
 
-
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def verificar_sesion(request):
+    """
+    Si el usuario llega aquí, significa que su cookie JWT es válida.
+    Devolvemos su info básica para reconstruir el estado en React.
+    """
+    return Response({
+        "autenticado": True,
+        "user": {
+            "username": request.user.username,
+            "rol": "Dueño" if hasattr(request.user, 'negocio') else "Empleado",
+            # Agrega aquí lo que necesites para tu store
+        }
+    })
 # ============================================================
 # ✅ FIX #1: LoginAdministradorView eliminada.
 # El login ahora lo maneja CustomTokenObtainPairView en serializers_jwt.py

@@ -39,11 +39,6 @@ export default function LoginView({ onAccesoConcedido }) {
 
   const negocioInfo = { marca: 'CAÑA BRAVA', sede: localStorage.getItem('sede_nombre') || 'Sede Principal' };
 
-  // Limpieza de memoria fantasma al montar el componente
-  useEffect(() => {
-    localStorage.removeItem('rol_usuario'); // Destruimos cualquier rol falso que haya quedado
-  }, []);
-
   useEffect(() => {
     if (modo !== 'empleado') return; 
     const verificarCaja = async () => {
@@ -70,11 +65,13 @@ export default function LoginView({ onAccesoConcedido }) {
       localStorage.setItem('negocio_id', res.data.negocio_id);
   
       if (destino === 'erp') {
-        // ✨ SEGURIDAD ALTA: Extraemos el rol directo del token in-hackeable
-        const infoUsuario = decodificarToken(res.data.access);
-        const rolSeguro = infoUsuario?.rol || res.data.rol || 'Dueño';
+        // ✅ Leemos el rol que el backend nos manda en el JSON (ya no del token)
+        const rolSeguro = res.data.rol || 'Dueño';
         
-        // Lo pasamos a la RAM, NO al localStorage
+        // 🛡️ Guardar la palabra "Dueño" en localStorage NO es un riesgo de seguridad. 
+        // El verdadero poder lo tiene la cookie HttpOnly.
+        localStorage.setItem('usuario_rol', rolSeguro);
+        
         onAccesoConcedido(rolSeguro); 
 
       } else {
@@ -118,6 +115,7 @@ export default function LoginView({ onAccesoConcedido }) {
       // Guardamos IDs, NO ROLES en localStorage
       localStorage.setItem('empleado_id', empleado.id);
       localStorage.setItem('empleado_nombre', empleado.nombre);
+      localStorage.setItem('usuario_rol', empleado.rol_nombre);
       
       if (accion === 'asistencia') {
         alert(`🕒 Asistencia: ${empleado.nombre}`); setPin(''); return;

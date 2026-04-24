@@ -48,7 +48,7 @@ urlpatterns = [
     path('negocio/configuracion/', views.configuracion_negocio, name='configuracion_negocio'),
     path('dashboard/metricas/', views.metricas_dashboard, name='metricas_dashboard'),
     path('movimientos-caja/', views.registrar_movimiento_caja, name='registrar_movimiento_caja'),
-
+    path('verificar-sesion/', views.verificar_sesion, name='verificar_sesion'),
 
     # ==========================================
     # RUTAS PÚBLICAS (Sin Token - Carta QR)
