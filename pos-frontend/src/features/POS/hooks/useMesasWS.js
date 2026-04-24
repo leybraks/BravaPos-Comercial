@@ -12,8 +12,12 @@ export const useMesasWS = (sedeActualId, setMesas, setOrdenesLlevar) => {
 
     const conectar = () => {
       if (unmounted) return;
-      const wsUrl = `${import.meta.env.VITE_WS_URL || import.meta.env.VITE_API_URL.replace('http', 'ws')}/ws/salon/${sedeActualId}/`;
+      const token = localStorage.getItem('tablet_token') || localStorage.getItem('access_token');
       
+      const baseUrl = import.meta.env.VITE_WS_URL || import.meta.env.VITE_API_URL.replace('http', 'ws');
+      
+      // ✨ LE INYECTAMOS EL TOKEN AL FINAL DE LA URL
+      const wsUrl = `${baseUrl}/ws/salon/${sedeActualId}/?token=${token}`;
       ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
