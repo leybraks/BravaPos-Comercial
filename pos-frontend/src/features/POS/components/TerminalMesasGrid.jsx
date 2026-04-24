@@ -25,9 +25,11 @@ export default function TerminalMesasGrid({
   const mesasPC = [...mesasAgrupadas].sort((a, b) => (a.posicion_x || 0) - (b.posicion_x || 0));
 
   const getEstilosMesa = (mesa, variant = 'pc') => {
-    const esOcupada = mesa.estado === 'ocupada';
-    const esTomando = mesa.estado === 'tomando_pedido';
-    const esCobrando = mesa.estado === 'cobrando';
+    const estado = mesa.estado?.toLowerCase() || 'libre';
+    const esOcupada = estado === 'ocupada';
+    // ✨ EL MISMO BUG AQUÍ: Lo actualizamos a 'pidiendo'
+    const esPidiendo = estado === 'pidiendo'; 
+    const esCobrando = estado === 'cobrando';
     const esPrincipal = modoUnir && mesaPrincipal === mesa.id;
     const esActiva = mesaSeleccionada === mesa.id;
 
@@ -35,12 +37,12 @@ export default function TerminalMesasGrid({
     let badgeClass = tema === 'dark' ? 'bg-[#222] text-neutral-400' : 'bg-gray-100 text-gray-500';
     let titleClass = tema === 'dark' ? 'text-white' : 'text-gray-900';
     let inlineStyle = {};
-    let icono = null; let labelEstado = mesa.estado;
+    let icono = null; let labelEstado = estado;
 
     if (esActiva && !modoUnir) inlineStyle = { outline: `2px solid ${colorPrimario}`, outlineOffset: '2px' };
     if (esOcupada) { cardClass = ''; inlineStyle = { ...inlineStyle, backgroundColor: tema === 'dark' ? `${colorPrimario}0D` : `${colorPrimario}0A`, borderColor: `${colorPrimario}60`, boxShadow: `0 4px 20px ${colorPrimario}10` }; badgeClass = ''; icono = '🍴'; labelEstado = 'ocupada'; }
-    if (esTomando) { cardClass = ''; inlineStyle = { backgroundColor: tema === 'dark' ? '#fbbf2408' : '#fef9c3', borderColor: '#fbbf24aa', boxShadow: '0 4px 20px #fbbf2415' }; badgeClass = 'bg-yellow-400/20 text-yellow-400'; icono = '📝'; labelEstado = 'pidiendo'; }
-    if (esCobrando) { cardClass = ''; inlineStyle = { backgroundColor: tema === 'dark' ? '#a855f708' : '#faf5ff', borderColor: '#a855f7aa', boxShadow: '0 4px 20px #a855f715' }; badgeClass = 'bg-purple-400/20 text-purple-400'; icono = '💳'; labelEstado = 'cobrando'; }
+    if (esPidiendo) { cardClass = ''; inlineStyle = { backgroundColor: tema === 'dark' ? '#fbbf2408' : '#fef9c3', borderColor: '#fbbf24aa', boxShadow: '0 4px 20px #fbbf2415' }; badgeClass = 'bg-yellow-400/20 text-yellow-400'; icono = '📝'; labelEstado = 'pidiendo'; }
+    if (esCobrando) { cardClass = ''; inlineStyle = { backgroundColor: tema === 'dark' ? '#f9731608' : '#fff7ed', borderColor: '#f97316aa', boxShadow: '0 4px 20px #f9731615' }; badgeClass = 'bg-orange-400/20 text-orange-400'; icono = '💳'; labelEstado = 'cobrando'; }
     if (esPrincipal) { cardClass = 'scale-105 z-10 text-white'; inlineStyle = { backgroundColor: colorPrimario, borderColor: colorPrimario, boxShadow: `0 10px 30px ${colorPrimario}60` }; badgeClass = 'bg-white/20 text-white'; titleClass = 'text-white'; }
 
     return { cardClass, badgeClass, titleClass, inlineStyle, icono, labelEstado, esOcupada };
