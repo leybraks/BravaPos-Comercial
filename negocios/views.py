@@ -195,14 +195,19 @@ class OrdenViewSet(viewsets.ModelViewSet):
             nuevo_total = Decimal('0.00')
 
             for d in detalles_data:
+                producto = Producto.objects.get(id=d['producto'])
+                precio_seguro = producto.precio_base 
+
                 detalle = DetalleOrden.objects.create(
                     orden=orden,
-                    producto_id=d['producto'],
+                    producto=producto,
                     cantidad=d['cantidad'],
-                    precio_unitario=d['precio_unitario'],
+                    precio_unitario=precio_seguro, 
                     notas_y_modificadores=d.get('notas_y_modificadores', {}),
                     notas_cocina=d.get('notas_cocina', '')
                 )
+                
+                subtotal_opciones = Decimal('0.00')
                 for opc_id in d.get('opciones', []):
                     try:
                         opcion = OpcionVariacion.objects.get(id=opc_id)
@@ -211,9 +216,11 @@ class OrdenViewSet(viewsets.ModelViewSet):
                             opcion_variacion=opcion,
                             precio_adicional_aplicado=opcion.precio_adicional
                         )
+                        subtotal_opciones += opcion.precio_adicional
                     except OpcionVariacion.DoesNotExist:
                         pass
-                nuevo_total += Decimal(str(d['precio_unitario'])) * int(d['cantidad'])
+                
+                nuevo_total += (precio_seguro + subtotal_opciones) * int(d['cantidad'])
 
             orden.total = nuevo_total
             orden.save()
@@ -270,16 +277,20 @@ class OrdenViewSet(viewsets.ModelViewSet):
 
         with transaction.atomic():
             for detalle_data in detalles_data:
+                producto = Producto.objects.get(id=detalle_data['producto'])
+                precio_seguro = producto.precio_base
+
                 opciones_data = detalle_data.pop('opciones_seleccionadas', [])
                 nuevo_detalle = DetalleOrden.objects.create(
                     orden=orden,
-                    producto_id=detalle_data['producto'],
+                    producto=producto,
                     cantidad=detalle_data['cantidad'],
-                    precio_unitario=detalle_data['precio_unitario'],
+                    precio_unitario=precio_seguro, 
                     notas_y_modificadores=detalle_data.get('notas_y_modificadores', ''),
                     notas_cocina=detalle_data.get('notas_cocina', '')
                 )
                 detalles_creados.append(nuevo_detalle)
+                
                 for opcion in opciones_data:
                     try:
                         opcion_obj = OpcionVariacion.objects.get(id=opcion)
@@ -292,10 +303,13 @@ class OrdenViewSet(viewsets.ModelViewSet):
                         pass
 
             detalles_db = DetalleOrden.objects.filter(orden=orden)
-            nuevo_total = sum(d.cantidad * d.precio_unitario for d in detalles_db)
+            nuevo_total = Decimal('0.00')
             for d in detalles_db:
+                total_item = d.precio_unitario # Este ya es seguro porque lo acabamos de guardar bien
                 variaciones = DetalleOrdenOpcion.objects.filter(detalle_orden=d)
-                nuevo_total += sum(v.precio_adicional_aplicado for v in variaciones) * d.cantidad
+                total_item += sum(v.precio_adicional_aplicado for v in variaciones)
+                nuevo_total += d.cantidad * total_item
+            
             orden.total = nuevo_total
             orden.save()
 
