@@ -90,14 +90,16 @@ export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
 
   // Notificar al Salón apenas termine de cargar la data
   useEffect(() => {
-    if (cargando) return; // No hacemos nada si sigue cargando
+    if (cargando) return; 
     
     if (ordenActiva) {
       estadoMesaRef.current = 'ocupada';
-      notificarEstadoMesa('cobrando', parseFloat(ordenActiva.total || 0));
+      // Solo abrimos la mesa, están mirando el menú de nuevo
+      notificarEstadoMesa('pidiendo', parseFloat(ordenActiva.total || 0));
     } else {
       estadoMesaRef.current = 'libre';
-      notificarEstadoMesa('tomando_pedido', 0);
+      // Nombre exacto aceptado por Django
+      notificarEstadoMesa('pidiendo', 0);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cargando, ordenActiva]);
@@ -160,7 +162,7 @@ export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
   };
 
   const abrirModalParaNuevo = (producto) => {
-    if (ordenActiva) notificarEstadoMesa('tomando_pedido', totalMesa);
+    if (ordenActiva) notificarEstadoMesa('pidiendo', totalMesa); // 👈 Corregido
     setProductoParaModificar(producto);
     setModalModsAbierto(true);
   };
@@ -181,6 +183,13 @@ export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
     }
   }, [sedes, esDueño, manejarCambioSede]);
   
+  // ✨ Agrega este pequeño efecto justo arriba de tus "return"
+  useEffect(() => {
+    if (modalCobroAbierto && !esParaLlevar) {
+      notificarEstadoMesa('cobrando', totalMesa);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modalCobroAbierto]);
   return (
     <div className={`relative h-full flex flex-col overflow-hidden font-sans transition-colors duration-500 ${tema === 'dark' ? 'bg-[#0a0a0a] text-neutral-100' : 'bg-[#f4f4f5] text-gray-900'}`}>
       
@@ -213,12 +222,21 @@ export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
 
       {modalCobroAbierto && (
           <ModalCobro 
-            isOpen={modalCobroAbierto} onClose={() => setModalCobroAbierto(false)} total={totalMesa} carrito={ordenActiva ? ordenActiva.detalles : []} 
+            isOpen={modalCobroAbierto} 
+            onClose={() => {
+              setModalCobroAbierto(false);
+              // Si cancelan el cobro, la mesa vuelve a estar en rojo
+              notificarEstadoMesa('ocupada', totalMesa); 
+            }} 
+            total={totalMesa} 
+            carrito={ordenActiva ? ordenActiva.detalles : []} 
             onCobroExitoso={async (datosPago) => {
               try {
                 for (const pago of datosPago) await crearPago({ orden: ordenActiva.id, metodo: pago.metodo, monto: pago.monto });
                 await actualizarOrden(ordenActiva.id, { estado: 'completado', estado_pago: 'pagado', pago_confirmado: true });
-                setModalCobroAbierto(false); vaciarCarrito(); setCarritoAbierto(false); onVolver();
+                setModalCobroAbierto(false); vaciarCarrito(); setCarritoAbierto(false); 
+                // Al volver, el unmount limpiará la mesa
+                onVolver();
               } catch (error) { alert("Hubo un error al procesar el pago"); }
             }}
           />
