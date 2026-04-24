@@ -52,15 +52,11 @@ export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
 
     const conectar = () => {
       if (unmounted) return;
-      
-      // ✨ EXTRAEMOS EL TOKEN
-      const token = localStorage.getItem('tablet_token') || localStorage.getItem('access_token');
-      if (!token) { setTimeout(conectar, 3000); return; }
 
       const baseUrl = import.meta.env.VITE_WS_URL || import.meta.env.VITE_API_URL.replace('http', 'ws');
       
       // ✨ INYECTAMOS EL TOKEN
-      const wsUrl = `${baseUrl}/ws/salon/${sedeActualId}/?token=${token}`;
+      const wsUrl = `${baseUrl}/ws/salon/${sedeActualId}/`;
       
       ws = new WebSocket(wsUrl);
       wsRef.current = ws;

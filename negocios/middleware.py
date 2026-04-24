@@ -2,52 +2,61 @@
 from urllib.parse import parse_qs
 from channels.middleware import BaseMiddleware
 from channels.db import database_sync_to_async
-
+from django.conf import settings
+from http.cookies import SimpleCookie
+import traceback
 
 @database_sync_to_async
 def get_user_from_token(token_str):
-    """
-    Valida el JWT y retorna el User correspondiente.
-    Retorna AnonymousUser si el token es inválido o expiró.
-
-    ✅ Imports dentro de la función para evitar AppRegistryNotReady —
-    Django necesita tener las apps cargadas antes de importar modelos.
-    """
     from django.contrib.auth.models import AnonymousUser
     from django.contrib.auth import get_user_model
     from rest_framework_simplejwt.tokens import AccessToken
     from rest_framework_simplejwt.exceptions import TokenError, InvalidToken
 
     User = get_user_model()
-
     try:
         token = AccessToken(token_str)
         user_id = token['user_id']
-        return User.objects.get(id=user_id)
-    except (TokenError, InvalidToken, User.DoesNotExist, KeyError):
+        user = User.objects.get(id=user_id)
+        print(f"✅ WS: Usuario {user.username} autenticado vía cookie.")
+        return user
+    except Exception as e:
+        print(f"⚠️ WS: Token inválido o expirado. {e}")
         return AnonymousUser()
 
-
 class JWTWebSocketMiddleware(BaseMiddleware):
-    """
-    Middleware que lee el token JWT desde la query string del WebSocket.
-
-    React debe conectarse así:
-        const ws = new WebSocket(`ws://servidor/ws/cocina/1/?token=${localStorage.getItem('tablet_token')}`);
-    """
-
     async def __call__(self, scope, receive, send):
         from django.contrib.auth.models import AnonymousUser
+        try:
+            headers = dict(scope.get('headers', []))
+            raw_token = None
 
-        # Extraemos el token de la query string: ?token=eyJ...
-        query_string = scope.get('query_string', b'').decode()
-        params = parse_qs(query_string)
-        token_list = params.get('token', [None])
-        token_str = token_list[0] if token_list else None
+            print("\n🕵️‍♂️ WS: Iniciando Handshake. Buscando cookies...")
 
-        if token_str:
-            scope['user'] = await get_user_from_token(token_str)
-        else:
+            if b'cookie' in headers:
+                cookies_str = headers[b'cookie'].decode('utf-8')
+                print(f"🍪 WS: Header de cookies detectado.")
+                
+                parsed_cookies = SimpleCookie(cookies_str)
+                cookie_name = settings.SIMPLE_JWT.get('AUTH_COOKIE', 'access_token')
+
+                if cookie_name in parsed_cookies:
+                    raw_token = parsed_cookies[cookie_name].value
+                    print("🔑 WS: Token de acceso encontrado en la cookie.")
+                else:
+                    print(f"❌ WS: La cookie '{cookie_name}' no está en la petición.")
+            else:
+                print("❌ WS: El navegador no envió ninguna cookie.")
+
+            if raw_token:
+                scope['user'] = await get_user_from_token(raw_token)
+            else:
+                scope['user'] = AnonymousUser()
+
+            return await super().__call__(scope, receive, send)
+
+        except Exception as e:
+            print("🔥 ERROR CRÍTICO EN MIDDLEWARE WS:")
+            traceback.print_exc() # Esto imprimirá la línea exacta del error
             scope['user'] = AnonymousUser()
-
-        return await super().__call__(scope, receive, send)
+            return await super().__call__(scope, receive, send)

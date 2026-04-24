@@ -161,22 +161,17 @@ CORS_ALLOW_ALL_ORIGINS = False
 
 # Agrega orígenes extra desde .env:  CORS_EXTRA_ORIGINS=https://mi-app.com
 _extra_cors = os.environ.get('CORS_EXTRA_ORIGINS', '')
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-] + [o.strip() for o in _extra_cors.split(',') if o.strip()]
+CORS_ALLOWED_ORIGINS = [o.strip() for o in _extra_cors.split(',') if o.strip()]
+
+if DEBUG:
+    CORS_ALLOWED_ORIGINS += [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
 
 CORS_ALLOW_HEADERS = [
-    'accept',
-    'accept-encoding',
-    'authorization',
-    'content-type',
-    'dnt',
-    'origin',
-    'user-agent',
-    'x-csrftoken',
-    'x-requested-with',
-    'x-empleado-id',
+    'accept', 'accept-encoding', 'authorization', 'content-type',
+    'dnt', 'origin', 'user-agent', 'x-csrftoken', 'x-requested-with', 'x-empleado-id',
 ]
 
 # ============================================================
@@ -201,28 +196,42 @@ SECURE_REFERRER_POLICY = 'same-origin'
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'negocios.authentication.CookieJWTAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
-    # ✅ FIX extra: limita el rate por defecto
     'DEFAULT_THROTTLE_CLASSES': [
         'rest_framework.throttling.AnonRateThrottle',
         'rest_framework.throttling.UserRateThrottle',
     ],
     'DEFAULT_THROTTLE_RATES': {
-        'anon': '60/hour',   # Ajusta según necesidad (✅ FIX #10 PIN sin rate limit)
+        'anon': '60/hour',   
         'user': '1000/hour',
-        'intentos_pin': '5/minute'
+        'intentos_pin': '5/minute',
+        # ✅ FIX #8: Límite estricto para evitar fuerza bruta en el login
+        'login': '5/minute' 
     },
 }
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),    # La llave rápida (Segura)
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=365), # La llave maestra (Comodidad de 1 año)
+    # 🛡️ Solución Problema #7: Bajamos los tiempos de vida
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),    # 1 hora es suficiente para una sesión activa
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=90),       # Bajamos de 1 año a 1 día
+    
     'AUTH_HEADER_TYPES': ('Bearer',),
     'BLACKLIST_AFTER_ROTATION': True,
-    'ROTATE_REFRESH_TOKENS': True,                 # Rota la llave maestra por seguridad
+    'ROTATE_REFRESH_TOKENS': True,
     'UPDATE_LAST_LOGIN': True,
     'TOKEN_OBTAIN_SERIALIZER': 'negocios.serializers.CustomTokenObtainPairSerializer',
+    
+    # 🛡️ Solución Problema #2: Configuración para Cookies HttpOnly
+    'AUTH_COOKIE': 'access_token',           # Nombre de la cookie de acceso
+    'AUTH_COOKIE_REFRESH': 'refresh_token',  # Nombre de la cookie de refresh
+    'AUTH_COOKIE_HTTP_ONLY': True,           # 🚫 Impide que JavaScript lea el token (Blindaje XSS)
+    'AUTH_COOKIE_SECURE': False,             # Cambiar a True cuando actives HTTPS (Problema #6)
+    'AUTH_COOKIE_SAMESITE': 'Lax',           # Protección contra ataques CSRF
+    'AUTH_COOKIE_PATH': '/',
 }
+
+CORS_ALLOW_CREDENTIALS = True

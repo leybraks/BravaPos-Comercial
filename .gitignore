@@ -32,3 +32,4 @@ pos-frontend/npm-debug.log*
 .idea/
 !pos-frontend/.env.production
 /Scripts/
+staticfiles/

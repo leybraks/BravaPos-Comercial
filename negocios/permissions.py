@@ -1,21 +1,39 @@
-from rest_framework import permissions
+# negocios/permissions.py
+from rest_framework.permissions import BasePermission, SAFE_METHODS
 
-class EsDuenioOsoloLectura(permissions.BasePermission):
+
+class EsDuenioOsoloLectura(BasePermission):
     """
-    Permiso personalizado: 
-    - Lectura (GET): Permitido para todos los autenticados.
-    - Escritura (POST, PUT, PATCH, DELETE): Solo para el Dueño Supremo.
+    🛡️ FIX #4: Versión segura de EsDuenioOsoloLectura.
+
+    ANTES (vulnerable):
+        La lógica anterior concedía acceso de escritura a cualquier usuario
+        autenticado que simplemente OMITIERA el header X-Empleado-Id.
+        Ejemplo: un empleado podía hacer PUT /api/productos/ sin el header
+        y tenía permisos de Dueño.
+
+    AHORA (seguro):
+        Los permisos de escritura se conceden ÚNICAMENTE si el JWT pertenece
+        a un usuario Django que tiene un negocio asociado (es Dueño/Admin real).
+        La presencia o ausencia de X-Empleado-Id no afecta los permisos de escritura.
+
+    Regla:
+        - GET/HEAD/OPTIONS (SAFE_METHODS): permitido para cualquier usuario autenticado.
+        - POST/PUT/PATCH/DELETE: solo si request.user tiene negocio (es Dueño).
     """
+
     def has_permission(self, request, view):
-        # Si la petición es de lectura (GET, HEAD, OPTIONS), dejamos pasar
-        if request.method in permissions.SAFE_METHODS:
+        # Debe estar autenticado para cualquier operación
+        if not request.user or not request.user.is_authenticated:
+            return False
+
+        # Superusuario del sistema: acceso total
+        if request.user.is_superuser:
             return True
-        
-        # Si intenta escribir, revisamos que NO sea un empleado (Tablet)
-        # El Dueño no envía la cabecera X-Empleado-Id desde su laptop
-        es_empleado = request.headers.get('X-Empleado-Id')
-        
-        if es_empleado:
-            return False # Un mortal intentó cambiar un precio, ¡Denegado!
-            
-        return True # Es el Dueño, puede hacer lo que quiera
+
+        # Lectura: cualquier usuario autenticado puede leer
+        if request.method in SAFE_METHODS:
+            return True
+
+        # Escritura: solo usuarios con negocio asociado (Dueños/Admins del sistema)
+        return hasattr(request.user, 'negocio')
