@@ -2,8 +2,9 @@
 import json
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
-from django.contrib.auth.models import AnonymousUser
-from .models import Mesa, Sede
+
+# ✅ NO importamos nada de Django aquí arriba — causa AppRegistryNotReady
+# Todos los imports de Django van dentro de las funciones
 
 
 # ============================================================
@@ -12,17 +13,15 @@ from .models import Mesa, Sede
 
 def _usuario_valido(scope):
     """Retorna True si el scope tiene un usuario autenticado."""
+    from django.contrib.auth.models import AnonymousUser
     user = scope.get('user')
     return user is not None and not isinstance(user, AnonymousUser) and user.is_authenticated
 
 
 @database_sync_to_async
 def _tiene_acceso_sede(user, sede_id):
-    """
-    Verifica que el usuario tiene acceso a la sede solicitada.
-    - Superuser: acceso total.
-    - Dueño: solo sedes de su negocio.
-    """
+    """Verifica que el usuario tiene acceso a la sede solicitada."""
+    from negocios.models import Sede
     if user.is_superuser:
         return True
     if hasattr(user, 'negocio'):
@@ -37,33 +36,23 @@ def _tiene_acceso_sede(user, sede_id):
 class CocinaConsumer(AsyncWebsocketConsumer):
 
     async def connect(self):
-        # 1. Verificar autenticación
         if not _usuario_valido(self.scope):
-            await self.close(code=4001)  # No autorizado
+            await self.close(code=4001)
             return
 
         self.sede_id = self.scope['url_route']['kwargs']['sede_id']
 
-        # 2. Verificar que el usuario tiene acceso a ESTA sede
         if not await _tiene_acceso_sede(self.scope['user'], self.sede_id):
-            await self.close(code=4003)  # Forbidden
+            await self.close(code=4003)
             return
 
         self.room_group_name = f"cocina_sede_{self.sede_id}"
-
-        await self.channel_layer.group_add(
-            self.room_group_name,
-            self.channel_name
-        )
+        await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
 
     async def disconnect(self, close_code):
-        # Solo hace group_discard si llegamos a conectarnos
         if hasattr(self, 'room_group_name'):
-            await self.channel_layer.group_discard(
-                self.room_group_name,
-                self.channel_name
-            )
+            await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
 
     async def orden_nueva(self, event):
         await self.send(text_data=json.dumps({
@@ -82,42 +71,31 @@ ESTADOS_MESA_VALIDOS = {"libre", "ocupada", "cobrando", "pidiendo"}
 class SalonConsumer(AsyncWebsocketConsumer):
 
     async def connect(self):
-        # 1. Verificar autenticación
         if not _usuario_valido(self.scope):
-            await self.close(code=4001)  # No autorizado
+            await self.close(code=4001)
             return
 
         self.sede_id = self.scope['url_route']['kwargs']['sede_id']
 
-        # 2. Verificar que el usuario tiene acceso a ESTA sede
         if not await _tiene_acceso_sede(self.scope['user'], self.sede_id):
-            await self.close(code=4003)  # Forbidden
+            await self.close(code=4003)
             return
 
         self.room_group_name = f"salon_sede_{self.sede_id}"
-
-        await self.channel_layer.group_add(
-            self.room_group_name,
-            self.channel_name
-        )
+        await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
 
     async def disconnect(self, close_code):
         if hasattr(self, 'room_group_name'):
-            await self.channel_layer.group_discard(
-                self.room_group_name,
-                self.channel_name
-            )
+            await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
 
     async def receive(self, text_data):
         try:
             data = json.loads(text_data)
-
             if data.get('type') == 'mesa_estado':
                 mesa_id = data.get('mesa_id')
                 estado  = data.get('estado')
 
-                # Validar estado permitido
                 if estado not in ESTADOS_MESA_VALIDOS:
                     await self.send(text_data=json.dumps({
                         'type': 'error',
@@ -125,9 +103,7 @@ class SalonConsumer(AsyncWebsocketConsumer):
                     }))
                     return
 
-                # Validar que la mesa existe y pertenece a esta sede
                 mesa_valida = await self._validar_y_actualizar_mesa(mesa_id, estado)
-
                 if mesa_valida:
                     await self.channel_layer.group_send(
                         self.room_group_name,
@@ -143,13 +119,8 @@ class SalonConsumer(AsyncWebsocketConsumer):
                         'type': 'error',
                         'mensaje': 'Mesa no encontrada o no pertenece a esta sede.'
                     }))
-
         except json.JSONDecodeError:
-            pass  # Ignoramos mensajes que no sean JSON válido
-
-    # ============================================================
-    # EVENTOS ENTRANTES DESDE DJANGO (views.py → channel_layer)
-    # ============================================================
+            pass
 
     async def pedido_listo(self, event):
         await self.send(text_data=json.dumps({
@@ -173,16 +144,9 @@ class SalonConsumer(AsyncWebsocketConsumer):
             'accion': event['accion'],
         }))
 
-    # ============================================================
-    # HELPERS ASYNC DE BD
-    # ============================================================
-
     @database_sync_to_async
     def _validar_y_actualizar_mesa(self, mesa_id, estado):
-        """
-        Verifica que la mesa exista en esta sede y actualiza su estado.
-        Retorna True si todo fue bien, False si no.
-        """
+        from negocios.models import Mesa
         try:
             mesa = Mesa.objects.get(id=mesa_id, sede_id=self.sede_id)
             if mesa.estado != estado:
