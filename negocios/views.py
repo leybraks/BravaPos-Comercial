@@ -12,9 +12,11 @@ from django.db.models import F
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.db.models import Sum
-from django.contrib.auth.hashers import check_password
+from django.contrib.auth.hashers import check_password, make_password
 from rest_framework.permissions import AllowAny
-from rest_framework.decorators import action , permission_classes,api_view
+from rest_framework.decorators import action , permission_classes,api_view, throttle_classes
+from rest_framework.throttling import ScopedRateThrottle
+from rest_framework.throttling import ScopedRateThrottle
 import time 
 from rest_framework.permissions import IsAuthenticated
 from .permissions import EsDuenioOsoloLectura
@@ -475,6 +477,9 @@ class RolViewSet(viewsets.ModelViewSet):
     queryset = Rol.objects.all()
     serializer_class = RolSerializer
 
+class PinRateThrottle(ScopedRateThrottle):
+    scope = 'intentos_pin'
+
 class EmpleadoViewSet(viewsets.ModelViewSet):
     serializer_class = EmpleadoSerializer
 
@@ -555,6 +560,49 @@ class EmpleadoViewSet(viewsets.ModelViewSet):
             'id': empleado_valido.id,
             'nombre': empleado_valido.nombre,
             'rol_nombre': empleado_valido.rol.nombre if empleado_valido.rol else 'Sin Rol', # 👈 CAMBIADO A 'rol_nombre'
+        }, status=status.HTTP_200_OK)
+    
+    @action(detail=False, methods=['POST'], permission_classes=[AllowAny], url_path='validar_pin')
+    @throttle_classes([PinRateThrottle]) # ✨ AQUÍ ACTIVAMOS EL ESCUDO
+    def validar_pin(self, request):
+        pin_ingresado = request.data.get('pin')
+        sede_id = request.data.get('sede_id')
+        accion = request.data.get('accion')
+
+        if not pin_ingresado or not sede_id:
+            return Response({'error': 'PIN y sede_id son obligatorios'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Buscamos en la sede específica
+        empleados = Empleado.objects.filter(sede_id=sede_id, activo=True)
+        empleado_valido = None
+
+        for emp in empleados:
+            # 1. Comparamos si está en texto plano (Ej: si lo creaste desde el /admin como '1111')
+            if emp.pin == pin_ingresado:
+                empleado_valido = emp
+                
+                # 🥷 ACTUALIZACIÓN SILENCIOSA: Lo encriptamos para el futuro
+                emp.pin = make_password(pin_ingresado)
+                emp.save(update_fields=['pin']) 
+                break
+                
+            # 2. Comparamos por si acaso está encriptado (Hash Seguro)
+            elif check_password(pin_ingresado, emp.pin):
+                empleado_valido = emp
+                break
+
+        if not empleado_valido:
+            # Si llega aquí, el Throttle anota 1 "strike" a la IP de la tablet
+            return Response({'error': 'PIN incorrecto o inactivo'}, status=status.HTTP_401_UNAUTHORIZED)
+            
+        if accion == 'asistencia':
+            empleado_valido.ultimo_ingreso = timezone.now()
+            empleado_valido.save(update_fields=['ultimo_ingreso'])
+
+        return Response({
+            'id': empleado_valido.id,
+            'nombre': empleado_valido.nombre,
+            'rol_nombre': empleado_valido.rol.nombre if empleado_valido.rol else 'Sin Rol',
         }, status=status.HTTP_200_OK)
 
 

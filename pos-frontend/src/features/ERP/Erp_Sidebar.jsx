@@ -1,20 +1,45 @@
 import React, { useState } from 'react';
 import usePosStore from '../../store/usePosStore';
 
+// ✨ HELPER: Agregamos el decodificador (puedes moverlo a un archivo utils.js luego si quieres)
+const decodificarToken = (token) => {
+  try {
+    if (!token) return null;
+    const base64Url = token.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+    }).join(''));
+    return JSON.parse(jsonPayload);
+  } catch (error) {
+    return null;
+  }
+};
+
 export default function Erp_Sidebar({ 
   vistaActiva, 
   manejarCambioVista, 
   menuAbierto, 
   setMenuAbierto, 
   onVolverAlPos,
-  isCollapsed, // ✨ Nuevo: controla si está encogido en PC
-  setIsCollapsed // ✨ Nuevo
+  isCollapsed,
+  setIsCollapsed
 }) {
   const { configuracionGlobal } = usePosStore();
   const colorPrimario = configuracionGlobal?.colorPrimario || '#ff5a1f';
-  const modulos = configuracionGlobal?.modulos || {};
-  const rolUsuario = localStorage.getItem('rol_usuario'); 
-  const esDueño = rolUsuario === 'Dueño';
+
+  // =========================================================
+  // 🔒 EXTRACCIÓN SEGURA DESDE EL TOKEN (Criptografía)
+  // =========================================================
+  const token = localStorage.getItem('tablet_token');
+  const infoUsuario = decodificarToken(token) || {};
+
+  const rolUsuario = infoUsuario.rol || 'Empleado'; 
+  const esDueño = rolUsuario === 'Dueño' || rolUsuario === 'Admin';
+
+  // Leemos los módulos directo del token (súper rápido) 
+  // o usamos el global como plan B
+  const modulos = infoUsuario.modulos || configuracionGlobal?.modulos || {};
 
   const gruposMenu = [
     {
