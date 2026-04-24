@@ -8,10 +8,18 @@ export const useKdsNotifications = () => {
   const sedeActualId = localStorage.getItem('sede_id');
 
   useEffect(() => {
+    
     if (!sedeActualId) return; // Seguridad por si aún no hay sede
 
-    // 1. Conectar al WebSocket filtrado por Sede ✨
-    const wsUrl = `ws://localhost:8000/ws/salon/${sedeActualId}/`; 
+    // ✨ EXTRAEMOS EL TOKEN
+    const token = localStorage.getItem('tablet_token') || localStorage.getItem('access_token');
+    if (!token) return;
+
+    // ✨ CONECTAMOS USANDO VARIABLES DE ENTORNO Y TOKEN
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
+    const baseUrl = import.meta.env.VITE_WS_URL || apiUrl.replace('https://', 'wss://').replace('http://', 'ws://');
+    const wsUrl = `${baseUrl}/ws/salon/${sedeActualId}/?token=${token}`; 
+    
     socketRef.current = new WebSocket(wsUrl);
 
     socketRef.current.onopen = () => {

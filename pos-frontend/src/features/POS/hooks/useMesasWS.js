@@ -12,43 +12,91 @@ export const useMesasWS = (sedeActualId, setMesas, setOrdenesLlevar) => {
 
     const conectar = () => {
       if (unmounted) return;
+
+      // 1. Buscamos el token
       const token = localStorage.getItem('tablet_token') || localStorage.getItem('access_token');
       
-      const baseUrl = import.meta.env.VITE_WS_URL || import.meta.env.VITE_API_URL.replace('http', 'ws');
+      // Si por alguna razón React es más rápido que el login y aún no hay token, esperamos 3 segundos.
+      if (!token) {
+        console.warn("⏳ Esperando token para conectar WS...");
+        reconnectTimeout = setTimeout(conectar, 3000);
+        return;
+      }
+
+      // 2. Construimos la URL inteligentemente (Soporta HTTP y HTTPS en la nube)
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
+      const baseUrl = import.meta.env.VITE_WS_URL || apiUrl.replace('https://', 'wss://').replace('http://', 'ws://');
       
-      // ✨ LE INYECTAMOS EL TOKEN AL FINAL DE LA URL
       const wsUrl = `${baseUrl}/ws/salon/${sedeActualId}/?token=${token}`;
+      
+      console.log("🚀 Conectando WebSocket a:", wsUrl);
       ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
+      // 3. Cuando abre la conexión
+      ws.onopen = () => {
+        console.log(`✅ WebSocket Salón conectado (Sede ${sedeActualId})`);
+      };
+
+      // 4. Cuando recibe un mensaje de Django
       ws.onmessage = (e) => {
-        const data = JSON.parse(e.data);
+        try {
+          const data = JSON.parse(e.data);
 
-        if (data.type === 'mesa_actualizada') {
-          setMesas(prev => prev.map(mesa =>
-            mesa.id === data.mesa_id
-              ? { ...mesa, estado: data.estado, totalConsumido: data.total ?? mesa.totalConsumido }
-              : mesa
-          ));
-        }
+          if (data.type === 'conexion_exitosa') {
+            console.log(data.mensaje);
+          }
 
-        if (data.type === 'orden_llevar_actualizada') {
-          const orden = data.orden;
-          setOrdenesLlevar(prev => {
-            if (data.accion === 'nueva') return [orden, ...prev].slice(0, 10);
-            if (data.accion === 'completada') return prev.filter(o => o.id !== orden.id);
-            if (data.accion === 'actualizada') return prev.map(o => o.id === orden.id ? orden : o);
-            return prev;
-          });
+          if (data.type === 'mesa_actualizada') {
+            setMesas(prev => prev.map(mesa =>
+              mesa.id === data.mesa_id
+                ? { ...mesa, estado: data.estado, totalConsumido: data.total ?? mesa.totalConsumido }
+                : mesa
+            ));
+          }
+
+          if (data.type === 'orden_llevar_actualizada') {
+            const orden = data.orden;
+            setOrdenesLlevar(prev => {
+              if (data.accion === 'nueva') return [orden, ...prev].slice(0, 10);
+              if (data.accion === 'completada') return prev.filter(o => o.id !== orden.id);
+              if (data.accion === 'actualizada') return prev.map(o => o.id === orden.id ? orden : o);
+              return prev;
+            });
+          }
+
+          // ✨ AQUÍ ATRAPAMOS EL MENSAJE DE RECHAZO DE DJANGO
+          if (data.type === 'error') {
+            console.error('🛑 Django rechazó la conexión:', data.mensaje);
+          }
+
+        } catch (err) {
+          console.warn('⚠️ Mensaje WebSocket no válido', err);
         }
       };
 
-      ws.onclose = () => { if (!unmounted) reconnectTimeout = setTimeout(conectar, 3000); };
-      ws.onerror = () => { console.warn("Pestañeo en el WebSocket de mesas..."); };
+      // 5. Cuando se cierra la conexión
+      ws.onclose = (e) => {
+        // Códigos de seguridad: 4001 (Sin token) o 4003 (Hackeo/Sin permisos)
+        if (e.code === 4001 || e.code === 4003) {
+          console.error(`🔒 WebSocket cerrado por seguridad (Código ${e.code}). No se reconectará.`);
+          return;
+        }
+        
+        // Si se cayó el internet normal, intentamos reconectar en 3 segundos
+        if (!unmounted) {
+          reconnectTimeout = setTimeout(conectar, 3000);
+        }
+      };
+
+      ws.onerror = () => {
+        console.warn('⚠️ Error de red en WebSocket, intentando reconectar...');
+      };
     };
 
     conectar();
 
+    // 6. Limpieza al salir de la pantalla
     return () => {
       unmounted = true;
       clearTimeout(reconnectTimeout);
