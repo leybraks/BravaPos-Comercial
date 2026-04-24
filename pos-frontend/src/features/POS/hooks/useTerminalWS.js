@@ -14,11 +14,16 @@ export const useTerminalWS = (sedeActualId, setMesas, setOrdenesLlevar) => {
     const conectar = () => {
       if (unmounted) return;
       
+      // ✨ EXTRAEMOS EL TOKEN
+      const token = localStorage.getItem('tablet_token') || localStorage.getItem('access_token');
+      
       const baseUrl = import.meta.env.VITE_WS_URL || 'ws://127.0.0.1:8000';
-      const wsUrl = `${baseUrl}/ws/salon/${sedeActualId}/`;
+      
+      // ✨ LE INYECTAMOS EL TOKEN AL FINAL DE LA URL
+      const wsUrl = `${baseUrl}/ws/salon/${sedeActualId}/?token=${token}`;
       
       ws = new WebSocket(wsUrl);
-      wsRef.current = ws; // Guardamos la referencia para poder usarla fuera si es necesario
+      wsRef.current = ws;// Guardamos la referencia para poder usarla fuera si es necesario
 
       // Solo actualizamos el estado cuando el servidor nos envía un mensaje
       ws.onmessage = (e) => {
