@@ -42,25 +42,26 @@ services:
 
   # ✨ LA NUEVA BESTIA: EVOLUTION API
   evolution-api:
-    image: evolutionapi/evolution-api:latest
+    image: evoapicloud/evolution-api:latest
     container_name: brava_evolution_api
     restart: always
     ports:
-      - "8080:8080" # El puerto por donde n8n se comunicará con WhatsApp
+      - "8080:8080"
     environment:
-      - SERVER_URL=http://localhost:8080 # Cambia 'localhost' por tu IP pública después
+      # IMPORTANTE: Cambia 'localhost' por la IP de tu servidor Oracle (163.176.135.213)
+      - SERVER_URL=http://163.176.135.213:8080 
       - AUTHENTICATION_TYPE=apikey
-      - AUTHENTICATION_API_KEY=${EVOLUTION_API_KEY:-BravaSuperSecret2026} # Clave para que nadie más use tu bot
+      - AUTHENTICATION_API_KEY=${EVOLUTION_API_KEY:-BravaSuperSecret2026}
       
-      # Conectamos Evolution API a tu Redis existente para que vuele
+      # Conexión optimizada a tu Redis
       - REDIS_ENABLED=true
-      - REDIS_URI=redis://redis:6379/1 # Usamos la base 1 para no chocar con Django (que usa la 0)
+      - REDIS_URI=redis://redis:6379/1
       
-      # Configuraciones base
+      # Configuración de rendimiento
       - CONFIG_SESSION_PHONE_CLIENT=BravaPOS
-      - LOG_LEVEL=ERROR # Evita que los logs te llenen el disco duro
+      - LOG_LEVEL=ERROR
     volumes:
-      - evolution_instances:/evolution/instances # Guarda las sesiones para no pedir QR a cada rato
+      - evolution_instances:/evolution/instances
     depends_on:
       - redis
 
