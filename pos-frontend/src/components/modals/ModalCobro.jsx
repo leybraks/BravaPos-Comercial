@@ -112,8 +112,11 @@ export default function ModalCobro({ isOpen, onClose, total, onCobroExitoso, car
   };
 
   const finalizarTodo = () => {
-    const pagosFinales = pagosAcumulados.map(p => ({ ...p, telefono: telefonoTicket }));
-    onCobroExitoso(pagosFinales);
+    // ✨ Enviamos un objeto estructurado exactamente como Django lo pide
+    onCobroExitoso({
+      pagos: pagosAcumulados,
+      telefono: telefonoTicket
+    });
   };
 
   return (

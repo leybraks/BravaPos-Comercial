@@ -2,7 +2,7 @@ import React, { useState,useEffect } from 'react';
 import { crearOrden, actualizarMesa, actualizarOrden, crearPago, registrarMovimientoCaja, validarPinEmpleado } from '../../api/api';
 
 import usePosStore from '../../store/usePosStore';
-
+import api from '../../api/api';
 // Modales y Drawers
 import ModalCobro from '../../components/modals/ModalCobro';
 import ModalCierreCaja from '../../components/modals/ModalCierreCaja';
@@ -227,20 +227,44 @@ export default function PosTerminal({ onIrAErp }) {
       )}
 
       <ModalCobro
-        isOpen={!!ordenACobrar} onClose={() => setOrdenACobrar(null)}
+        isOpen={!!ordenACobrar} 
+        onClose={() => setOrdenACobrar(null)}
         total={ordenACobrar ? parseFloat(ordenACobrar.total) : 0}
         carrito={ordenACobrar ? ordenACobrar.detalles.map((d) => ({ id: d.producto, nombre: d.nombre, precio: parseFloat(d.precio_unitario), cantidad: d.cantidad || 1 })) : []}
         esVentaRapida={ordenACobrar?.es_venta_rapida || false}
-        onCobroExitoso={async (pagos) => {
+        onCobroExitoso={async (datosCobro) => { // 👈 Ahora recibe { pagos, telefono }
           try {
             let idOrden = ordenACobrar.id;
+
+            // 1. Si es venta rápida, creamos la orden primero
             if (idOrden === 'venta_rapida') {
-              const { data } = await crearOrden({ tipo: 'llevar', estado: 'completado', estado_pago: 'pagado', sede: sedeActualId, detalles: ordenACobrar.detalles || [] });
+              const { data } = await crearOrden({ 
+                tipo: 'llevar', 
+                estado: 'pendiente', // Se crea pendiente porque el cobro la pasará a completada
+                estado_pago: 'pendiente', 
+                sede: sedeActualId, 
+                detalles: ordenACobrar.detalles || [] 
+              });
               idOrden = data.id;
-            } else { await actualizarOrden(idOrden, { estado_pago: 'pagado', estado: 'completado' }); }
-            for (const p of pagos) await crearPago({ orden: idOrden, monto: p.monto, metodo: p.metodo });
-            setOrdenACobrar(null); setTriggerRecarga((p) => !p); alert('¡Cobro realizado con éxito! 💵✨');
-          } catch { alert('Hubo un error al guardar el pago.'); }
+            } 
+
+            // 2. 🚀 DISPARAMOS AL NUEVO ENDPOINT DE COBRO + CRM
+            const sesionCajaId = localStorage.getItem('sesion_caja_id');
+            await api.post(`/ordenes/${idOrden}/cobrar_orden/`, {
+              pagos: datosCobro.pagos,
+              telefono: datosCobro.telefono, // ¡El WhatsApp para el CRM!
+              sesion_caja_id: sesionCajaId
+            });
+
+            // 3. Limpiamos la pantalla
+            setOrdenACobrar(null); 
+            setTriggerRecarga((p) => !p); 
+            alert('¡Venta y CRM procesados con éxito! 💵✨');
+
+          } catch (error) { 
+            console.error(error);
+            alert('Hubo un error al procesar el pago.'); 
+          }
         }}
       />
 

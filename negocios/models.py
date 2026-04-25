@@ -100,7 +100,7 @@ class Categoria(models.Model):
 class Producto(models.Model):
     # El producto sigue siendo del Negocio (Menú global)
     negocio = models.ForeignKey(Negocio, on_delete=models.CASCADE)
-    categoria = models.ForeignKey('Categoria', on_delete=models.SET_NULL, null=True, blank=True, related_name='productos') # 👈 ¡ESTA ES LA LÍNEA QUE FALTABA!
+    categoria = models.ForeignKey('Categoria', on_delete=models.SET_NULL, null=True, blank=True, related_name='productos')
     
     nombre = models.CharField(max_length=100)
     es_venta_rapida = models.BooleanField(default=False)
@@ -109,6 +109,10 @@ class Producto(models.Model):
     tiene_variaciones = models.BooleanField(default=False)
     requiere_seleccion = models.BooleanField(default=False)
     activo = models.BooleanField(default=True)
+    
+    # ✨ LOS NUEVOS CAMPOS PARA COMBOS Y MARKETING ✨
+    es_combo = models.BooleanField(default=False, help_text="Indica si este producto está compuesto por otros productos")
+    destacar_como_promocion = models.BooleanField(default=False, help_text="¿Aparece destacado en el Bot de WhatsApp o Carta QR?")
     
     objects = ActivoManager()
     all_objects = models.Manager()
@@ -489,3 +493,88 @@ class RegistroAuditoria(models.Model):
 
     def __str__(self):
         return f"[{self.fecha.strftime('%d/%m %H:%M')}] {self.empleado_nombre}: {self.get_accion_display()}"
+    
+class Cliente(models.Model):
+    negocio = models.ForeignKey('Negocio', on_delete=models.CASCADE, related_name='clientes')
+    telefono = models.CharField(max_length=20) # Identificador para WhatsApp
+    nombre = models.CharField(max_length=100, null=True, blank=True)
+    email = models.EmailField(null=True, blank=True)
+    
+    # Datos para el modelo de ML y fidelización
+    puntos_acumulados = models.IntegerField(default=0)
+    total_gastado = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    cantidad_pedidos = models.IntegerField(default=0)
+    ultima_compra = models.DateTimeField(null=True, blank=True)
+    
+    # Etiquetas para segmentación (ej: ["VIP", "Frecuente", "Dormido"])
+    tags = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        unique_together = ('negocio', 'telefono')
+
+    def __str__(self):
+        return f"{self.nombre or 'Cliente'} ({self.telefono})"
+
+# ==========================================
+# 2. LOGÍSTICA Y COBERTURA
+# ==========================================
+class ZonaDelivery(models.Model):
+    sede = models.ForeignKey('Sede', on_delete=models.CASCADE, related_name='zonas_delivery')
+    nombre = models.CharField(max_length=100) # Ej: "Sector A - Surco"
+    costo_envio = models.DecimalField(max_digits=6, decimal_places=2)
+    pedido_minimo = models.DecimalField(max_digits=6, decimal_places=2, default=0.00)
+    
+    # Texto para que el Bot busque coincidencias (puedes usar geolocalización después)
+    distritos_cobertura = models.TextField(help_text="Lista de distritos o barrios separados por comas")
+    activa = models.BooleanField(default=True)
+
+# ==========================================
+# 3. MOTOR DE REGLAS Y PROMOCIONES
+# ==========================================
+class ReglaNegocio(models.Model):
+    TIPO_REGLA = [
+        ('recargo_llevar', 'Recargo por empaque (Llevar)'),
+        ('delivery_gratis', 'Delivery Gratis por Monto'),
+        ('descuento_dia', 'Descuento por Día Específico'),
+    ]
+    negocio = models.ForeignKey('Negocio', on_delete=models.CASCADE)
+    tipo = models.CharField(max_length=30, choices=TIPO_REGLA)
+    valor = models.DecimalField(max_digits=10, decimal_places=2) # Monto o Porcentaje
+    es_porcentaje = models.BooleanField(default=False)
+    
+    # Condicionales
+    monto_minimo_orden = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    dia_semana = models.IntegerField(null=True, blank=True) # 0=Lunes, 6=Domingo
+    activa = models.BooleanField(default=True)
+
+class CuponPromocional(models.Model):
+    negocio = models.ForeignKey('Negocio', on_delete=models.CASCADE)
+    codigo = models.CharField(max_length=20, unique=True) # Ej: "BRAVA10"
+    descripcion = models.TextField(blank=True)
+    
+    monto_descuento = models.DecimalField(max_digits=10, decimal_places=2)
+    es_porcentaje = models.BooleanField(default=False)
+    
+    limite_usos = models.IntegerField(default=1)
+    fecha_expiracion = models.DateTimeField()
+    activo = models.BooleanField(default=True)
+
+# ==========================================
+# 4. COMBOS Y DISPONIBILIDAD TEMPORAL
+# ==========================================
+class HorarioVisibilidad(models.Model):
+    """Controla cuándo un producto (o combo) aparece en el POS/Carta QR"""
+    producto = models.OneToOneField('Producto', on_delete=models.CASCADE, related_name='horario')
+    
+    # JSON con los días permitidos: [0, 2, 4] -> Lun, Mie, Vie
+    dias_permitidos = models.JSONField(default=list)
+    hora_inicio = models.TimeField(null=True, blank=True)
+    hora_fin = models.TimeField(null=True, blank=True)
+    
+    mensaje_fuera_horario = models.CharField(max_length=100, default="Disponible otros días")
+
+class ComponenteCombo(models.Model):
+    """Define de qué está hecho un Combo para descontar stock real"""
+    combo = models.ForeignKey('Producto', on_delete=models.CASCADE, related_name='items_combo')
+    producto_hijo = models.ForeignKey('Producto', on_delete=models.CASCADE, related_name='+')
+    cantidad = models.PositiveIntegerField(default=1)

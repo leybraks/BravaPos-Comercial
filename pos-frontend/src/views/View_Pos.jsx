@@ -3,7 +3,7 @@ import usePosStore from '../store/usePosStore';
 import ModalCobro from '../components/modals/ModalCobro';
 import ModalModificadores from '../components/modals/ModalModificadores';
 import { crearOrden, actualizarOrden, crearPago, agregarProductosAOrden, anularItemDeOrden } from '../api/api';
-
+import api from '../api/api';
 // Componentes
 import PosHeader from '../features/POS/components/PosHeader';
 import ProductGrid from '../features/POS/components/ProductGrid';
@@ -241,14 +241,27 @@ export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
             }} 
             total={totalMesa} 
             carrito={ordenActiva ? ordenActiva.detalles : []} 
-            onCobroExitoso={async (datosPago) => {
+            onCobroExitoso={async (datosCobro) => { // 👈 Ahora recibe { pagos, telefono }
               try {
-                for (const pago of datosPago) await crearPago({ orden: ordenActiva.id, metodo: pago.metodo, monto: pago.monto });
-                await actualizarOrden(ordenActiva.id, { estado: 'completado', estado_pago: 'pagado', pago_confirmado: true });
-                setModalCobroAbierto(false); vaciarCarrito(); setCarritoAbierto(false); 
-                // Al volver, el unmount limpiará la mesa
+                // 🚀 UNA SOLA LLAMADA AL ENDPOINT
+                const sesionCajaId = localStorage.getItem('sesion_caja_id');
+                
+                await api.post(`/ordenes/${ordenActiva.id}/cobrar_orden/`, {
+                  pagos: datosCobro.pagos,
+                  telefono: datosCobro.telefono, // ¡El WhatsApp para el CRM!
+                  sesion_caja_id: sesionCajaId
+                });
+
+                // Limpiamos pantalla y volvemos a las mesas
+                setModalCobroAbierto(false); 
+                vaciarCarrito(); 
+                setCarritoAbierto(false); 
                 onVolver();
-              } catch (error) { alert("Hubo un error al procesar el pago"); }
+
+              } catch (error) { 
+                console.error(error);
+                alert("Hubo un error al procesar el pago"); 
+              }
             }}
           />
       )}

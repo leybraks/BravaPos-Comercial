@@ -19,7 +19,7 @@ from .models import (
     GrupoVariacion, InsumoBase, InsumoSede, Negocio, Sede, Mesa, Producto,
     Orden, DetalleOrden, Pago, ModificadorRapido, DetalleOrdenOpcion,
     OpcionVariacion, MovimientoCaja, RecetaDetalle, Rol, Empleado,
-    SesionCaja, Categoria, RecetaOpcion, RegistroAuditoria
+    SesionCaja, Categoria, RecetaOpcion, RegistroAuditoria,Cliente
 )
 from .serializers import (
     InsumoBaseSerializer, InsumoSedeSerializer, NegocioSerializer, SedeSerializer,
@@ -420,6 +420,112 @@ class OrdenViewSet(viewsets.ModelViewSet):
 
         except DetalleOrden.DoesNotExist:
             return Response({'error': 'El plato no existe'}, status=status.HTTP_400_BAD_REQUEST)
+        
+    @action(detail=True, methods=['post'])
+    def cobrar_orden(self, request, pk=None):
+        """
+        EL ENDPOINT DEFINITIVO DE COBRO Y CRM
+        Recibe los pagos y el WhatsApp del cliente para fidelización.
+        """
+        orden = self.get_object()
+        
+        # Datos enviados desde ModalCobro.jsx en React
+        pagos_data = request.data.get('pagos', []) # Ej: [{'metodo': 'yape', 'monto': 50}]
+        telefono_crm = request.data.get('telefono', '').strip()
+        sesion_caja_id = request.data.get('sesion_caja_id')
+
+        if orden.estado_pago == 'pagado':
+            return Response({'error': 'Esta orden ya fue pagada anteriormente.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            with transaction.atomic():
+                sesion_caja = SesionCaja.objects.get(id=sesion_caja_id) if sesion_caja_id else None
+                total_pagado_ahora = Decimal('0.00')
+
+                # 1. REGISTRAR LOS PAGOS
+                for p in pagos_data:
+                    monto_pago = Decimal(str(p.get('monto', '0.00')))
+                    if monto_pago > 0:
+                        Pago.objects.create(
+                            orden=orden,
+                            metodo=p.get('metodo', 'efectivo'),
+                            monto=monto_pago,
+                            sesion_caja=sesion_caja
+                        )
+                        total_pagado_ahora += monto_pago
+
+                # Calcular si ya se pagó todo
+                pagos_historicos = Pago.objects.filter(orden=orden).aggregate(Sum('monto'))['monto__sum'] or Decimal('0.00')
+                total_cubierto = pagos_historicos + total_pagado_ahora
+
+                # 2. ACTUALIZAR ESTADO DE LA ORDEN
+                if total_cubierto >= orden.total:
+                    orden.estado_pago = 'pagado'
+                    # Si ya se pagó, asumimos que se libera la mesa/entrega
+                    if orden.estado != 'cancelado':
+                        orden.estado = 'completado' 
+                
+                # 3. 🧠 MAGIA DEL CRM (Si dejaron su WhatsApp)
+                if telefono_crm and len(telefono_crm) >= 9:
+                    orden.cliente_telefono = telefono_crm
+                    
+                    cliente, creado = Cliente.objects.get_or_create(
+                        negocio=orden.sede.negocio,
+                        telefono=telefono_crm,
+                        defaults={'nombre': orden.cliente_nombre or 'Cliente POS'}
+                    )
+                    
+                    # Actualizamos sus estadísticas
+                    cliente.cantidad_pedidos += 1
+                    
+                    # ✨ LA SOLUCIÓN: Convertimos a Decimal antes de sumar
+                    cliente.total_gastado = Decimal(str(cliente.total_gastado)) + Decimal(str(orden.total))
+                    
+                    cliente.ultima_compra = timezone.now()
+                    
+                    # 🎁 SISTEMA DE PUNTOS
+                    puntos_ganados = int(Decimal(str(orden.total)) // 10)
+                    cliente.puntos_acumulados += puntos_ganados
+                    
+                    # 🏷️ ETIQUETADO AUTOMÁTICO (Segmentación)
+                    tags_actuales = cliente.tags if isinstance(cliente.tags, list) else []
+                    
+                    # Como ahora es Decimal, lo comparamos tranquilamente
+                    if cliente.total_gastado >= Decimal('500.00') and "VIP" not in tags_actuales:
+                        tags_actuales.append("VIP")
+                        
+                    if creado and "Nuevo" not in tags_actuales:
+                        tags_actuales.append("Nuevo")
+                    elif not creado and "Nuevo" in tags_actuales:
+                        tags_actuales.remove("Nuevo")
+                        
+                    cliente.tags = tags_actuales
+                    cliente.save()
+
+                orden.save()
+
+            # 4. WEBSOCKETS: Avisar al frontend que la mesa se liberó
+            channel_layer = get_channel_layer()
+            if orden.mesa_id and orden.estado_pago == 'pagado':
+                async_to_sync(channel_layer.group_send)(
+                    f"salon_sede_{orden.sede_id}",
+                    {
+                        "type": "mesa_actualizada", 
+                        "mesa_id": orden.mesa_id, 
+                        "estado": "libre", 
+                        "total": 0
+                    }
+                )
+
+            return Response({
+                'status': 'Cobro exitoso', 
+                'total_pagado': float(total_cubierto),
+                'crm_actualizado': bool(telefono_crm)
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.error(f"Error procesando cobro de orden {orden.id}: {str(e)}", exc_info=True)
+            return Response({'error': 'Error interno al procesar el pago.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # ============================================================
