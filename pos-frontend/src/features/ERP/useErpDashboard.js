@@ -13,12 +13,16 @@ export const useErpDashboard = () => {
   const colorPrimario = configuracionGlobal?.colorPrimario || '#ff5a1f';
 
   // ==========================================
-  // 1. TODOS LOS ESTADOS (useStates)
+  // 1. ESTADOS PRINCIPALES
   // ==========================================
   const [ordenesReales, setOrdenesReales] = useState([]);
   const [vistaActiva, setVistaActiva] = useState('dashboard');
-  const [sedeFiltro, setSedeFiltro] = useState('Todas');
-  const [sedeFiltroId, setSedeFiltroId] = useState(null);
+  
+  // ✨ CEREBROS DE MEMORIA AISLADA (Leen directamente de su propio localStorage)
+  const [sedeVentasId, setSedeVentasId] = useState(localStorage.getItem('memoria_sede_ventas') || '');
+  const [sedePersonalId, setSedePersonalId] = useState(localStorage.getItem('memoria_sede_personal') || '');
+  const [sedeMenuId, setSedeMenuId] = useState(localStorage.getItem('memoria_sede_menu') || '');
+
   const [menuAbierto, setMenuAbierto] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [modalEmpleado, setModalEmpleado] = useState(false);
@@ -76,16 +80,19 @@ export const useErpDashboard = () => {
     };
     cargarSedesGlobal();
   }, []);
+
   // ==========================================
-  // 2. TODOS LOS EFECTOS (useEffects)
+  // ✨ 2. EFECTOS MULTITAREA (Conectados a su propia memoria)
   // ==========================================
+  
+  // Dashboard (Ventas)
   useEffect(() => {
     if (vistaActiva === 'dashboard') {
       const cargarDatos = async () => {
         try {
           const [resMetricas, resOrdenes] = await Promise.all([
-            obtenerMetricasDashboard({ sede_id: sedeFiltroId }),
-            getOrdenes({ sede_id: sedeFiltroId }) 
+            obtenerMetricasDashboard({ sede_id: sedeVentasId }),
+            getOrdenes({ sede_id: sedeVentasId }) 
           ]);
           setMetricas(resMetricas.data);
           setOrdenesReales(resOrdenes.data);
@@ -95,15 +102,16 @@ export const useErpDashboard = () => {
       const intervalo = setInterval(cargarDatos, 10000);
       return () => clearInterval(intervalo);
     }
-  }, [vistaActiva, sedeFiltroId]);
+  }, [vistaActiva, sedeVentasId]); // 👈 Solo reacciona a su propia memoria
 
+  // Personal
   useEffect(() => {
     if (vistaActiva === 'personal') {
       const cargarDatosPersonal = async () => {
         try {
           const negocioId = parseInt(localStorage.getItem('negocio_id') || 1);
           const params = { negocio_id: negocioId, negocio: negocioId };
-          if (sedeFiltroId) { params.sede_id = sedeFiltroId; params.sede = sedeFiltroId; }
+          if (sedePersonalId) { params.sede_id = sedePersonalId; params.sede = sedePersonalId; }
           const [resEmpleados, resRoles, resSedes] = await Promise.all([
             getEmpleados(params), getRoles(), api.get(`/sedes/`, { params: { negocio_id: negocioId } })
           ]);
@@ -114,14 +122,15 @@ export const useErpDashboard = () => {
       };
       cargarDatosPersonal();
     }
-  }, [vistaActiva, sedeFiltroId]);
+  }, [vistaActiva, sedePersonalId]); // 👈 Solo reacciona a su propia memoria
 
+  // Menú
   useEffect(() => {
     if (vistaActiva === 'menu') {
       const cargarMenu = async () => {
         try {
           const [resProductos, resCategorias] = await Promise.all([
-            getProductos({ sede_id: sedeFiltroId }), getCategorias()
+            getProductos({ sede_id: sedeMenuId }), getCategorias()
           ]);
           setProductosReales(resProductos.data);
           setCategorias(resCategorias.data);
@@ -129,7 +138,7 @@ export const useErpDashboard = () => {
       };
       cargarMenu();
     }
-  }, [vistaActiva, sedeFiltroId]);
+  }, [vistaActiva, sedeMenuId]); // 👈 Solo reacciona a su propia memoria
 
   useEffect(() => {
     const cargarConfiguracionGlobal = async () => {
@@ -158,11 +167,55 @@ export const useErpDashboard = () => {
   }, [setConfiguracionGlobal]);
 
   // ==========================================
-  // 3. TODAS LAS FUNCIONES DE CONTROL
+  // ✨ 3. CALCULADOR DINÁMICO DE ESTADO ACTIVO
   // ==========================================
-  const cambiarSedeFiltro = (sede) => {
-    if (sede === 'Todas') { setSedeFiltro('Todas'); setSedeFiltroId(null); } 
-    else { setSedeFiltro(sede.nombre); setSedeFiltroId(sede.id); }
+  // Esta lógica descubre qué vista estás mirando y extrae su ID de memoria
+  const getSedeFiltroIdActivo = () => {
+    if (vistaActiva === 'dashboard') return sedeVentasId;
+    if (vistaActiva === 'personal') return sedePersonalId;
+    if (vistaActiva === 'menu') return sedeMenuId;
+    return '';
+  };
+
+  const sedeFiltroIdActivo = getSedeFiltroIdActivo();
+  const sedeObj = sedesReales.find(s => String(s.id) === String(sedeFiltroIdActivo));
+  const sedeFiltroActiva = sedeObj ? sedeObj.nombre : 'Todas';
+
+  // ==========================================
+  // 4. FUNCIONES DE CONTROL
+  // ==========================================
+  
+  // ✨ ENRUTADOR INTELIGENTE DE SEDES: Guarda la selección en el lugar correcto
+  const cambiarSedeFiltro = (valor) => {
+    let nuevoId = '';
+    
+    // Extraer inteligentemente el ID ya sea que nos pasen un objeto, un texto o "Todas"
+    if (typeof valor === 'object' && valor !== null) {
+      nuevoId = valor.id || '';
+    } else if (valor === 'Todas' || valor === '') {
+      nuevoId = '';
+    } else {
+      const sedeEncontrada = sedesReales.find(s => String(s.id) === String(valor) || s.nombre === valor);
+      if (sedeEncontrada) nuevoId = sedeEncontrada.id;
+      else nuevoId = valor; // Fallback por si la lista aún no carga
+    }
+
+    // Inyectar en el cerebro que corresponde a la pantalla actual
+    if (vistaActiva === 'dashboard') {
+      setSedeVentasId(nuevoId);
+      if (nuevoId) localStorage.setItem('memoria_sede_ventas', nuevoId);
+      else localStorage.removeItem('memoria_sede_ventas');
+    } 
+    else if (vistaActiva === 'personal') {
+      setSedePersonalId(nuevoId);
+      if (nuevoId) localStorage.setItem('memoria_sede_personal', nuevoId);
+      else localStorage.removeItem('memoria_sede_personal');
+    } 
+    else if (vistaActiva === 'menu') {
+      setSedeMenuId(nuevoId);
+      if (nuevoId) localStorage.setItem('memoria_sede_menu', nuevoId);
+      else localStorage.removeItem('memoria_sede_menu');
+    }
   };
 
   const manejarCambioVista = (nuevaVista) => {
@@ -242,7 +295,7 @@ export const useErpDashboard = () => {
       if (esCreacion) await crearEmpleado(payload); else await actualizarEmpleado(formEmpleado.id, payload);
       setModalEmpleado(false);
       setFormEmpleado({ id: null, nombre: '', pin: '', rol: rolesReales[0]?.id || '', sede: sedesReales[0]?.id || '' });
-      const resEmpleados = await getEmpleados({ negocio_id: negocioId, sede_id: sedeFiltroId });
+      const resEmpleados = await getEmpleados({ negocio_id: negocioId, sede_id: sedeFiltroIdActivo });
       setEmpleadosReales(resEmpleados.data);
     } catch (error) { alert("❌ Hubo un error."); }
   };
@@ -255,7 +308,7 @@ export const useErpDashboard = () => {
     try {
       if (formPlato.id) await actualizarProducto(formPlato.id, payload); else await crearProducto(payload);
       setModalPlato(false); setPasoModal(1);
-      const res = await getProductos({ sede_id: sedeFiltroId });
+      const res = await getProductos({ sede_id: sedeFiltroIdActivo });
       setProductosReales(res.data);
       alert("✅ Guardado");
     } catch (error) { alert("Error al guardar."); }
@@ -297,7 +350,13 @@ export const useErpDashboard = () => {
   // ==========================================
   return {
     tema, colorPrimario, config, setConfig, vistaActiva, setVistaActiva, 
-    sedeFiltro, setSedeFiltro, sedeFiltroId, setSedeFiltroId, menuAbierto, setMenuAbierto,
+    
+    // ✨ INYECCIÓN DINÁMICA: Los componentes reciben lo que el cerebro determine
+    sedeFiltro: sedeFiltroActiva, 
+    sedeFiltroId: sedeFiltroIdActivo, 
+    setSedeFiltroId: cambiarSedeFiltro, 
+    setSedeFiltro: cambiarSedeFiltro,
+    menuAbierto, setMenuAbierto,
     isCollapsed, setIsCollapsed,
     modalEmpleado, setModalEmpleado, modalVariacionesOpen, setModalVariacionesOpen,
     productoParaVariaciones, setProductoParaVariaciones, categorias, setCategorias,
@@ -308,7 +367,6 @@ export const useErpDashboard = () => {
     nombreNuevaCat, setNombreNuevaCat, modalRecetaOpen, setModalRecetaOpen,
     productoParaReceta, setProductoParaReceta, modalCambiosPendientes, rolesFiltrados,ordenesReales,
     
-    // Funciones
     cambiarSedeFiltro, manejarCambioVista, descartarCambios, guardarYCambiarVista,
     cancelarCambioVista, manejarGuardarConfig, abrirModalEdicion, toggleActivo,
     manejarGuardarEmpleado, manejarGuardarPlato, manejarCrearCategoria,

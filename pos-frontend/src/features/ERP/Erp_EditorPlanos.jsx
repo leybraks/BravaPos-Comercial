@@ -7,18 +7,26 @@ export default function EditorPlanos() {
   const colorPrimario = configuracionGlobal?.colorPrimario || '#ff5a1f';
   const tema = configuracionGlobal?.temaFondo || 'dark';
 
-  const [sedes, setSedes] = useState([]);
-  const [sedeActivaId, setSedeActivaId] = useState(localStorage.getItem('sede_id') || '');
-  
   const [mesas, setMesas] = useState([]);
   const [columnas, setColumnas] = useState(3);
   const [guardando, setGuardando] = useState(false);
   const [mesaArrastradaId, setMesaArrastradaId] = useState(null);
-  const rolUsuario = localStorage.getItem('rol_usuario');
+  const rolUsuario = localStorage.getItem('usuario_rol') || localStorage.getItem('rol_usuario');
+  const esDueño = rolUsuario?.toLowerCase() === 'dueño' || rolUsuario?.toLowerCase() === 'admin';
   const [modalNuevaMesa, setModalNuevaMesa] = useState(false);
   const [formMesa, setFormMesa] = useState({ numero: '', capacidad: 4 });
   const [creando, setCreando] = useState(false);
-
+  const [sedes, setSedes] = useState([]);
+  const sedeAsignada = localStorage.getItem('sede_id');
+  const [sedeActivaId, setSedeActivaId] = useState(
+    esDueño ? (localStorage.getItem('memoria_sede_planos') || '') : sedeAsignada
+  );
+  
+  useEffect(() => {
+    if (esDueño && sedeActivaId) {
+      localStorage.setItem('memoria_sede_planos', sedeActivaId);
+    }
+  }, [sedeActivaId, esDueño]);
   // 1. Cargar Sedes iniciales
   useEffect(() => {
     const cargarSedes = async () => {
@@ -83,11 +91,17 @@ export default function EditorPlanos() {
 
   // 2. Agregamos este useEffect para que lea la memoria CADA VEZ que cambies de Sede
   useEffect(() => {
-    if (sedeActivaId) {
-      const colsGuardadas = parseInt(localStorage.getItem(`columnas_salon_${sedeActivaId}`)) || 3;
-      setColumnas(colsGuardadas);
+    if (sedeActivaId && sedes.length > 0) {
+      const sedeActual = sedes.find(s => String(s.id) === String(sedeActivaId));
+      const nuevasColumnas = (sedeActual && sedeActual.columnas_salon) ? parseInt(sedeActual.columnas_salon) : 3;
+      
+      // 🛡️ FILTRO ANTI-CASCADA: Solo actualizamos si el número es realmente diferente
+      setColumnas(columnasAnteriores => {
+        if (columnasAnteriores !== nuevasColumnas) return nuevasColumnas;
+        return columnasAnteriores;
+      });
     }
-  }, [sedeActivaId]);
+  }, [sedeActivaId, sedes]);
 
   // 3. Actualizamos la función de cambio para que guarde con el ID de la sede
   const manejarCambioColumnas = async (nuevasCols) => {
@@ -178,10 +192,10 @@ export default function EditorPlanos() {
       {/* 🏢 SELECTOR DE SEDES & MODO LECTURA */}
       <div className="mb-6 flex items-center gap-3">
         <span className={`text-[10px] font-black uppercase tracking-widest ${tema === 'dark' ? 'text-neutral-500' : 'text-gray-500'}`}>
-          {rolUsuario === 'Dueño' ? 'Editando Sede:' : 'Sede Asignada:'}
+          {esDueño ? 'Editando Sede:' : 'Sede Asignada:'}
         </span>
         
-        {rolUsuario === 'Dueño' ? (
+        {esDueño ? (
           sedes.length > 1 ? (
             <select 
               value={sedeActivaId} 

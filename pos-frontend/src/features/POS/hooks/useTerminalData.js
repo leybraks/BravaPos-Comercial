@@ -46,19 +46,35 @@ export const useTerminalData = (sedeActualId, triggerRecarga, setConfiguracionGl
 
   // 2. Carga de datos del Salón (Sedes, Mesas, Órdenes)
   useEffect(() => {
-    if (!sedeActualId) return;
+    let isMounted = true;
+    const cargarSedes = async () => {
+      try {
+        const resSedes = await getSedes();
+        if (isMounted) {
+          setSedes(resSedes.data);
+        }
+      } catch (e) {
+        console.error('Error cargando sedes:', e);
+      }
+    };
+    cargarSedes();
+    return () => { isMounted = false; };
+  }, []);
+
+  useEffect(() => {
+    // 🛑 Si no hay sede, frenamos aquí, pero las sedes ya se cargaron arriba
+    if (!sedeActualId) return; 
     let isMounted = true;
 
     const cargarSalon = async () => {
       try {
-        const [resMesas, resOrdenes, resSedes] = await Promise.all([
+        // Solo pedimos mesas y órdenes
+        const [resMesas, resOrdenes] = await Promise.all([
           getMesas({ sede_id: sedeActualId }),
           getOrdenes({ sede_id: sedeActualId }),
-          getSedes(),
         ]);
         
         if (!isMounted) return;
-        setSedes(resSedes.data);
 
         const ordenesVivas = resOrdenes.data.filter(
           (o) => o.estado !== 'completado' && o.estado !== 'cancelado' && o.estado_pago !== 'pagado'

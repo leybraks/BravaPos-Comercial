@@ -30,7 +30,7 @@ const getNegocioId  = () => localStorage.getItem('negocio_id');
 //    El token viaja automáticamente en la cookie HttpOnly, no en el header.
 
 /** Limpia todo y redirige al login */
-const cerrarSesionGlobal = async () => {
+export const cerrarSesionGlobal = async () => {
   try {
     await axios.post(`${API_URL}/token/logout/`, {}, { withCredentials: true });
   } catch (_) {}

@@ -14,6 +14,12 @@ export default function EditorMenu({
   const { configuracionGlobal } = usePosStore();
   const config = configuracionGlobal || { temaFondo: 'dark', colorPrimario: '#ff5a1f' };
 
+  // ==========================================
+  // 🛡️ SEGURIDAD DE ROLES
+  // ==========================================
+  const rolUsuario = localStorage.getItem('usuario_rol')?.toLowerCase() || '';
+  const esDueño = rolUsuario === 'dueño'; // Administrador NO es dueño aquí
+
   // Estados que solo le importan a esta vista
   const [categoriaSeleccionada, setCategoriaSeleccionada] = useState('Todos');
   const [dropdownAbierto, setDropdownAbierto] = useState(false);
@@ -32,28 +38,31 @@ export default function EditorMenu({
             Ingeniería de <span style={{ color: config.colorPrimario }}>Menú</span>
           </h2>
           <p className={`text-sm mt-1 font-medium ${config.temaFondo === 'dark' ? 'text-neutral-500' : 'text-gray-500'}`}>
-            Crea platos, categorías y configura las recetas maestras.
+            {esDueño ? 'Crea platos, categorías y configura las recetas maestras.' : 'Consulta el catálogo y gestiona la disponibilidad de tu local.'}
           </p>
         </div>
 
-        <div className="flex flex-col sm:flex-row w-full md:w-auto gap-3 shrink-0 z-10">
-          <button 
-            onClick={onOpenCategorias}
-            className={`flex items-center justify-center gap-2 px-6 py-4 rounded-2xl font-bold transition-all w-full sm:w-auto text-sm ${
-              config.temaFondo === 'dark' ? 'bg-[#1a1a1a] hover:bg-[#222] text-neutral-300 border border-[#333]' : 'bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-300'
-            }`}
-          >
-            📁 Categorías
-          </button>
-          
-          <button 
-            onClick={onOpenPlatoNuevo}
-            style={{ backgroundColor: config.colorPrimario }}
-            className="flex items-center justify-center gap-2 text-white px-8 py-4 rounded-2xl font-black shadow-lg shadow-orange-900/20 transition-all w-full sm:w-auto text-sm hover:scale-[1.02] active:scale-95"
-          >
-            🍔 NUEVO PLATO
-          </button>
-        </div>
+        {/* ✨ SOLO EL DUEÑO PUEDE CREAR CATEGORÍAS Y PLATOS */}
+        {esDueño && (
+          <div className="flex flex-col sm:flex-row w-full md:w-auto gap-3 shrink-0 z-10">
+            <button 
+              onClick={onOpenCategorias}
+              className={`flex items-center justify-center gap-2 px-6 py-4 rounded-2xl font-bold transition-all w-full sm:w-auto text-sm ${
+                config.temaFondo === 'dark' ? 'bg-[#1a1a1a] hover:bg-[#222] text-neutral-300 border border-[#333]' : 'bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-300'
+              }`}
+            >
+              📁 Categorías
+            </button>
+            
+            <button 
+              onClick={onOpenPlatoNuevo}
+              style={{ backgroundColor: config.colorPrimario }}
+              className="flex items-center justify-center gap-2 text-white px-8 py-4 rounded-2xl font-black shadow-lg shadow-orange-900/20 transition-all w-full sm:w-auto text-sm hover:scale-[1.02] active:scale-95"
+            >
+              🍔 NUEVO PLATO
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ========== CUERPO: CATEGORÍAS + PLATOS ========== */}
@@ -147,24 +156,24 @@ export default function EditorMenu({
               })
               .map((plato) => {
                 const nombreCategoriaMuestra = categorias.find(c => c.id === plato.categoria)?.nombre || plato.categoria || 'Sin categoría';
-                // Definimos si el plato es variable basándonos en si su precio es 0
                 const esVariable = parseFloat(plato.precio_base) <= 0;
 
                 return (
                   <div 
                     key={plato.id} 
-                    // ✨ 1. HACEMOS QUE TODA LA TARJETA ABRA EL MODO EDICIÓN
-                    onClick={() => onEditPlato(plato)} 
-                    className={`cursor-pointer rounded-[2rem] p-6 flex flex-col relative overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-lg ${!plato.disponible ? 'opacity-60 grayscale' : ''} ${
-                      config.temaFondo === 'dark' ? 'bg-[#161616] border border-[#2a2a2a] group hover:border-[#ff5a1f]/50' : 'bg-white border border-gray-200 shadow-sm group hover:border-[#ff5a1f]/50'
+                    // ✨ SOLO EL DUEÑO PUEDE ABRIR EL MODAL DE EDICIÓN DEL PLATO
+                    onClick={() => { if(esDueño) onEditPlato(plato) }} 
+                    className={`rounded-[2rem] p-6 flex flex-col relative overflow-hidden transition-all duration-300 ${esDueño ? 'cursor-pointer hover:-translate-y-1 hover:shadow-lg' : 'cursor-default'} ${!plato.disponible ? 'opacity-60 grayscale' : ''} ${
+                      config.temaFondo === 'dark' ? `bg-[#161616] border border-[#2a2a2a] group ${esDueño ? 'hover:border-[#ff5a1f]/50' : ''}` : `bg-white border border-gray-200 shadow-sm group ${esDueño ? 'hover:border-[#ff5a1f]/50' : ''}`
                     }`}
                   >
-                    {/* Indicador de Disponibilidad */}
+                    {/* Indicador de Disponibilidad (Todos pueden apretarlo) */}
                     <button 
                       onClick={(e) => { e.stopPropagation(); onToggleDisponibilidad(plato); }}
                       className={`absolute top-5 right-5 flex items-center gap-2 px-3 py-1.5 rounded-full border z-10 transition-all hover:scale-105 ${
                         config.temaFondo === 'dark' ? 'bg-[#111] border-[#333]' : 'bg-gray-100 border-gray-200'
                       }`}
+                      title={esDueño ? "Cambiar disponibilidad global" : "Cambiar disponibilidad en esta sede"}
                     >
                       <span className={`w-2 h-2 rounded-full ${plato.disponible ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500'}`}></span>
                       <span className={`text-[10px] font-bold uppercase tracking-widest ${config.temaFondo === 'dark' ? 'text-neutral-400' : 'text-gray-500'}`}>
@@ -173,7 +182,7 @@ export default function EditorMenu({
                     </button>
 
                     {/* Imagen placeholder */}
-                    <div className={`w-full h-36 rounded-2xl flex items-center justify-center text-6xl mb-6 shadow-inner transition-transform group-hover:scale-105 ${
+                    <div className={`w-full h-36 rounded-2xl flex items-center justify-center text-6xl mb-6 shadow-inner transition-transform ${esDueño ? 'group-hover:scale-105' : ''} ${
                       config.temaFondo === 'dark' ? 'bg-gradient-to-br from-[#1a1a1a] to-[#111] border border-[#222]' : 'bg-gradient-to-br from-gray-100 to-gray-50 border border-gray-200'
                     }`}>
                       🍽️
@@ -187,7 +196,6 @@ export default function EditorMenu({
                     </p>
                     
                     <div className="mt-auto flex items-center justify-between gap-3 pt-2">
-                      {/* ✨ 2. ETIQUETA O PRECIO (Limpiamos el código) */}
                       {!esVariable ? (
                         <p className="font-black text-2xl sm:text-3xl tracking-tighter truncate" style={{ color: config.colorPrimario }}>
                           <span className="text-sm mr-1">S/</span>{parseFloat(plato.precio_base).toFixed(2)}
@@ -203,30 +211,33 @@ export default function EditorMenu({
                         </div>
                       )}
                       
-                      {/* ✨ 3. CONDICIONAL DE BOTONES: O Variaciones, O Receta */}
-                      <div className="flex shrink-0 z-10">
-                        {esVariable ? (
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); onOpenVariaciones(plato); }}
-                            className={`w-12 h-12 flex items-center justify-center rounded-xl transition-all shadow-md ${
-                              config.temaFondo === 'dark' ? 'bg-[#1a1a1a] hover:bg-[#ff5a1f] text-neutral-400 hover:text-white border border-[#333] hover:border-[#ff5a1f]' : 'bg-gray-100 hover:bg-[#ff5a1f] hover:text-white border border-gray-200'
-                            }`}
-                            title="Configurar Variaciones"
-                          >
-                            🏷️
-                          </button>
-                        ) : (
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); onOpenReceta(plato); }}
-                            className={`w-12 h-12 flex items-center justify-center rounded-xl transition-all shadow-md ${
-                              config.temaFondo === 'dark' ? 'bg-[#1a1a1a] hover:bg-[#ff5a1f] text-neutral-400 hover:text-white border border-[#333] hover:border-[#ff5a1f]' : 'bg-gray-100 hover:bg-[#ff5a1f] hover:text-white border border-gray-200'
-                            }`}
-                            title="Configurar Receta Base"
-                          >
-                            🍳
-                          </button>
-                        )}
-                      </div>
+                      {/* ✨ SOLO EL DUEÑO VE LOS BOTONES DE VARIACIONES O RECETA */}
+                      {esDueño && (
+                        <div className="flex shrink-0 z-10">
+                          {esVariable ? (
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); onOpenVariaciones(plato); }}
+                              className={`w-12 h-12 flex items-center justify-center rounded-xl transition-all shadow-md ${
+                                config.temaFondo === 'dark' ? 'bg-[#1a1a1a] hover:bg-[#ff5a1f] text-neutral-400 hover:text-white border border-[#333] hover:border-[#ff5a1f]' : 'bg-gray-100 hover:bg-[#ff5a1f] hover:text-white border border-gray-200'
+                              }`}
+                              title="Configurar Variaciones"
+                            >
+                              🏷️
+                            </button>
+                          ) : (
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); onOpenReceta(plato); }}
+                              className={`w-12 h-12 flex items-center justify-center rounded-xl transition-all shadow-md ${
+                                config.temaFondo === 'dark' ? 'bg-[#1a1a1a] hover:bg-[#ff5a1f] text-neutral-400 hover:text-white border border-[#333] hover:border-[#ff5a1f]' : 'bg-gray-100 hover:bg-[#ff5a1f] hover:text-white border border-gray-200'
+                              }`}
+                              title="Configurar Receta Base"
+                            >
+                              🍳
+                            </button>
+                          )}
+                        </div>
+                      )}
+
                     </div>
                   </div>
                 );

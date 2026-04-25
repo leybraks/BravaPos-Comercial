@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState,useEffect } from 'react';
 import { crearOrden, actualizarMesa, actualizarOrden, crearPago, registrarMovimientoCaja, validarPinEmpleado } from '../../api/api';
 
 import usePosStore from '../../store/usePosStore';
@@ -57,6 +57,21 @@ export default function PosTerminal({ onIrAErp }) {
 
   useTerminalWS(sedeActualId, setMesas, setOrdenesLlevar);
 
+
+  useEffect(() => {
+    // Solo ejecutamos esta lógica cuando la lista de sedes termina de cargar
+    if (sedes && sedes.length > 0) {
+      
+      // Leemos directo del disco para no depender del estado de React y evitar el bucle
+      const sedeGuardada = localStorage.getItem('sede_id');
+      
+      if (!sedeGuardada) {
+        const primeraSedeId = sedes[0].id.toString();
+        localStorage.setItem('sede_id', primeraSedeId);
+        setSedeActualId(primeraSedeId);
+      }
+    }
+  }, [sedes]);
   // ── HELPERS ─────────────────────────────────────────────────────────────────
   const manejarCambioSede = (nuevaSedeId) => {
     if (!nuevaSedeId) return;

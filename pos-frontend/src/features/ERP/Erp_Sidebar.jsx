@@ -1,20 +1,8 @@
 import React, { useState } from 'react';
 import usePosStore from '../../store/usePosStore';
 
-// ✨ HELPER: Agregamos el decodificador (puedes moverlo a un archivo utils.js luego si quieres)
-const decodificarToken = (token) => {
-  try {
-    if (!token) return null;
-    const base64Url = token.split('.')[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
-        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-    }).join(''));
-    return JSON.parse(jsonPayload);
-  } catch (error) {
-    return null;
-  }
-};
+// ✨ 1. Importamos la función destructora de sesiones de tu API
+import { cerrarSesionGlobal } from '../../api/api';
 
 export default function Erp_Sidebar({ 
   vistaActiva, 
@@ -29,17 +17,14 @@ export default function Erp_Sidebar({
   const colorPrimario = configuracionGlobal?.colorPrimario || '#ff5a1f';
 
   // =========================================================
-  // 🔒 EXTRACCIÓN SEGURA DESDE EL TOKEN (Criptografía)
+  // 🔒 EXTRACCIÓN SEGURA (Sin decodificar tokens a mano)
   // =========================================================
-  const token = localStorage.getItem('tablet_token');
-  const infoUsuario = decodificarToken(token) || {};
+  // ✨ 2. Ya no intentamos leer el token, solo leemos el rol que guardamos en el Login
+  const rolUsuario = localStorage.getItem('usuario_rol') || 'Empleado'; 
+  const esDueño = rolUsuario.toLowerCase() === 'dueño' || rolUsuario.toLowerCase() === 'admin';
 
-  const rolUsuario = infoUsuario.rol || 'Empleado'; 
-  const esDueño = rolUsuario === 'Dueño' || rolUsuario === 'Admin';
-
-  // Leemos los módulos directo del token (súper rápido) 
-  // o usamos el global como plan B
-  const modulos = infoUsuario.modulos || configuracionGlobal?.modulos || {};
+  // Leemos los módulos de la configuración global
+  const modulos = configuracionGlobal?.modulos || {};
 
   const gruposMenu = [
     {
@@ -74,16 +59,17 @@ export default function Erp_Sidebar({
     }
   ];
 
-  const handleCerrarSesion = () => {
+  // ✨ 3. Conectamos la verdadera salida segura
+  const handleCerrarSesion = async () => {
     if (window.confirm("¿Estás seguro que deseas cerrar sesión?")) {
-      localStorage.clear();
-      window.location.href = '/';
+      // Llamamos al backend para que destruya la cookie HttpOnly
+      await cerrarSesionGlobal(); 
     }
   };
 
   return (
     <>
-      {/* 🌫️ FONDO BORROSO (MÓVIL): Al hacer clic afuera, se cierra */}
+      {/* 🌫️ FONDO BORROSO (MÓVIL) */}
       {menuAbierto && (
         <div 
           className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 md:hidden animate-fadeIn"
@@ -131,7 +117,7 @@ export default function Erp_Sidebar({
           </button>
         </div>
 
-        {/* NAVEGACIÓN (Estilo Moderno Flat) */}
+        {/* NAVEGACIÓN */}
         <nav className="flex-1 overflow-y-auto custom-scrollbar px-4 pb-6 space-y-6">
           {gruposMenu.map((grupo, index) => {
             const itemsVisibles = grupo.items.filter(item => item.show);
@@ -139,7 +125,7 @@ export default function Erp_Sidebar({
 
             return (
               <div key={index} className="flex flex-col gap-1.5 relative group">
-                {/* Título de Categoría (Se oculta al colapsar o se vuelve una línea) */}
+                {/* Título de Categoría */}
                 <h4 className={`text-[10px] font-black text-neutral-600 tracking-widest mb-2 transition-all duration-300 ${isCollapsed ? 'text-center opacity-0 h-0 overflow-hidden' : 'opacity-100 px-4'}`}>
                   {grupo.titulo}
                 </h4>
@@ -151,14 +137,14 @@ export default function Erp_Sidebar({
                       key={item.id}
                       onClick={() => {
                         manejarCambioVista(item.id);
-                        if (window.innerWidth < 768) setMenuAbierto(false); // Autocerrar en móvil
+                        if (window.innerWidth < 768) setMenuAbierto(false); 
                       }}
                       className={`relative flex items-center rounded-2xl transition-all duration-300 group/btn
                         ${isCollapsed ? 'justify-center p-3 mx-auto w-14 h-14' : 'px-4 py-3.5 gap-4 w-full'}
                         ${!isActivo ? 'text-neutral-400 hover:bg-[#1a1a1a] hover:text-white' : 'font-bold shadow-lg'}
                       `}
                       style={isActivo ? { backgroundColor: colorPrimario, color: '#fff' } : {}}
-                      title={isCollapsed ? item.nombre : ''} // Tooltip nativo al pasar el mouse
+                      title={isCollapsed ? item.nombre : ''} 
                     >
                       <span className={`text-xl transition-transform duration-300 ${isActivo ? 'scale-110' : 'opacity-70 group-hover/btn:scale-110'}`}>
                         {item.icono}

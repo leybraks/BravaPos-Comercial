@@ -9,17 +9,23 @@ export default function Erp_DashboardVentas({
 }) {
   const isDark = config.temaFondo === 'dark';
   const [ordenDetalleId, setOrdenDetalleId] = useState(null);
+
+  // ==========================================
+  // 🛡️ 0. SEGURIDAD DE ROLES
+  // ==========================================
+  const rolUsuario = localStorage.getItem('usuario_rol')?.toLowerCase() || '';
+  const esDueño = rolUsuario === 'dueño'; // Solo el Dueño puede ver múltiples sedes
+
   // ==========================================
   // 🕒 1. ESTADOS DE FILTRO DE TIEMPO
   // ==========================================
   const [tipoFiltroTiempo, setTipoFiltroTiempo] = useState('hoy');
-  const [dropdownAbierto, setDropdownAbierto] = useState(false); // ✨ Para el menú custom
+  const [dropdownAbierto, setDropdownAbierto] = useState(false); 
   
   const hoyStr = new Date().toISOString().split('T')[0];
   const [fechaInicio, setFechaInicio] = useState(hoyStr);
   const [fechaFin, setFechaFin] = useState(hoyStr);
 
-  // ✨ Opciones del Menú Custom
   const opcionesTiempo = [
     { id: 'hoy', label: 'Hoy', icon: '📅' },
     { id: 'ayer', label: 'Ayer', icon: '⏳' },
@@ -140,37 +146,52 @@ export default function Erp_DashboardVentas({
         isDark ? 'bg-[#121212] border border-[#222]' : 'bg-white shadow-sm border border-gray-100'
       }`}>
         
-        {/* Filtro Multi-Sede */}
-        <div className={`flex w-full xl:w-auto rounded-2xl p-1.5 overflow-x-auto custom-scrollbar shrink-0 ${
-          isDark ? 'bg-[#0a0a0a] border border-[#1a1a1a]' : 'bg-gray-100/80 border border-gray-200/50'
-        }`}>
-          <button 
-            onClick={() => cambiarSedeFiltro('Todas')}
-            className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all shrink-0 ${
-              sedeFiltro === 'Todas' ? 'text-white shadow-md' : isDark ? 'text-neutral-500 hover:text-white hover:bg-[#1a1a1a]' : 'text-gray-500 hover:text-gray-900 hover:bg-white'
-            }`}
-            style={sedeFiltro === 'Todas' ? { backgroundColor: config.colorPrimario } : {}}
-          >
-            General
-          </button>
-          {sedesReales?.map(s => (
+        {/* ✨ FILTRO MULTI-SEDE (Condicional por Rol) */}
+        {esDueño ? (
+          <div className={`flex w-full xl:w-auto rounded-2xl p-1.5 overflow-x-auto custom-scrollbar shrink-0 ${
+            isDark ? 'bg-[#0a0a0a] border border-[#1a1a1a]' : 'bg-gray-100/80 border border-gray-200/50'
+          }`}>
             <button 
-              key={s.id} 
-              onClick={() => cambiarSedeFiltro(s)}
+              onClick={() => cambiarSedeFiltro('Todas')}
               className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all shrink-0 ${
-                sedeFiltro === s.nombre ? 'text-white shadow-md' : isDark ? 'text-neutral-500 hover:text-white hover:bg-[#1a1a1a]' : 'text-gray-500 hover:text-gray-900 hover:bg-white'
+                sedeFiltro === 'Todas' ? 'text-white shadow-md' : isDark ? 'text-neutral-500 hover:text-white hover:bg-[#1a1a1a]' : 'text-gray-500 hover:text-gray-900 hover:bg-white'
               }`}
-              style={sedeFiltro === s.nombre ? { backgroundColor: config.colorPrimario } : {}}
+              style={sedeFiltro === 'Todas' ? { backgroundColor: config.colorPrimario } : {}}
             >
-              {s.nombre}
+              General
             </button>
-          ))}
-        </div>
+            {sedesReales?.map(s => (
+              <button 
+                key={s.id} 
+                onClick={() => cambiarSedeFiltro(s.nombre)}
+                className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all shrink-0 ${
+                  sedeFiltro === s.nombre ? 'text-white shadow-md' : isDark ? 'text-neutral-500 hover:text-white hover:bg-[#1a1a1a]' : 'text-gray-500 hover:text-gray-900 hover:bg-white'
+                }`}
+                style={sedeFiltro === s.nombre ? { backgroundColor: config.colorPrimario } : {}}
+              >
+                {s.nombre}
+              </button>
+            ))}
+          </div>
+        ) : (
+          /* ✨ VISTA ADMINISTRADOR: Etiqueta fija de su sede */
+          <div className={`flex items-center px-6 py-3 rounded-2xl shrink-0 ${
+            isDark ? 'bg-[#1a1a1a] border border-[#333]' : 'bg-gray-50 border border-gray-200'
+          }`}>
+            <span className="text-xl mr-2">📍</span>
+            <span className={`text-sm font-bold uppercase tracking-wider ${isDark ? 'text-neutral-400' : 'text-gray-500'}`}>
+              Sede Activa: 
+              <span className={`ml-2 font-black ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                {localStorage.getItem('sede_nombre') || 'Local Principal'}
+              </span>
+            </span>
+          </div>
+        )}
 
         {/* Filtros de Tiempo y Exportar */}
         <div className="flex flex-col sm:flex-row w-full xl:w-auto gap-3 relative z-20">
           
-          {/* ✨ DROPDOWN CUSTOMIZADO (Adiós <select> nativo) */}
+          {/* DROPDOWN CUSTOMIZADO */}
           <div className="relative">
             <button 
               onClick={() => setDropdownAbierto(!dropdownAbierto)}
@@ -187,7 +208,6 @@ export default function Erp_DashboardVentas({
             {/* Menú Desplegable */}
             {dropdownAbierto && (
               <>
-                {/* Overlay invisible para cerrar al hacer clic afuera */}
                 <div className="fixed inset-0 z-10" onClick={() => setDropdownAbierto(false)}></div>
                 <div className={`absolute top-full mt-2 w-full rounded-2xl shadow-2xl z-20 overflow-hidden border animate-fadeIn ${
                   isDark ? 'bg-[#1a1a1a] border-[#333]' : 'bg-white border-gray-200'
@@ -210,7 +230,7 @@ export default function Erp_DashboardVentas({
             )}
           </div>
 
-          {/* ✨ RANGOS DE FECHA CUSTOMIZADOS (Sin íconos feos) */}
+          {/* RANGOS DE FECHA CUSTOMIZADOS */}
           {tipoFiltroTiempo === 'rango' && (
             <div className={`flex items-center gap-2 px-4 py-1.5 rounded-2xl border ${isDark ? 'bg-[#1a1a1a] border-[#333]' : 'bg-white border-gray-200 shadow-sm'}`}>
               <div className="relative flex items-center">
@@ -219,7 +239,6 @@ export default function Erp_DashboardVentas({
                   type="date" 
                   value={fechaInicio} 
                   onChange={(e) => setFechaInicio(e.target.value)}
-                  // Ocultamos el ícono feo del navegador con CSS en línea y Tailwind
                   className={`bg-transparent outline-none pl-6 text-sm font-bold cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:w-full ${isDark ? 'text-white' : 'text-gray-900'}`}
                 />
               </div>
@@ -288,16 +307,13 @@ export default function Erp_DashboardVentas({
               ) : (
                 datosGrafico.map((d, i) => (
                   <div key={i} className="flex flex-col items-end justify-end gap-1 h-full w-full group relative">
-                    {/* Tooltip hover */}
                     <span className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-7 left-1/2 -translate-x-1/2 text-[10px] font-bold bg-[#1a1a1a] text-white px-2 py-1 rounded shadow-lg z-10 pointer-events-none whitespace-nowrap">
                       S/ {d.valor}
                     </span>
-                    {/* Barra: altura dinámica directa, sin wrapper anidado */}
                     <div
                       style={{ height: d.alto, backgroundColor: config.colorPrimario }}
                       className="w-full rounded-t-xl transition-all duration-700 group-hover:brightness-125"
                     ></div>
-                    {/* Etiqueta día */}
                     <span className={`text-[10px] font-bold uppercase tracking-wider whitespace-nowrap ${isDark ? 'text-neutral-500' : 'text-gray-400'}`}>
                       {d.dia}
                     </span>
@@ -341,13 +357,10 @@ export default function Erp_DashboardVentas({
 
         </div>
 
-        {/* ✨ COLUMNA DERECHA (1/3) - FEED CON ALTURA INTELIGENTE */}
+        {/* FEED CON ALTURA INTELIGENTE */}
         <div className={`lg:col-span-1 rounded-3xl p-6 border flex flex-col transition-all ${
           isDark ? 'bg-[#121212] border-[#222]' : 'bg-white border-gray-100 shadow-sm'
         }`} 
-        /* 🔥 TRUCO MAESTRO: '100vh - 220px' asegura que el contenedor 
-          NUNCA sea más alto que la pantalla del dueño. 
-        */
         style={{ height: 'calc(100vh - 220px)', minHeight: '500px' }}>
           
           <div className="flex justify-between items-center mb-6 shrink-0">
@@ -410,7 +423,6 @@ export default function Erp_DashboardVentas({
                       </div>
                     </div>
 
-                    {/* ✨ SECCIÓN DE DETALLE: Solo se muestra si está seleccionada */}
                     {isSelected && (
                       <div className={`mt-4 pt-3 border-t border-dashed animate-slideDown ${isDark ? 'border-[#333]' : 'border-gray-200'}`}>
                         <div className="space-y-2">
@@ -426,7 +438,6 @@ export default function Erp_DashboardVentas({
                             </div>
                           ))}
                         </div>
-                        {/* Nota opcional */}
                         {orden.notas && (
                           <div className="mt-3 p-2 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
                             <p className="text-[10px] text-yellow-600 font-bold uppercase">Nota:</p>

@@ -1,56 +1,73 @@
 import React, { useState, useEffect } from 'react';
-// ✨ 1. Agregamos getSedes aquí
 import { getMesas, getSedes } from '../../api/api'; 
 import { QRCodeSVG } from 'qrcode.react'; 
 
 export default function DashboardCartaQR({ config }) { 
-  // (Ya no necesitamos recibir sedesReales por las props)
 
-  const rolUsuario = localStorage.getItem('rol_usuario') || '';
-  const esDueño = rolUsuario.trim().toLowerCase() === 'dueño' || rolUsuario.trim().toLowerCase() === 'admin';
+  // ==========================================
+  // 🛡️ SEGURIDAD DE ROLES
+  // ==========================================
+  const rolUsuario = localStorage.getItem('usuario_rol') || localStorage.getItem('rol_usuario') || '';
+  const esDueño = rolUsuario.trim().toLowerCase() === 'dueño'; // 👈 Admin ya no es Dueño
   const sedeAsignada = localStorage.getItem('sede_id');
 
-  // ✨ 2. Creamos un estado propio para las sedes
   const [sedes, setSedes] = useState([]); 
-  const [sedeSeleccionada, setSedeSeleccionada] = useState(esDueño ? '' : sedeAsignada);
+  const [sedeSeleccionada, setSedeSeleccionada] = useState(
+    esDueño ? (localStorage.getItem('memoria_sede_qr') || '') : sedeAsignada
+  );
   const [mesas, setMesas] = useState([]);
   const [cargando, setCargando] = useState(false);
-
-  // ✨ 3. EFECTO NUEVO: Descargamos las sedes apenas se abre esta pantalla
+  
   useEffect(() => {
+    if (esDueño && sedeSeleccionada) {
+      localStorage.setItem('memoria_sede_qr', sedeSeleccionada);
+    }
+  }, [sedeSeleccionada, esDueño]);
+  // ==========================================
+  // 1. EFECTO: TRAER SEDES (Se ejecuta SOLO UNA VEZ)
+  // ==========================================
+  useEffect(() => {
+    let isMounted = true;
     const cargarSedes = async () => {
       try {
         const res = await getSedes();
+        if (!isMounted) return;
+        
         setSedes(res.data);
         
-        // Si es dueño y no hay sede elegida, auto-seleccionamos la primera para que carguen las mesas
-        if (esDueño && res.data.length > 0 && !sedeSeleccionada) {
-          setSedeSeleccionada(res.data[0].id);
+        // ✨ SALVAVIDAS DUEÑO: Si es dueño y no ha elegido sede, seleccionamos la primera sin causar bucles
+        if (esDueño && res.data.length > 0) {
+          setSedeSeleccionada(prev => prev ? prev : res.data[0].id);
         }
       } catch (error) {
         console.error("Error al cargar sedes:", error);
       }
     };
     cargarSedes();
-  }, [esDueño, sedeSeleccionada]);
+    return () => { isMounted = false; };
+  }, [esDueño]); // 👈 Sin dependencias tóxicas, no más bucles infinitos
 
-  // 4. EFECTO DE MESAS: Reacciona cuando ya tenemos una sede elegida
+  // ==========================================
+  // 2. EFECTO: TRAER MESAS (Reacciona al cambiar de sede)
+  // ==========================================
   useEffect(() => {
-    if (sedeSeleccionada) {
-      const cargarMesas = async () => {
-        setCargando(true);
-        try {
-          const res = await getMesas({ sede_id: sedeSeleccionada });
-          setMesas(res.data);
-        } catch (error) {
-          console.error("Error al cargar mesas para QR:", error);
-        } finally {
-          setCargando(false);
-        }
-      };
-      cargarMesas();
-    }
-  }, [sedeSeleccionada]);
+    if (!sedeSeleccionada) return; // 🛑 Frenamos si no hay sede
+    
+    let isMounted = true;
+    const cargarMesas = async () => {
+      setCargando(true);
+      try {
+        const res = await getMesas({ sede_id: sedeSeleccionada });
+        if (isMounted) setMesas(res.data);
+      } catch (error) {
+        console.error("Error al cargar mesas para QR:", error);
+      } finally {
+        if (isMounted) setCargando(false);
+      }
+    };
+    cargarMesas();
+    return () => { isMounted = false; };
+  }, [sedeSeleccionada]); // 👈 Escucha los cambios del select perfectamente
 
   const descargarQR = (idMesa, numeroMesa) => {
     const svg = document.getElementById(`qr-mesa-${idMesa}`);
@@ -88,22 +105,37 @@ export default function DashboardCartaQR({ config }) {
             </p>
           </div>
 
-          {/* ✨ SELECTOR PARA EL DUEÑO: Usa el estado 'sedes' que acabamos de descargar */}
-          {esDueño && sedes.length > 1 && (
-            <div className="flex flex-col items-end gap-2">
-              <span className="text-[10px] font-black uppercase tracking-widest text-neutral-500">
-                Cambiar de Sede
+          {/* ✨ SELECTOR PARA EL DUEÑO */}
+          {esDueño ? (
+            sedes.length > 1 && (
+              <div className="flex flex-col items-end gap-2">
+                <span className="text-[10px] font-black uppercase tracking-widest text-neutral-500">
+                  Cambiar de Sede
+                </span>
+                <select 
+                  value={sedeSeleccionada || ''} 
+                  onChange={(e) => setSedeSeleccionada(e.target.value)}
+                  className="text-xs font-bold px-4 py-2.5 rounded-xl border outline-none cursor-pointer bg-[#1a1a1a] text-white border-[#333] hover:border-[#ff5a1f] focus:border-[#ff5a1f] transition-all"
+                  style={{ color: config.colorPrimario }}
+                >
+                  {sedes.map(s => (
+                    <option key={s.id} value={s.id}>📍 {s.nombre}</option>
+                  ))}
+                </select>
+              </div>
+            )
+          ) : (
+            /* ETIQUETA PARA EL ADMIN */
+            <div className={`flex items-center px-6 py-3 rounded-2xl shrink-0 ${
+              config.temaFondo === 'dark' ? 'bg-[#1a1a1a] border border-[#333]' : 'bg-gray-50 border border-gray-200'
+            }`}>
+              <span className="text-xl mr-2">📍</span>
+              <span className={`text-sm font-bold uppercase tracking-wider ${config.temaFondo === 'dark' ? 'text-neutral-400' : 'text-gray-500'}`}>
+                Local: 
+                <span className={`ml-2 font-black ${config.temaFondo === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                  {localStorage.getItem('sede_nombre') || 'Local Principal'}
+                </span>
               </span>
-              <select 
-                value={sedeSeleccionada || ''} 
-                onChange={(e) => setSedeSeleccionada(e.target.value)}
-                className="text-xs font-bold px-4 py-2.5 rounded-xl border outline-none cursor-pointer bg-[#1a1a1a] text-white border-[#333] hover:border-[#ff5a1f] focus:border-[#ff5a1f] transition-all"
-                style={{ color: config.colorPrimario }}
-              >
-                {sedes.map(s => (
-                  <option key={s.id} value={s.id}>📍 {s.nombre}</option>
-                ))}
-              </select>
             </div>
           )}
         </div>

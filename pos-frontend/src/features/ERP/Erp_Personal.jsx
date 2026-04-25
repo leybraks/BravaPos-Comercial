@@ -5,11 +5,32 @@ export default function Erp_Personal({
   empleadosReales,
   sedesReales,
   onNuevoEmpleado,
-  sedeFiltroId, // ✨ Nueva Prop
+  sedeFiltroId, 
   onCambiarSedeFiltro,
   onEditarEmpleado,
   onToggleActivo
 }) {
+
+  // ==========================================
+  // 🛡️ SEGURIDAD DE ROLES (FRONTEND)
+  // ==========================================
+  const rolUsuario = localStorage.getItem('usuario_rol')?.toLowerCase() || '';
+  const esDueño = rolUsuario === 'dueño'; 
+  const sedeActualId = localStorage.getItem('sede_id');
+
+  // ==========================================
+  // 🧠 MOTOR DE FILTRADO INTELIGENTE
+  // ==========================================
+  const empleadosFiltrados = empleadosReales.filter(emp => {
+    if (!esDueño) {
+      // 🔒 REGLA ADMIN: Solo pasa si el empleado pertenece a la sede actual del Admin
+      return String(emp.sede) === String(sedeActualId);
+    } else {
+      // 🌍 REGLA DUEÑO: Pasan los del filtro seleccionado, o todos si no hay filtro
+      return sedeFiltroId ? String(emp.sede) === String(sedeFiltroId) : true;
+    }
+  });
+
   return (
     <div className="animate-fadeIn space-y-6 pb-20">
       
@@ -20,49 +41,67 @@ export default function Erp_Personal({
             Equipo de Trabajo
           </h3>
           <p className={`text-sm mt-1 ${config.temaFondo === 'dark' ? 'text-neutral-500' : 'text-gray-500'}`}>
-            Gestiona accesos, edita perfiles y mide el rendimiento de tu personal.
+            {esDueño ? 'Gestiona accesos, edita perfiles y mide el rendimiento global.' : 'Consulta el equipo asignado a tu sede.'}
           </p>
         </div>
         
         <div className="flex items-center gap-3 w-full md:w-auto">
-          {/* ✨ SELECTOR DE SEDE PARA FILTRAR */}
-          {sedesReales.length > 1 && (
-            <div className={`flex items-center gap-2 px-3 py-3 rounded-xl border flex-1 md:flex-none ${
-              config.temaFondo === 'dark' ? 'bg-[#1a1a1a] border-[#333]' : 'bg-gray-50 border-gray-200'
+          {/* ✨ SELECTOR DE SEDE (Solo Dueño) o ETIQUETA FIJA (Administrador) */}
+          {esDueño ? (
+            sedesReales.length > 1 && (
+              <div className={`flex items-center gap-2 px-3 py-3 rounded-xl border flex-1 md:flex-none ${
+                config.temaFondo === 'dark' ? 'bg-[#1a1a1a] border-[#333]' : 'bg-gray-50 border-gray-200'
+              }`}>
+                <span className="text-xl">📍</span>
+                <select 
+                  value={sedeFiltroId || ''}
+                  onChange={(e) => onCambiarSedeFiltro(e.target.value)}
+                  className={`bg-transparent outline-none font-bold text-sm w-full cursor-pointer ${
+                    config.temaFondo === 'dark' ? 'text-white' : 'text-gray-800'
+                  }`}
+                >
+                  <option value="" className={config.temaFondo === 'dark' ? 'bg-[#111]' : ''}>Todas las Sedes</option>
+                  {sedesReales.map(s => <option key={s.id} value={s.id} className={config.temaFondo === 'dark' ? 'bg-[#111]' : ''}>{s.nombre}</option>)}
+                </select>
+              </div>
+            )
+          ) : (
+            <div className={`flex items-center px-6 py-3 rounded-2xl shrink-0 ${
+              config.temaFondo === 'dark' ? 'bg-[#1a1a1a] border border-[#333]' : 'bg-gray-50 border border-gray-200'
             }`}>
-              <span className="text-xl">📍</span>
-              <select 
-                value={sedeFiltroId || ''}
-                onChange={(e) => onCambiarSedeFiltro(e.target.value)}
-                className={`bg-transparent outline-none font-bold text-sm w-full cursor-pointer ${
-                  config.temaFondo === 'dark' ? 'text-white' : 'text-gray-800'
-                }`}
-              >
-                <option value="" className={config.temaFondo === 'dark' ? 'bg-[#111]' : ''}>Todas las Sedes</option>
-                {sedesReales.map(s => <option key={s.id} value={s.id} className={config.temaFondo === 'dark' ? 'bg-[#111]' : ''}>{s.nombre}</option>)}
-              </select>
+              <span className="text-xl mr-2">📍</span>
+              <span className={`text-sm font-bold uppercase tracking-wider ${config.temaFondo === 'dark' ? 'text-neutral-400' : 'text-gray-500'}`}>
+                Sede Activa: 
+                <span className={`ml-2 font-black ${config.temaFondo === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                  {localStorage.getItem('sede_nombre') || 'Local Principal'}
+                </span>
+              </span>
             </div>
           )}
 
-          <button 
-            onClick={onNuevoEmpleado}
-            style={{ backgroundColor: config.colorPrimario, boxShadow: `0 4px 15px ${config.colorPrimario}40` }}
-            className="text-white px-6 py-3 rounded-xl font-black transition-all hover:brightness-110 active:scale-95 flex items-center justify-center gap-2 whitespace-nowrap"
-          >
-            <span className="text-xl">+</span> EMPLEADO
-          </button>
+          {/* ✨ BOTÓN NUEVO EMPLEADO (Solo Dueño) */}
+          {esDueño && (
+            <button 
+              onClick={onNuevoEmpleado}
+              style={{ backgroundColor: config.colorPrimario, boxShadow: `0 4px 15px ${config.colorPrimario}40` }}
+              className="text-white px-6 py-3 rounded-xl font-black transition-all hover:brightness-110 active:scale-95 flex items-center justify-center gap-2 whitespace-nowrap"
+            >
+              <span className="text-xl">+</span> EMPLEADO
+            </button>
+          )}
         </div>
       </div>
 
       {/* ========== LISTADO DE EMPLEADOS ========== */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {empleadosReales.length === 0 && (
+        {empleadosFiltrados.length === 0 && (
           <div className={`col-span-full py-10 text-center font-bold border-2 border-dashed rounded-3xl ${config.temaFondo === 'dark' ? 'text-neutral-600 border-[#222]' : 'text-gray-400 border-gray-200'}`}>
             Aún no hay empleados registrados en esta sede.
           </div>
         )}
         
-        {empleadosReales.map(emp => (
+        {/* ✨ USAMOS empleadosFiltrados */}
+        {empleadosFiltrados.map(emp => (
           <div 
             key={emp.id} 
             className={`p-5 rounded-3xl flex items-center justify-between group transition-all ${
@@ -98,12 +137,10 @@ export default function Erp_Personal({
                     {emp.activo ? 'ACTIVO' : 'INACTIVO'}
                   </span>
 
-                  {/* ✨ NUEVO: Etiqueta de Sede conectada a la base de datos */}
                   {sedesReales.length > 1 && (
                     <span className={`text-[10px] font-black px-2 py-0.5 rounded border uppercase flex items-center gap-1 ${
                       config.temaFondo === 'dark' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 'bg-blue-50 text-blue-600 border-blue-200'
                     }`}>
-                      {/* 👇 Busca el ID de la sede en la lista real, si no tiene asume Matriz */}
                       📍 {sedesReales.find(s => String(s.id) === String(emp.sede))?.nombre || 'Todas (Matriz)'}
                     </span>
                   )}
@@ -115,25 +152,29 @@ export default function Erp_Personal({
               <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${config.temaFondo === 'dark' ? 'text-neutral-500' : 'text-gray-500'}`}>
                 PIN de Acceso
               </p>
+              {/* ✨ SOLO DUEÑO VE EL PIN */}
               <p className={`font-mono font-bold tracking-[4px] mb-2 ${config.temaFondo === 'dark' ? 'text-white' : 'text-gray-800'}`}>
-                {emp.activo ? '****' : '----'}
+                {esDueño ? (emp.activo ? '****' : '----') : '****'}
               </p>
               
-              <div className="flex gap-3">
-                <button 
-                  onClick={() => onEditarEmpleado(emp)}
-                  className="text-xs font-bold transition-colors hover:scale-105"
-                  style={{ color: config.colorPrimario }}
-                >
-                  Editar
-                </button>
-                <button 
-                  onClick={() => onToggleActivo(emp)}
-                  className={`text-xs font-bold transition-colors hover:scale-105 ${emp.activo ? 'text-red-500 hover:text-red-400' : 'text-green-500 hover:text-green-400'}`}
-                >
-                  {emp.activo ? 'Desactivar' : 'Reactivar'}
-                </button>
-              </div>
+              {/* ✨ ACCIONES (Solo Dueño) */}
+              {esDueño && (
+                <div className="flex gap-3">
+                  <button 
+                    onClick={() => onEditarEmpleado(emp)}
+                    className="text-xs font-bold transition-colors hover:scale-105"
+                    style={{ color: config.colorPrimario }}
+                  >
+                    Editar
+                  </button>
+                  <button 
+                    onClick={() => onToggleActivo(emp)}
+                    className={`text-xs font-bold transition-colors hover:scale-105 ${emp.activo ? 'text-red-500 hover:text-red-400' : 'text-green-500 hover:text-green-400'}`}
+                  >
+                    {emp.activo ? 'Desactivar' : 'Reactivar'}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         ))}

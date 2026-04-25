@@ -8,7 +8,14 @@ export default function InventarioView() {
   const { configuracionGlobal } = usePosStore();
   const config = configuracionGlobal || { temaFondo: 'dark', colorPrimario: '#ff5a1f' };
   
-  const [tab, setTab] = useState('locales'); // 'locales', 'catalogo'
+  // ==========================================
+  // 🛡️ SEGURIDAD DE ROLES
+  // ==========================================
+  const rolUsuario = localStorage.getItem('usuario_rol')?.toLowerCase() || '';
+  const esDueño = rolUsuario === 'dueño'; 
+  const sedeAdminId = localStorage.getItem('sede_id');
+
+  const [tab, setTab] = useState('locales'); 
   const [sedeActiva, setSedeActiva] = useState(null); 
   
   const [sedes, setSedes] = useState([]);
@@ -29,6 +36,12 @@ export default function InventarioView() {
       const [resSedes, resCatalogo] = await Promise.all([getSedes(), getCatalogoGlobal()]);
       setSedes(resSedes.data);
       setCatalogo(resCatalogo.data);
+
+      // ✨ MAGIA DE ROLES: Si es Admin, lo encerramos en su sede instantáneamente
+      if (!esDueño) {
+        const miSede = resSedes.data.find(s => String(s.id) === String(sedeAdminId));
+        if (miSede) setSedeActiva(miSede);
+      }
     } catch (err) {
       console.error("Error cargando base:", err);
     } finally {
@@ -54,52 +67,48 @@ export default function InventarioView() {
       setInsumosSede(resStock.data);
     }
   };
+
   const handleIngresarAMatriz = async (insumoId, cantidad) => {
     try {
       await registrarIngresoMasivo({
         insumo_base_id: insumoId,
-        ingreso_global: cantidad, // Solo compramos, no repartimos
+        ingreso_global: cantidad,
         distribucion: {} 
       });
       alert("📦 Stock añadido al Almacén Central.");
       refrescarDatos();
     } catch (error) {
-      // Magia: Extraemos el mensaje exacto que Django nos mandó en el status 400
       const mensajeDjango = error.response?.data?.error || "Error de conexión";
       alert("Error: " + mensajeDjango);
     }
   };
-  // 🔥 LÓGICA DE UNIÓN: Si estamos en una Sede, cruzamos el Catálogo Maestro con el Stock Local
+
   const inventarioParaMostrar = sedeActiva ? catalogo.map(itemBase => {
-    // Buscamos si la sede ya tiene este insumo registrado
     const stockLocal = insumosSede.find(s => 
       s.insumo_base === itemBase.id || s.insumo_base?.id === itemBase.id
     );
     return {
-      ...itemBase, // Esto trae el stock_general, nombre y unidad_medida
+      ...itemBase, 
       stock_actual: stockLocal ? stockLocal.stock_actual : 0,
       stock_minimo: stockLocal ? stockLocal.stock_minimo : 5,
     };
-  }) : catalogo; // Si estamos en "catalogo", simplemente mostramos la Matriz
+  }) : catalogo; 
 
-  // Filtrado de búsqueda
   const itemsFiltrados = inventarioParaMostrar.filter(item => {
     const nombre = item.nombre || item.nombre_insumo || '';
     return nombre.toLowerCase().includes(busqueda.toLowerCase());
   });
 
-  // 🔥 FUNCIÓN PARA BAJAR STOCK DE LA MATRIZ AL LOCAL (Directo desde la tarjeta)
   const handleTransferirDeMatriz = async (insumoId, cantidad) => {
     try {
       await registrarIngresoMasivo({
         insumo_base_id: insumoId,
-        ingreso_global: 0, // No estamos comprando nuevo, solo transfiriendo
+        ingreso_global: 0,
         distribucion: { [sedeActiva.id]: cantidad }
       });
       alert("✅ Stock transferido de la Matriz al Local con éxito.");
       refrescarDatos();
     } catch (error) {
-      // Magia: Extraemos el mensaje exacto que Django nos mandó en el status 400
       const mensajeDjango = error.response?.data?.error || "Error de conexión";
       alert("Error: " + mensajeDjango);
     }
@@ -108,35 +117,44 @@ export default function InventarioView() {
   return (
     <div className="animate-fadeIn space-y-8 max-w-7xl mx-auto p-4 md:p-8 pb-24">
       
-      {/* 🚀 HEADER PREMIUM (LA MATRIZ) */}
+      {/* 🚀 HEADER ADAPTATIVO */}
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-end gap-6 bg-gradient-to-br from-[#111] to-[#0a0a0a] p-8 rounded-[2rem] border border-[#222] shadow-2xl relative overflow-hidden">
         <div className="absolute top-0 right-0 w-64 h-64 bg-[#ff5a1f] opacity-5 blur-[100px] rounded-full pointer-events-none"></div>
 
         <div className="z-10">
           <h2 className="text-4xl font-black text-white tracking-tighter mb-1">
-            Almacén <span style={{ color: config.colorPrimario }}>Central</span>
+            {esDueño ? (
+              <>Almacén <span style={{ color: config.colorPrimario }}>Central</span></>
+            ) : (
+              <>Inventario <span style={{ color: config.colorPrimario }}>Local</span></>
+            )}
           </h2>
-          <p className="text-neutral-400 font-medium mb-6">Visión global de tus locales y catálogo de ingredientes.</p>
+          <p className="text-neutral-400 font-medium mb-6">
+            {esDueño ? 'Visión global de tus locales y catálogo de ingredientes.' : 'Audita y solicita el stock necesario para tu sede.'}
+          </p>
           
-          <div className="flex bg-[#1a1a1a] p-1.5 rounded-2xl border border-[#333] w-fit">
-            <button 
-              onClick={() => { setTab('locales'); setSedeActiva(null); setBusqueda(''); }}
-              className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${tab === 'locales' ? 'bg-[#333] text-white shadow-md' : 'text-neutral-500 hover:text-white'}`}
-            >
-              🏢 Locales (Sedes)
-            </button>
-            <button 
-              onClick={() => { setTab('catalogo'); setSedeActiva(null); setBusqueda(''); }}
-              className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${tab === 'catalogo' ? 'bg-[#333] text-white shadow-md' : 'text-neutral-500 hover:text-white'}`}
-            >
-              📖 Catálogo Maestro
-            </button>
-          </div>
+          {/* ✨ SOLO EL DUEÑO PUEDE ALTERNAR ENTRE LOCALES Y CATÁLOGO */}
+          {esDueño && (
+            <div className="flex bg-[#1a1a1a] p-1.5 rounded-2xl border border-[#333] w-fit">
+              <button 
+                onClick={() => { setTab('locales'); setSedeActiva(null); setBusqueda(''); }}
+                className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${tab === 'locales' ? 'bg-[#333] text-white shadow-md' : 'text-neutral-500 hover:text-white'}`}
+              >
+                🏢 Locales (Sedes)
+              </button>
+              <button 
+                onClick={() => { setTab('catalogo'); setSedeActiva(null); setBusqueda(''); }}
+                className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${tab === 'catalogo' ? 'bg-[#333] text-white shadow-md' : 'text-neutral-500 hover:text-white'}`}
+              >
+                📖 Catálogo Maestro
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* BOTONES CONTEXTUALES (Cambian según la pestaña) */}
+        {/* BOTONES CONTEXTUALES */}
         <div className="flex flex-col sm:flex-row gap-3 w-full xl:w-auto z-10">
-          {tab === 'catalogo' && (
+          {tab === 'catalogo' && esDueño && (
             <button 
               onClick={() => setModalBaseOpen(true)}
               className="flex-1 sm:flex-none border border-[#333] bg-[#161616] text-white px-6 py-4 rounded-2xl font-bold hover:bg-[#222] transition-all flex items-center justify-center gap-2 shadow-lg"
@@ -145,7 +163,7 @@ export default function InventarioView() {
             </button>
           )}
           
-          {tab === 'locales' && (
+          {tab === 'locales' && esDueño && (
             <button 
               onClick={() => setModalCompraOpen(true)}
               style={{ backgroundColor: config.colorPrimario }}
@@ -154,11 +172,22 @@ export default function InventarioView() {
               🚚 Distribución Masiva
             </button>
           )}
+
+          {/* ✨ BOTÓN DEL ADMINISTRADOR (Placeholder por ahora) */}
+          {!esDueño && (
+             <button 
+             onClick={() => alert("Módulo de 'Solicitudes a Matriz' en construcción 🚧")}
+             style={{ backgroundColor: config.colorPrimario }}
+             className="flex-1 sm:flex-none text-white px-8 py-4 rounded-2xl font-bold shadow-xl hover:brightness-110 active:scale-95 transition-all flex items-center justify-center gap-2"
+           >
+             🙋‍♂️ Solicitar Insumos
+           </button>
+          )}
         </div>
       </div>
 
-      {/* 🏙️ VISTA 1: LA CIUDAD (EDIFICIOS) */}
-      {tab === 'locales' && !sedeActiva && (
+      {/* 🏙️ VISTA 1: LA CIUDAD (SOLO DUEÑO) */}
+      {tab === 'locales' && !sedeActiva && esDueño && (
         <div className="animate-fadeIn">
           <h3 className="text-xl font-black text-white mb-6 tracking-tight">Selecciona un Local para auditar:</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -178,19 +207,22 @@ export default function InventarioView() {
         </div>
       )}
 
-      {/* 🚪 VISTA 2: DENTRO DE UN EDIFICIO O EN EL CATÁLOGO */}
+      {/* 🚪 VISTA 2: DENTRO DEL EDIFICIO */}
       {(sedeActiva || tab === 'catalogo') && (
         <div className="animate-fadeIn space-y-6">
           
           {sedeActiva && (
             <div className="flex items-center gap-4 border-b border-[#222] pb-6">
-              <button 
-                onClick={() => { setSedeActiva(null); setBusqueda(''); }}
-                className="w-12 h-12 rounded-full bg-[#161616] border border-[#333] flex items-center justify-center text-white hover:bg-[#ff5a1f] hover:border-[#ff5a1f] transition-all"
-              >←</button>
+              {/* ✨ SOLO EL DUEÑO PUEDE RETROCEDER, EL ADMIN ESTÁ ATRAPADO AQUÍ */}
+              {esDueño && (
+                <button 
+                  onClick={() => { setSedeActiva(null); setBusqueda(''); }}
+                  className="w-12 h-12 rounded-full bg-[#161616] border border-[#333] flex items-center justify-center text-white hover:bg-[#ff5a1f] hover:border-[#ff5a1f] transition-all shrink-0"
+                >←</button>
+              )}
               <div>
                 <p className="text-xs font-black text-[#ff5a1f] uppercase tracking-widest">Inventario Local</p>
-                <h3 className="text-2xl font-black text-white">Edificio: {sedeActiva.nombre}</h3>
+                <h3 className="text-2xl font-black text-white">Sede: {sedeActiva.nombre}</h3>
               </div>
             </div>
           )}
@@ -213,7 +245,7 @@ export default function InventarioView() {
             <div className="bg-[#111] border border-[#222] rounded-[2rem] p-16 text-center">
               <div className="text-6xl mb-4">🕵️‍♂️</div>
               <h3 className="text-xl font-black text-white mb-2">Sin resultados</h3>
-              <p className="text-neutral-500">Define insumos base en el Catálogo Maestro para empezar.</p>
+              <p className="text-neutral-500">No se encontraron insumos.</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -224,6 +256,7 @@ export default function InventarioView() {
                   isStock={!!sedeActiva} 
                   config={config} 
                   onTransferir={sedeActiva ? handleTransferirDeMatriz : handleIngresarAMatriz}
+                  esDueño={esDueño} // ✨ Pasamos el rol a la tarjeta
                 />
               ))}
             </div>
@@ -238,14 +271,13 @@ export default function InventarioView() {
   );
 }
 
-// 🃏 SUB-COMPONENTE: Tarjeta Inteligente (Cambia según dónde estés)
-function InsumoCard({ item, isStock, config, onTransferir }) {
+// 🃏 SUB-COMPONENTE: Tarjeta Inteligente
+function InsumoCard({ item, isStock, config, onTransferir, esDueño }) {
   const [cantidadTransferir, setCantidadTransferir] = useState('');
   
   const nombre = item.nombre || item.nombre_insumo;
   const unidad = item.unidad_medida;
   
-  // Si estamos en la Matriz, mostramos stock_general. Si en Sede, stock_actual.
   const stockMostrar = isStock ? (parseFloat(item.stock_actual) || 0) : (parseFloat(item.stock_general) || 0);
   const stockMatrizDisp = parseFloat(item.stock_general) || 0;
   const min = parseFloat(item.stock_minimo) || 5;
@@ -282,7 +314,6 @@ function InsumoCard({ item, isStock, config, onTransferir }) {
       </div>
 
       {isStock ? (
-        // 🔥 VISTA DE SEDE: Muestra la barra de salud y el mini-formulario para bajar de la Matriz
         <div className="mt-6 space-y-4">
           <div className="space-y-2">
             <div className="flex justify-between text-[10px] font-bold text-neutral-500 uppercase">
@@ -294,26 +325,38 @@ function InsumoCard({ item, isStock, config, onTransferir }) {
             </div>
           </div>
 
-          <div className="pt-4 border-t border-[#2a2a2a]">
-            <p className="text-[10px] text-neutral-500 font-bold uppercase mb-2">
-              Disponible en Matriz: <strong className="text-white">{stockMatrizDisp}</strong> {unidad}
-            </p>
-            <div className="flex gap-2">
-              <input 
-                type="number" min="0" placeholder="0.0" value={cantidadTransferir} onChange={(e) => setCantidadTransferir(e.target.value)}
-                className="w-full bg-[#0a0a0a] border border-[#333] px-3 py-2 rounded-xl text-white font-mono text-sm outline-none focus:border-[#ff5a1f]"
-              />
-              <button 
-                onClick={handleBajarStock}
-                className="bg-[#222] hover:bg-[#ff5a1f] hover:text-white text-neutral-400 font-bold px-4 py-2 rounded-xl text-xs transition-colors"
-              >
-                Bajar 📥
-              </button>
+          {/* ✨ SOLO DUEÑO PUEDE ROBAR STOCK A LA MATRIZ DIRECTAMENTE */}
+          {esDueño ? (
+            <div className="pt-4 border-t border-[#2a2a2a]">
+              <p className="text-[10px] text-neutral-500 font-bold uppercase mb-2">
+                Disponible en Matriz: <strong className="text-white">{stockMatrizDisp}</strong> {unidad}
+              </p>
+              <div className="flex gap-2">
+                <input 
+                  type="number" min="0" placeholder="0.0" value={cantidadTransferir} onChange={(e) => setCantidadTransferir(e.target.value)}
+                  className="w-full bg-[#0a0a0a] border border-[#333] px-3 py-2 rounded-xl text-white font-mono text-sm outline-none focus:border-[#ff5a1f]"
+                />
+                <button 
+                  onClick={handleBajarStock}
+                  className="bg-[#222] hover:bg-[#ff5a1f] hover:text-white text-neutral-400 font-bold px-4 py-2 rounded-xl text-xs transition-colors shrink-0"
+                >
+                  Bajar 📥
+                </button>
+              </div>
             </div>
-          </div>
+          ) : (
+             <div className="pt-4 border-t border-[#2a2a2a]">
+                <button 
+                  onClick={() => alert("Módulo de 'Solicitudes a Matriz' en construcción 🚧")}
+                  className="w-full bg-[#222] hover:bg-white hover:text-black text-neutral-400 font-bold px-4 py-3 rounded-xl text-xs transition-colors"
+                >
+                  Solicitar 🙋‍♂️
+                </button>
+             </div>
+          )}
         </div>
       ) : (
-        // 🔥 VISTA DE MATRIZ (Catálogo): Formulario para COMPRAR stock general
+        // VISTA DE MATRIZ (Catálogo)
         <div className="mt-6 pt-4 border-t border-[#2a2a2a]">
           <p className="text-[10px] text-neutral-500 font-bold uppercase mb-2">
             Añadir directo a Matriz:
