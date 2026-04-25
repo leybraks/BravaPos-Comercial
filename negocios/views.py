@@ -1157,20 +1157,25 @@ class ClienteViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return Cliente.objects.filter(negocio=self.request.user.negocio)
 
-    @action(detail=False, methods=['get'], url_path='buscar_por_telefono')
+    @action(detail=False, methods=['get'], url_path='buscar_por_telefono', permission_classes=[AllowAny])
     def buscar_por_telefono(self, request):
         """
         Endpoint que usará n8n para reconocer al cliente de WhatsApp.
         """
         telefono = request.query_params.get('telefono')
+        negocio_id = request.query_params.get('negocio_id') # 👈 n8n nos enviará esto
+
         if not telefono:
             return Response({'error': 'Falta el parámetro telefono'}, status=400)
 
-        # Buscamos al cliente en el negocio del usuario autenticado
-        cliente = Cliente.objects.filter(
-            negocio=request.user.negocio, 
-            telefono__icontains=telefono[-9:] # Buscamos coincidencia con los últimos 9 dígitos
-        ).first()
+        # Buscamos al cliente globalmente por su teléfono (los últimos 9 dígitos)
+        query = Cliente.objects.filter(telefono__icontains=telefono[-9:])
+        
+        # Si tienes varios restaurantes, filtramos por el negocio correcto
+        if negocio_id:
+            query = query.filter(negocio_id=negocio_id)
+            
+        cliente = query.first()
 
         if cliente:
             # Verificamos si hoy es su cumpleaños para avisarle al bot
@@ -1185,11 +1190,13 @@ class ClienteViewSet(viewsets.ModelViewSet):
                 'id': cliente.id,
                 'nombre': cliente.nombre or "Cliente POS",
                 'puntos': cliente.puntos_acumulados,
-                'tags': cliente.tags,
+                'tags': cliente.tags if isinstance(cliente.tags, list) else [],
                 'es_cumpleanos_hoy': es_cumple
             })
         
         return Response({'encontrado': False, 'mensaje': 'Cliente nuevo'})
+    
+
 # ============================================================
 # ✅ FIX #1: LoginAdministradorView eliminada.
 # El login ahora lo maneja CustomTokenObtainPairView en serializers_jwt.py

@@ -25,7 +25,7 @@ router.register(r'modificadores-rapidos', views.ModificadorRapidoViewSet, basena
 router.register(r'grupos-variacion', views.GrupoVariacionViewSet, basename='grupovariacion')
 router.register(r'opciones-variacion', views.OpcionVariacionViewSet, basename='opcionvariacion')
 router.register(r'recetas-opcion', views.RecetaOpcionViewSet, basename='recetaopcion')
-
+router.register(r'clientes', views.ClienteViewSet, basename='clientes')
 urlpatterns = [
     path('', include(router.urls)),
 
