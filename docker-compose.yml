@@ -42,7 +42,7 @@ services:
 
   # ✨ LA NUEVA BESTIA: EVOLUTION API
   evolution-api:
-    image: atendare/evolution-api:latest
+    image: evolutionapi/evolution-api:latest
     container_name: brava_evolution_api
     restart: always
     ports:
