@@ -53,9 +53,12 @@ services:
       - AUTHENTICATION_TYPE=apikey
       - AUTHENTICATION_API_KEY=${EVOLUTION_API_KEY:-BravaSuperSecret2026}
       
+      - DATABASE_PROVIDER=postgresql
+      - DATABASE_CONNECTION_URI=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?schema=public
       # Conexión optimizada a tu Redis
       - REDIS_ENABLED=true
       - REDIS_URI=redis://redis:6379/1
+      
       
       # Configuración de rendimiento
       - CONFIG_SESSION_PHONE_CLIENT=BravaPOS
@@ -64,6 +67,7 @@ services:
       - evolution_instances:/evolution/instances
     depends_on:
       - redis
+      - db
 
 volumes:
   postgres_data:
