@@ -107,6 +107,31 @@ class SedeViewSet(viewsets.ModelViewSet):
             return Sede.objects.filter(negocio=self.request.user.negocio)
         return Sede.objects.none()
 
+    # ✨ EL NUEVO ENDPOINT PARA EVOLUTION API Y N8N
+    @action(detail=False, methods=['get'], url_path='info_bot', permission_classes=[AllowAny])
+    def info_bot(self, request):
+        """
+        n8n consulta este endpoint pasándole el nombre de la instancia 
+        para saber a qué Sede y a qué Negocio pertenece el mensaje.
+        """
+        instancia = request.query_params.get('instancia')
+        
+        if not instancia:
+            return Response({'error': 'Falta el parámetro instancia'}, status=400)
+
+        # Buscamos qué sede tiene configurada esta instancia de WhatsApp
+        sede = Sede.objects.filter(whatsapp_instancia=instancia).first()
+        
+        if not sede:
+            return Response({'error': 'Instancia no registrada en ninguna Sede'}, status=404)
+
+        return Response({
+            'sede_id': sede.id,
+            'negocio_id': sede.negocio.id,
+            'nombre_sede': sede.nombre,
+            'nombre_negocio': sede.negocio.nombre
+        })
+
 
 # ============================================================
 # MESA

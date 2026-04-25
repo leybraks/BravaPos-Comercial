@@ -40,5 +40,30 @@ services:
       - backend
     restart: always
 
+  # ✨ LA NUEVA BESTIA: EVOLUTION API
+  evolution-api:
+    image: atendare/evolution-api:latest
+    container_name: brava_evolution_api
+    restart: always
+    ports:
+      - "8080:8080" # El puerto por donde n8n se comunicará con WhatsApp
+    environment:
+      - SERVER_URL=http://localhost:8080 # Cambia 'localhost' por tu IP pública después
+      - AUTHENTICATION_TYPE=apikey
+      - AUTHENTICATION_API_KEY=${EVOLUTION_API_KEY:-BravaSuperSecret2026} # Clave para que nadie más use tu bot
+      
+      # Conectamos Evolution API a tu Redis existente para que vuele
+      - REDIS_ENABLED=true
+      - REDIS_URI=redis://redis:6379/1 # Usamos la base 1 para no chocar con Django (que usa la 0)
+      
+      # Configuraciones base
+      - CONFIG_SESSION_PHONE_CLIENT=BravaPOS
+      - LOG_LEVEL=ERROR # Evita que los logs te llenen el disco duro
+    volumes:
+      - evolution_instances:/evolution/instances # Guarda las sesiones para no pedir QR a cada rato
+    depends_on:
+      - redis
+
 volumes:
   postgres_data:
+  evolution_instances: # ✅ Creamos el volumen para guardar las sesiones de WhatsApp

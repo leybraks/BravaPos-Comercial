@@ -59,10 +59,17 @@ class Sede(models.Model):
     direccion = models.CharField(max_length=200, null=True, blank=True)
     activo = models.BooleanField(default=True)
     columnas_salon = models.IntegerField(default=2)
+    
+    # ✨ NUEVOS CAMPOS PARA EL BOT MULTI-SEDE
+    whatsapp_instancia = models.CharField(max_length=50, null=True, blank=True, help_text="Nombre exacto de la instancia en Evolution API (Ej: brava_ventanilla)")
+    whatsapp_numero = models.CharField(max_length=20, null=True, blank=True, help_text="Número de teléfono del bot para esta sede")
+
     objects = ActivoManager()      
     all_objects = models.Manager()
+
     class Meta:
         unique_together = ('negocio', 'nombre')
+
     def __str__(self):
         return f"{self.nombre} ({self.negocio.nombre})"
 
