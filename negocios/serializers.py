@@ -1,8 +1,10 @@
+from time import timezone
+
 from rest_framework import serializers
 from .models import (
     InsumoBase, InsumoSede, Negocio, PlanSaaS, Sede, Mesa, Producto, Orden, DetalleOrden, Pago,
     ModificadorRapido, GrupoVariacion, OpcionVariacion, Rol, Empleado, SesionCaja,
-    DetalleOrdenOpcion , Categoria, RecetaOpcion
+    DetalleOrdenOpcion , Categoria, RecetaOpcion, Cliente
 )
 
 
@@ -219,4 +221,28 @@ class InsumoSedeSerializer(serializers.ModelSerializer):
         model = InsumoSede
         fields = '__all__'
 
+class ClienteSerializer(serializers.ModelSerializer):
+    # ✨ Campo calculado: el bot solo lee un Booleano y sabe si saludar o no
+    es_cumpleanos_hoy = serializers.SerializerMethodField()
 
+    class Meta:
+        model = Cliente
+        fields = [
+            'id', 'telefono', 'nombre', 'email', 'fecha_nacimiento', 
+            'puntos_acumulados', 'total_gastado', 'cantidad_pedidos', 
+            'ultima_compra', 'tags', 'es_cumpleanos_hoy'
+        ]
+        # 🛡️ PROTECCIÓN: Estos campos solo los calcula el backend (Django)
+        # No permitimos que se modifiquen vía POST o PUT.
+        read_only_fields = [
+            'puntos_acumulados', 'total_gastado', 
+            'cantidad_pedidos', 'ultima_compra'
+        ]
+
+    def get_es_cumpleanos_hoy(self, obj):
+        """Lógica centralizada: Django decide si es el cumple, no el bot."""
+        if obj.fecha_nacimiento:
+            hoy = timezone.now().date()
+            return (obj.fecha_nacimiento.day == hoy.day and 
+                    obj.fecha_nacimiento.month == hoy.month)
+        return False

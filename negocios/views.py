@@ -26,7 +26,7 @@ from .serializers import (
     MesaSerializer, ProductoSerializer, ModificadorRapidoSerializer,
     GrupoVariacionSerializer, OpcionVariacionSerializer, OrdenSerializer,
     DetalleOrdenSerializer, PagoSerializer, RolSerializer, EmpleadoSerializer,
-    SesionCajaSerializer, CategoriaSerializer, RecetaOpcionSerializer
+    SesionCajaSerializer, CategoriaSerializer, RecetaOpcionSerializer, ClienteSerializer
 )
 
 logger = logging.getLogger(__name__)
@@ -204,13 +204,26 @@ class OrdenViewSet(viewsets.ModelViewSet):
         #    Antes: sin sede_id se devolvían TODAS las órdenes de todos los negocios.
         if sede_id_filtrar:
             hoy = timezone.now().date()
-            queryset = queryset.filter(
-                sede_id=sede_id_filtrar
-            ).exclude(
-                estado='cancelado'
-            ).filter(
-                models.Q(estado_pago='pendiente') | models.Q(creado_en__date=hoy)
-            ).order_by('-creado_en')
+            modo = self.request.query_params.get('modo')
+
+            if modo == 'dashboard':
+                # Modo dashboard: todas las órdenes pagadas sin límite de fecha
+                # para que el frontend pueda filtrar por rango (hoy, semana, mes, etc.)
+                queryset = queryset.filter(
+                    sede_id=sede_id_filtrar,
+                    estado_pago='pagado'
+                ).exclude(
+                    estado='cancelado'
+                ).order_by('-creado_en')
+            else:
+                # Modo operativo (cocina/salón): solo pendientes + las de hoy
+                queryset = queryset.filter(
+                    sede_id=sede_id_filtrar
+                ).exclude(
+                    estado='cancelado'
+                ).filter(
+                    models.Q(estado_pago='pendiente') | models.Q(creado_en__date=hoy)
+                ).order_by('-creado_en')
         elif hasattr(self.request.user, 'negocio'):
             # Sin sede específica → limitamos al negocio del JWT
             queryset = queryset.filter(
@@ -466,41 +479,42 @@ class OrdenViewSet(viewsets.ModelViewSet):
                         orden.estado = 'completado' 
                 
                 # 3. 🧠 MAGIA DEL CRM (Si dejaron su WhatsApp)
-                if telefono_crm and len(telefono_crm) >= 9:
-                    orden.cliente_telefono = telefono_crm
-                    
-                    cliente, creado = Cliente.objects.get_or_create(
-                        negocio=orden.sede.negocio,
-                        telefono=telefono_crm,
-                        defaults={'nombre': orden.cliente_nombre or 'Cliente POS'}
-                    )
-                    
-                    # Actualizamos sus estadísticas
-                    cliente.cantidad_pedidos += 1
-                    
-                    # ✨ LA SOLUCIÓN: Convertimos a Decimal antes de sumar
-                    cliente.total_gastado = Decimal(str(cliente.total_gastado)) + Decimal(str(orden.total))
-                    
-                    cliente.ultima_compra = timezone.now()
-                    
-                    # 🎁 SISTEMA DE PUNTOS
-                    puntos_ganados = int(Decimal(str(orden.total)) // 10)
-                    cliente.puntos_acumulados += puntos_ganados
-                    
-                    # 🏷️ ETIQUETADO AUTOMÁTICO (Segmentación)
-                    tags_actuales = cliente.tags if isinstance(cliente.tags, list) else []
-                    
-                    # Como ahora es Decimal, lo comparamos tranquilamente
-                    if cliente.total_gastado >= Decimal('500.00') and "VIP" not in tags_actuales:
-                        tags_actuales.append("VIP")
+                if orden.sede.negocio.mod_clientes_activo:
+                    if telefono_crm and len(telefono_crm) >= 9:
+                        orden.cliente_telefono = telefono_crm
                         
-                    if creado and "Nuevo" not in tags_actuales:
-                        tags_actuales.append("Nuevo")
-                    elif not creado and "Nuevo" in tags_actuales:
-                        tags_actuales.remove("Nuevo")
+                        cliente, creado = Cliente.objects.get_or_create(
+                            negocio=orden.sede.negocio,
+                            telefono=telefono_crm,
+                            defaults={'nombre': orden.cliente_nombre or 'Cliente POS'}
+                        )
                         
-                    cliente.tags = tags_actuales
-                    cliente.save()
+                        # Actualizamos sus estadísticas
+                        cliente.cantidad_pedidos += 1
+                        
+                        # ✨ LA SOLUCIÓN: Convertimos a Decimal antes de sumar
+                        cliente.total_gastado = Decimal(str(cliente.total_gastado)) + Decimal(str(orden.total))
+                        
+                        cliente.ultima_compra = timezone.now()
+                        
+                        # 🎁 SISTEMA DE PUNTOS
+                        puntos_ganados = int(Decimal(str(orden.total)) // 10)
+                        cliente.puntos_acumulados += puntos_ganados
+                        
+                        # 🏷️ ETIQUETADO AUTOMÁTICO (Segmentación)
+                        tags_actuales = cliente.tags if isinstance(cliente.tags, list) else []
+                        
+                        # Como ahora es Decimal, lo comparamos tranquilamente
+                        if cliente.total_gastado >= Decimal('500.00') and "VIP" not in tags_actuales:
+                            tags_actuales.append("VIP")
+                            
+                        if creado and "Nuevo" not in tags_actuales:
+                            tags_actuales.append("Nuevo")
+                        elif not creado and "Nuevo" in tags_actuales:
+                            tags_actuales.remove("Nuevo")
+                            
+                        cliente.tags = tags_actuales
+                        cliente.save()
 
                 orden.save()
 
@@ -1136,6 +1150,46 @@ def verificar_sesion(request):
             # Agrega aquí lo que necesites para tu store
         }
     })
+
+class ClienteViewSet(viewsets.ModelViewSet):
+    serializer_class = ClienteSerializer # Asegúrate de tener el serializer creado
+    
+    def get_queryset(self):
+        return Cliente.objects.filter(negocio=self.request.user.negocio)
+
+    @action(detail=False, methods=['get'], url_path='buscar_por_telefono')
+    def buscar_por_telefono(self, request):
+        """
+        Endpoint que usará n8n para reconocer al cliente de WhatsApp.
+        """
+        telefono = request.query_params.get('telefono')
+        if not telefono:
+            return Response({'error': 'Falta el parámetro telefono'}, status=400)
+
+        # Buscamos al cliente en el negocio del usuario autenticado
+        cliente = Cliente.objects.filter(
+            negocio=request.user.negocio, 
+            telefono__icontains=telefono[-9:] # Buscamos coincidencia con los últimos 9 dígitos
+        ).first()
+
+        if cliente:
+            # Verificamos si hoy es su cumpleaños para avisarle al bot
+            es_cumple = False
+            if cliente.fecha_nacimiento:
+                hoy = timezone.now().date()
+                es_cumple = (cliente.fecha_nacimiento.day == hoy.day and 
+                             cliente.fecha_nacimiento.month == hoy.month)
+
+            return Response({
+                'encontrado': True,
+                'id': cliente.id,
+                'nombre': cliente.nombre or "Cliente POS",
+                'puntos': cliente.puntos_acumulados,
+                'tags': cliente.tags,
+                'es_cumpleanos_hoy': es_cumple
+            })
+        
+        return Response({'encontrado': False, 'mensaje': 'Cliente nuevo'})
 # ============================================================
 # ✅ FIX #1: LoginAdministradorView eliminada.
 # El login ahora lo maneja CustomTokenObtainPairView en serializers_jwt.py

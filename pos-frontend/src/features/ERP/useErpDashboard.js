@@ -92,7 +92,7 @@ export const useErpDashboard = () => {
         try {
           const [resMetricas, resOrdenes] = await Promise.all([
             obtenerMetricasDashboard({ sede_id: sedeVentasId }),
-            getOrdenes({ sede_id: sedeVentasId }) 
+            getOrdenes({ sede_id: sedeVentasId, modo: 'dashboard' }) 
           ]);
           setMetricas(resMetricas.data);
           setOrdenesReales(resOrdenes.data);

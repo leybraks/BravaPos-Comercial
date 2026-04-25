@@ -505,7 +505,7 @@ class Cliente(models.Model):
     total_gastado = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     cantidad_pedidos = models.IntegerField(default=0)
     ultima_compra = models.DateTimeField(null=True, blank=True)
-    
+    fecha_nacimiento = models.DateField(null=True, blank=True)
     # Etiquetas para segmentación (ej: ["VIP", "Frecuente", "Dormido"])
     tags = models.JSONField(default=list, blank=True)
 
