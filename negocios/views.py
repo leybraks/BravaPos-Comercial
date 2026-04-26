@@ -1180,7 +1180,14 @@ class ClienteViewSet(viewsets.ModelViewSet):
     serializer_class = ClienteSerializer # Asegúrate de tener el serializer creado
     
     def get_queryset(self):
-        return Cliente.objects.filter(negocio=self.request.user.negocio)
+        user = self.request.user
+        if not hasattr(user, 'negocio') or user.negocio is None:
+            negocio_id = self.request.query_params.get('negocio_id')
+            if negocio_id:
+                return Cliente.objects.filter(negocio_id=negocio_id)
+            else:
+                return Cliente.objects.none()
+        return Cliente.objects.filter(negocio=user.negocio)
 
     @action(detail=False, methods=['get'], url_path='buscar_por_telefono', permission_classes=[AllowAny])
     def buscar_por_telefono(self, request):
