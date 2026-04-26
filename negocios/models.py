@@ -256,7 +256,7 @@ class Orden(models.Model):
     
     # 💳 MÉTODO DE PAGO ESPERADO (Para saber si el motorizado lleva POS o Vuelto)
     metodo_pago_esperado = models.CharField(max_length=50, null=True, blank=True, help_text="Ej: Yape, Efectivo (con vuelto de S/50)")
-    
+    pago_validado_bot = models.BooleanField(default=False, help_text="¿Gemini validó la captura?")
     estado = models.CharField(max_length=20, choices=ESTADOS_COCINA, default='pendiente')
     estado_pago = models.CharField(max_length=20, choices=ESTADOS_PAGO, default='pendiente') # 👈 NUEVO
     total = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
