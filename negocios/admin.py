@@ -10,7 +10,6 @@ from .models import (
 
 admin.site.register(Rol)
 admin.site.register(Mesa)
-admin.site.register(Sede)
 admin.site.register(Orden)
 admin.site.register(DetalleOrden)
 admin.site.register(Pago) 
@@ -112,3 +111,10 @@ class ProductoAdmin(admin.ModelAdmin):
     
     # ¡Magia! Mostrar los componentes y horarios dentro del mismo producto
     inlines = [HorarioVisibilidadInline, ComponenteComboInline]
+
+@admin.register(Sede)
+class SedeAdmin(admin.ModelAdmin):
+    list_display = ('nombre', 'negocio', 'whatsapp_instancia', 'whatsapp_numero', 'activo')
+    list_editable = ('whatsapp_instancia', 'whatsapp_numero', 'activo') # ¡Magia! Edición directa
+    search_fields = ('nombre', 'whatsapp_instancia')
+    list_filter = ('negocio', 'activo')
