@@ -1221,6 +1221,7 @@ class ClienteViewSet(viewsets.ModelViewSet):
                 'encontrado': True,
                 'id': cliente.id,
                 'nombre': cliente.nombre or "Cliente POS",
+                'telefono': cliente.telefono,
                 'puntos': cliente.puntos_acumulados,
                 'tags': cliente.tags if isinstance(cliente.tags, list) else [],
                 'es_cumpleanos_hoy': es_cumple
