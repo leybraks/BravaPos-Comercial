@@ -270,30 +270,51 @@ class OrdenViewSet(viewsets.ModelViewSet):
             for d in detalles_data:
                 producto = Producto.objects.get(id=d['producto'])
                 precio_seguro = producto.precio_base
-
+                notas = d.get('notas_y_modificadores', {})
+                
+                # 1. Preparar las opciones seleccionadas
+                subtotal_opciones = Decimal('0.00')
+                opciones_a_guardar = []
+                
+                # 2. Extraer IDs de opciones (soportamos tanto array plano como el dict de la imagen)
+                variaciones_dict = notas.get('variaciones', {})
+                opciones_ids = d.get('opciones', []) # Por si aca
+                
+                for grupo_id, ids in variaciones_dict.items():
+                    if isinstance(ids, list):
+                        opciones_ids.extend(ids)
+                        
+                # 3. Sumar precios reales de la BD
+                for opc_id in opciones_ids:
+                    try:
+                        opcion = OpcionVariacion.objects.get(id=opc_id)
+                        subtotal_opciones += opcion.precio_adicional
+                        opciones_a_guardar.append(opcion)
+                    except OpcionVariacion.DoesNotExist:
+                        pass
+                
+                # 4. 🌟 EL PRECIO REAL (Base + Opciones)
+                precio_final_unitario = precio_seguro + subtotal_opciones
+                
+                # 5. Guardar detalle con el precio correcto
                 detalle = DetalleOrden.objects.create(
                     orden=orden,
                     producto=producto,
                     cantidad=d['cantidad'],
-                    precio_unitario=precio_seguro,
-                    notas_y_modificadores=d.get('notas_y_modificadores', {}),
+                    precio_unitario=precio_final_unitario, # 👈 MAGIA AQUÍ
+                    notas_y_modificadores=notas,
                     notas_cocina=d.get('notas_cocina', '')
                 )
-
-                subtotal_opciones = Decimal('0.00')
-                for opc_id in d.get('opciones', []):
-                    try:
-                        opcion = OpcionVariacion.objects.get(id=opc_id)
-                        DetalleOrdenOpcion.objects.create(
-                            detalle_orden=detalle,
-                            opcion_variacion=opcion,
-                            precio_adicional_aplicado=opcion.precio_adicional
-                        )
-                        subtotal_opciones += opcion.precio_adicional
-                    except OpcionVariacion.DoesNotExist:
-                        pass
-
-                nuevo_total += (precio_seguro + subtotal_opciones) * int(d['cantidad'])
+                
+                # 6. Guardar relación para la cocina/ticket
+                for opcion in opciones_a_guardar:
+                    DetalleOrdenOpcion.objects.create(
+                        detalle_orden=detalle,
+                        opcion_variacion=opcion,
+                        precio_adicional_aplicado=opcion.precio_adicional
+                    )
+                
+                nuevo_total += precio_final_unitario * int(d['cantidad'])
 
             orden.total = nuevo_total
             orden.save()
@@ -352,29 +373,47 @@ class OrdenViewSet(viewsets.ModelViewSet):
             for detalle_data in detalles_data:
                 producto = Producto.objects.get(id=detalle_data['producto'])
                 precio_seguro = producto.precio_base
+                notas = detalle_data.get('notas_y_modificadores', {})
 
-                opciones_data = detalle_data.pop('opciones_seleccionadas', [])
+                # 1. Preparar las opciones seleccionadas
+                subtotal_opciones = Decimal('0.00')
+                opciones_a_guardar = []
+                
+                variaciones_dict = notas.get('variaciones', {})
+                opciones_ids = detalle_data.pop('opciones_seleccionadas', [])
+                
+                for grupo_id, ids in variaciones_dict.items():
+                    if isinstance(ids, list):
+                        opciones_ids.extend(ids)
+                        
+                for opc_id in opciones_ids:
+                    try:
+                        opcion = OpcionVariacion.objects.get(id=opc_id)
+                        subtotal_opciones += opcion.precio_adicional
+                        opciones_a_guardar.append(opcion)
+                    except OpcionVariacion.DoesNotExist:
+                        pass
+
+                # 🌟 EL PRECIO REAL
+                precio_final_unitario = precio_seguro + subtotal_opciones
+
                 nuevo_detalle = DetalleOrden.objects.create(
                     orden=orden,
                     producto=producto,
                     cantidad=detalle_data['cantidad'],
-                    precio_unitario=precio_seguro,
-                    notas_y_modificadores=detalle_data.get('notas_y_modificadores', ''),
+                    precio_unitario=precio_final_unitario, # 👈 CORREGIDO
+                    notas_y_modificadores=notas,
                     notas_cocina=detalle_data.get('notas_cocina', '')
                 )
                 detalles_creados.append(nuevo_detalle)
 
-                for opcion in opciones_data:
-                    try:
-                        opcion_obj = OpcionVariacion.objects.get(id=opcion)
-                        DetalleOrdenOpcion.objects.create(
-                            detalle_orden=nuevo_detalle,
-                            opcion_variacion=opcion_obj,
-                            precio_adicional_aplicado=opcion_obj.precio_adicional
-                        )
-                    except OpcionVariacion.DoesNotExist:
-                        pass
-
+                for opcion in opciones_a_guardar:
+                    DetalleOrdenOpcion.objects.create(
+                        detalle_orden=nuevo_detalle,
+                        opcion_variacion=opcion,
+                        precio_adicional_aplicado=opcion.precio_adicional
+                    )
+                    
             detalles_db = DetalleOrden.objects.filter(orden=orden)
             nuevo_total = Decimal('0.00')
             for d in detalles_db:
