@@ -2,9 +2,9 @@ from time import timezone
 
 from rest_framework import serializers
 from .models import (
-    InsumoBase, InsumoSede, Negocio, PlanSaaS, Sede, Mesa, Producto, Orden, DetalleOrden, Pago,
+    InsumoBase, InsumoSede, Negocio, PlanSaaS, ReglaNegocio, Sede, Mesa, Producto, Orden, DetalleOrden, Pago,
     ModificadorRapido, GrupoVariacion, OpcionVariacion, Rol, Empleado, SesionCaja,
-    DetalleOrdenOpcion , Categoria, RecetaOpcion, Cliente
+    DetalleOrdenOpcion , Categoria, RecetaOpcion, Cliente, ZonaDelivery
 )
 
 
@@ -246,3 +246,14 @@ class ClienteSerializer(serializers.ModelSerializer):
             return (obj.fecha_nacimiento.day == hoy.day and 
                     obj.fecha_nacimiento.month == hoy.month)
         return False
+
+
+class ZonaDeliverySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ZonaDelivery
+        fields = '__all__'
+
+class ReglaNegocioSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ReglaNegocio
+        fields = '__all__'

@@ -26,6 +26,8 @@ router.register(r'grupos-variacion', views.GrupoVariacionViewSet, basename='grup
 router.register(r'opciones-variacion', views.OpcionVariacionViewSet, basename='opcionvariacion')
 router.register(r'recetas-opcion', views.RecetaOpcionViewSet, basename='recetaopcion')
 router.register(r'clientes', views.ClienteViewSet, basename='clientes')
+router.register(r'zonas-delivery', views.ZonaDeliveryViewSet, basename='zonadelivery')
+router.register(r'reglas-negocio', views.ReglaNegocioViewSet, basename='reglanegocio')
 urlpatterns = [
     path('', include(router.urls)),
 

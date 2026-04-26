@@ -17,17 +17,17 @@ from rest_framework.decorators import action, permission_classes, api_view, thro
 from rest_framework.throttling import ScopedRateThrottle
 from .permissions import EsDuenioOsoloLectura
 from .models import (
-    GrupoVariacion, InsumoBase, InsumoSede, Negocio, Sede, Mesa, Producto,
+    GrupoVariacion, InsumoBase, InsumoSede, Negocio, ReglaNegocio, Sede, Mesa, Producto,
     Orden, DetalleOrden, Pago, ModificadorRapido, DetalleOrdenOpcion,
     OpcionVariacion, MovimientoCaja, RecetaDetalle, Rol, Empleado,
-    SesionCaja, Categoria, RecetaOpcion, RegistroAuditoria,Cliente
+    SesionCaja, Categoria, RecetaOpcion, RegistroAuditoria,Cliente, ZonaDelivery
 )
 from .serializers import (
-    InsumoBaseSerializer, InsumoSedeSerializer, NegocioSerializer, SedeSerializer,
+    InsumoBaseSerializer, InsumoSedeSerializer, NegocioSerializer, ReglaNegocioSerializer, SedeSerializer,
     MesaSerializer, ProductoSerializer, ModificadorRapidoSerializer,
     GrupoVariacionSerializer, OpcionVariacionSerializer, OrdenSerializer,
     DetalleOrdenSerializer, PagoSerializer, RolSerializer, EmpleadoSerializer,
-    SesionCajaSerializer, CategoriaSerializer, RecetaOpcionSerializer, ClienteSerializer
+    SesionCajaSerializer, CategoriaSerializer, RecetaOpcionSerializer, ClienteSerializer, ZonaDeliverySerializer
 )
 
 logger = logging.getLogger(__name__)
@@ -1273,7 +1273,17 @@ class ClienteViewSet(viewsets.ModelViewSet):
         
         return Response({'encontrado': False, 'mensaje': 'Cliente nuevo'})
     
+class ZonaDeliveryViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = ZonaDeliverySerializer # Deberás crearlo en serializers.py
+    def get_queryset(self):
+        sede_id = self.request.query_params.get('sede_id')
+        return ZonaDelivery.objects.filter(sede_id=sede_id, activa=True)
 
+class ReglaNegocioViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = ReglaNegocioSerializer
+    def get_queryset(self):
+        negocio_id = self.request.query_params.get('negocio_id')
+        return ReglaNegocio.objects.filter(negocio_id=negocio_id, activa=True)
 # ============================================================
 # ✅ FIX #1: LoginAdministradorView eliminada.
 # El login ahora lo maneja CustomTokenObtainPairView en serializers_jwt.py

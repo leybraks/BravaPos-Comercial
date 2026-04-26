@@ -248,6 +248,14 @@ class Orden(models.Model):
     sesion_caja = models.ForeignKey(SesionCaja, on_delete=models.PROTECT, null=True, blank=True, related_name='ordenes', help_text="Turno en el que se cobró")
                                     
     tipo = models.CharField(max_length=20, choices=TIPO_CHOICES, default='salon')
+    # 🛵 DATOS DE DELIVERY
+    direccion_entrega = models.CharField(max_length=255, null=True, blank=True)
+    latitud = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
+    longitud = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
+    costo_envio = models.DecimalField(max_digits=6, decimal_places=2, default=0.00)
+    
+    # 💳 MÉTODO DE PAGO ESPERADO (Para saber si el motorizado lleva POS o Vuelto)
+    metodo_pago_esperado = models.CharField(max_length=50, null=True, blank=True, help_text="Ej: Yape, Efectivo (con vuelto de S/50)")
     
     estado = models.CharField(max_length=20, choices=ESTADOS_COCINA, default='pendiente')
     estado_pago = models.CharField(max_length=20, choices=ESTADOS_PAGO, default='pendiente') # 👈 NUEVO
