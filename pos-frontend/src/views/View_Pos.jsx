@@ -171,7 +171,29 @@ export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
     } catch (error) { alert("Error al anular"); } 
     finally { setProcesando(false); }
   };
+  // 🧹 FUNCION PARA MATAR LA MESA ZOMBI
+  const manejarCancelarOrden = async () => {
+    if (!ordenActiva) return;
+    
+    // Pequeña confirmación por seguridad
+    if (!window.confirm('¿Estás seguro de cancelar esta orden vacía y liberar la mesa?')) return;
 
+    try {
+      // 1. Le decimos a Django que cancele la orden
+      await actualizarOrden(ordenActiva.id, { estado: 'cancelado' });
+      
+      // 2. Limpiamos todo en el frontend
+      vaciarCarrito();
+      setCarritoAbierto(false);
+      
+      // 3. Volvemos al mapa de mesas (opcional, pero buena UX)
+      onVolver(); 
+      
+    } catch (error) {
+      console.error("Error al liberar la mesa:", error);
+      alert("Hubo un error al liberar la mesa. Revisa tu conexión.");
+    }
+  };
   const abrirModalParaNuevo = (producto) => {
     if (ordenActiva) notificarEstadoMesa('pidiendo', totalMesa); // 👈 Corregido
     setProductoParaModificar(producto);
@@ -218,7 +240,26 @@ export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
 
       <PosFooter tema={tema} colorPrimario={colorPrimario} cantItemsMesa={cantItemsMesa} totalMesa={totalMesa} setCarritoAbierto={setCarritoAbierto} manejarEnviarCocina={manejarEnviarCocina} procesando={procesando} carrito={carrito} formatearSoles={formatearSoles} />
 
-      <CartDrawer carritoAbierto={carritoAbierto} setCarritoAbierto={setCarritoAbierto} tema={tema} colorPrimario={colorPrimario} totalMesa={totalMesa} cantItemsMesa={cantItemsMesa} carrito={carrito} vaciarStore={vaciarCarrito} ordenActiva={ordenActiva} manejarAnularItem={manejarAnularItem} procesando={procesando} abrirModalParaEditar={(item) => { setProductoParaModificar(item); setModalModsAbierto(true); }} restarProducto={restarProducto} sumarUnidad={sumarUnidad} manejarEnviarCocina={manejarEnviarCocina} setModalCobroAbierto={setModalCobroAbierto} notificarEstadoMesa={notificarEstadoMesa} formatearSoles={formatearSoles} />
+      <CartDrawer 
+      carritoAbierto={carritoAbierto} 
+      setCarritoAbierto={setCarritoAbierto} 
+      tema={tema} colorPrimario={colorPrimario} 
+      totalMesa={totalMesa} 
+      cantItemsMesa={cantItemsMesa} 
+      carrito={carrito} 
+      vaciarStore={vaciarCarrito} 
+      ordenActiva={ordenActiva} 
+      manejarAnularItem={manejarAnularItem} 
+      procesando={procesando} 
+      abrirModalParaEditar={(item) => { setProductoParaModificar(item); setModalModsAbierto(true); }} 
+      restarProducto={restarProducto} 
+      sumarUnidad={sumarUnidad} 
+      manejarEnviarCocina={manejarEnviarCocina} 
+      setModalCobroAbierto={setModalCobroAbierto} 
+      notificarEstadoMesa={notificarEstadoMesa} 
+      formatearSoles={formatearSoles} 
+      manejarCancelarOrden={manejarCancelarOrden}
+      />
 
       {/* MODALES */}
       {mostrarExito && (

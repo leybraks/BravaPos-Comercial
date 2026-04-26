@@ -19,7 +19,8 @@ export default function CartDrawer({
   manejarEnviarCocina,
   setModalCobroAbierto,
   notificarEstadoMesa,
-  formatearSoles
+  formatearSoles,
+  manejarCancelarOrden
 }) {
   const contenedorClasses = esDesktop
     ? `relative w-full h-full flex flex-col ${tema === 'dark' ? 'bg-[#0d0d0d]' : 'bg-white'}`
@@ -181,12 +182,25 @@ export default function CartDrawer({
             </button>
           ) : (
             ordenActiva && (
-              <button
-                onClick={() => { setModalCobroAbierto(true); notificarEstadoMesa('cobrando', totalMesa); }}
-                className="w-full bg-green-500 hover:bg-green-600 text-white rounded-2xl h-16 sm:h-20 font-black text-xl sm:text-2xl flex justify-center items-center shadow-[0_8px_25px_rgba(34,197,94,0.4)] transition-all active:scale-[0.98]"
-              >
-                COBRAR TICKET 💵
-              </button>
+              <>
+                {/* 🧐 LÓGICA: Si hay dinero por cobrar, muestra COBRAR */}
+                {totalMesa > 0 ? (
+                  <button
+                    onClick={() => { setModalCobroAbierto(true); notificarEstadoMesa('cobrando', totalMesa); }}
+                    className="w-full bg-green-500 hover:bg-green-600 text-white rounded-2xl h-16 sm:h-20 font-black text-xl sm:text-2xl flex justify-center items-center shadow-[0_8px_25px_rgba(34,197,94,0.4)] transition-all active:scale-[0.98]"
+                  >
+                    COBRAR TICKET 💵
+                  </button>
+                ) : (
+                  <button
+                    onClick={manejarCancelarOrden}
+                    className="w-full bg-red-500 hover:bg-red-600 text-white rounded-2xl h-16 sm:h-20 font-black text-lg sm:text-xl flex justify-center items-center shadow-[0_8px_25px_rgba(239,68,68,0.4)] transition-all active:scale-[0.98] gap-2"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                    LIBERAR MESA VACÍA
+                  </button>
+                )}
+              </>
             )
           )}
         </div>
