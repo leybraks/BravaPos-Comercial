@@ -6,6 +6,7 @@ from rest_framework import viewsets
 from django.utils import timezone
 from django.db import models
 from django.db import transaction
+import json
 from decimal import Decimal
 from django.db.models import F
 import logging
@@ -271,7 +272,11 @@ class OrdenViewSet(viewsets.ModelViewSet):
                 producto = Producto.objects.get(id=d['producto'])
                 precio_seguro = producto.precio_base
                 notas = d.get('notas_y_modificadores', {})
-                
+                if isinstance(notas, str):
+                    try:
+                        notas = json.loads(notas) if notas.strip() else {}
+                    except Exception:
+                        notas = {}
                 # 1. Preparar las opciones seleccionadas
                 subtotal_opciones = Decimal('0.00')
                 opciones_a_guardar = []
@@ -413,7 +418,7 @@ class OrdenViewSet(viewsets.ModelViewSet):
                         opcion_variacion=opcion,
                         precio_adicional_aplicado=opcion.precio_adicional
                     )
-                    
+
             detalles_db = DetalleOrden.objects.filter(orden=orden)
             nuevo_total = Decimal('0.00')
             for d in detalles_db:
