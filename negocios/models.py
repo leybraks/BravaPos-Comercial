@@ -509,20 +509,32 @@ class RegistroAuditoria(models.Model):
     def __str__(self):
         return f"[{self.fecha.strftime('%d/%m %H:%M')}] {self.empleado_nombre}: {self.get_accion_display()}"
     
+# En models.py
 class Cliente(models.Model):
     negocio = models.ForeignKey('Negocio', on_delete=models.CASCADE, related_name='clientes')
-    telefono = models.CharField(max_length=20) # Identificador para WhatsApp
+    telefono = models.CharField(max_length=20)
     nombre = models.CharField(max_length=100, null=True, blank=True)
     email = models.EmailField(null=True, blank=True)
     
-    # Datos para el modelo de ML y fidelización
+    # 📊 DATOS DE FIDELIZACIÓN
     puntos_acumulados = models.IntegerField(default=0)
     total_gastado = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     cantidad_pedidos = models.IntegerField(default=0)
     ultima_compra = models.DateTimeField(null=True, blank=True)
     fecha_nacimiento = models.DateField(null=True, blank=True)
-    # Etiquetas para segmentación (ej: ["VIP", "Frecuente", "Dormido"])
     tags = models.JSONField(default=list, blank=True)
+
+    # 🧠 ✨ NUEVOS CAMPOS: MEMORIA DE ESTADO DEL BOT
+    bot_estado = models.CharField(
+        max_length=50, 
+        default='INICIO', 
+        help_text="Estado actual: INICIO, ESPERANDO_PAGO, ESPERANDO_UBICACION, etc."
+    )
+    bot_memoria = models.JSONField(
+        default=dict, 
+        blank=True, 
+        help_text="Guarda el carrito temporal, coordenadas y datos de la sesión actual."
+    )
 
     class Meta:
         unique_together = ('negocio', 'telefono')

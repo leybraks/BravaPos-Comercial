@@ -230,7 +230,7 @@ class ClienteSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'telefono', 'nombre', 'email', 'fecha_nacimiento', 
             'puntos_acumulados', 'total_gastado', 'cantidad_pedidos', 
-            'ultima_compra', 'tags', 'es_cumpleanos_hoy'
+            'ultima_compra', 'tags', 'es_cumpleanos_hoy','bot_estado', 'bot_memoria'
         ]
         # 🛡️ PROTECCIÓN: Estos campos solo los calcula el backend (Django)
         # No permitimos que se modifiquen vía POST o PUT.
