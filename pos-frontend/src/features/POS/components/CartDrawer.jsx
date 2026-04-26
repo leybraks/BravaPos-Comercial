@@ -86,16 +86,23 @@ export default function CartDrawer({
                 <div className={`flex-1 h-px ${tema === 'dark' ? 'bg-[#222]' : 'bg-gray-200'}`}></div>
               </div>
 
-              {ordenActiva.detalles.map((item, index) => (
+              {ordenActiva.detalles.map((item, index) => {
+                // 🛡️ ESCUDO ANTI-OBJETOS
+                const notaSegura = item.notas_cocina || item.notas || (typeof item.notas_y_modificadores === 'object' ? item.notas_y_modificadores?.nota_libre : item.notas_y_modificadores);
+
+                return (
                 <div key={`db-${index}`} className={`p-4 rounded-2xl border flex gap-4 items-center opacity-70 ${tema === 'dark' ? 'bg-[#141414] border-[#222]' : 'bg-gray-50 border-gray-200'}`}>
                   <div className={`w-12 h-12 shrink-0 rounded-xl flex items-center justify-center font-black text-xl ${tema === 'dark' ? 'bg-[#222] text-neutral-400' : 'bg-gray-200 text-gray-600'}`}>
                     {item.cantidad}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className={`font-bold text-base sm:text-lg truncate leading-tight ${tema === 'dark' ? 'text-neutral-300' : 'text-gray-700'}`}>{item.producto_nombre || item.nombre}</p>
-                    {(item.notas_cocina || item.notas_y_modificadores || item.notas) && (
-                      <p className="text-xs mt-1 leading-tight font-medium truncate" style={{ color: colorPrimario }}>↳ {item.notas_cocina || item.notas_y_modificadores || item.notas}</p>
+                    
+                    {/* 👇 SE IMPRIME LA NOTA SEGURA */}
+                    {notaSegura && (
+                      <p className="text-xs mt-1 leading-tight font-medium truncate" style={{ color: colorPrimario }}>↳ {notaSegura}</p>
                     )}
+
                     <p className={`text-xs font-bold mt-1.5 ${tema === 'dark' ? 'text-neutral-500' : 'text-gray-500'}`}>{formatearSoles(item.precio_unitario)} c/u</p>
                   </div>
                   <button
@@ -108,7 +115,7 @@ export default function CartDrawer({
                     </svg>
                   </button>
                 </div>
-              ))}
+              )})}
             </div>
           )}
 
@@ -121,14 +128,21 @@ export default function CartDrawer({
 
               {carrito.map(item => {
                 const precioAMostrar = item.precio_unitario_calculado || item.precio_base || item.precio || 0;
+                
+                // 🛡️ ESCUDO ANTI-OBJETOS
+                const notaSegura = item.notas_cocina || item.notas || (typeof item.notas_y_modificadores === 'object' ? item.notas_y_modificadores?.nota_libre : item.notas_y_modificadores);
+
                 return (
                   <div key={item.cart_id || item.id} className={`p-4 sm:p-5 rounded-3xl border shadow-sm flex flex-col gap-4 ${tema === 'dark' ? 'bg-[#1a1a1a] border-[#333]' : 'bg-white border-gray-200'}`}>
                     <div className="flex justify-between items-start gap-3">
                       <div className="flex-1 min-w-0">
                         <p className={`font-black text-lg sm:text-xl leading-tight ${tema === 'dark' ? 'text-white' : 'text-gray-900'}`}>{item.producto_nombre || item.nombre}</p>
-                        {(item.notas_cocina || item.notas_y_modificadores || item.notas) && (
-                          <p className="text-xs sm:text-sm mt-1.5 leading-tight font-medium" style={{ color: colorPrimario }}>↳ {item.notas_cocina || item.notas_y_modificadores || item.notas}</p>
+                        
+                        {/* 👇 SE IMPRIME LA NOTA SEGURA */}
+                        {notaSegura && (
+                          <p className="text-xs sm:text-sm mt-1.5 leading-tight font-medium" style={{ color: colorPrimario }}>↳ {notaSegura}</p>
                         )}
+                        
                         <p className={`text-sm font-bold mt-1.5 ${tema === 'dark' ? 'text-neutral-400' : 'text-gray-500'}`}>{formatearSoles(precioAMostrar)} c/u</p>
                       </div>
                       <p className={`font-black text-xl sm:text-2xl shrink-0 ${tema === 'dark' ? 'text-white' : 'text-gray-900'}`}>{formatearSoles(precioAMostrar * item.cantidad)}</p>
