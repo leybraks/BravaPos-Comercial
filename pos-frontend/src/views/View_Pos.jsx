@@ -153,6 +153,42 @@ export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
     finally { setProcesando(false); }
   };
 
+  const manejarAnulacionCompleta = async () => {
+    if (!ordenActiva) {
+      // Si aún no se ha enviado a cocina, solo vaciamos el carrito local
+      vaciarCarrito();
+      return;
+    }
+
+    const confirmar = window.confirm(
+      "⚠️ ¿ESTÁS SEGURO DE ANULAR TODO EL PEDIDO?\nEsta acción liberará la mesa y quedará registrada en la auditoría."
+    );
+
+    if (confirmar) {
+      try {
+        setProcesando(true);
+        // 1. Informamos al backend para que libere la mesa y cancele la orden
+        await actualizarOrden(ordenActiva.id, { 
+          estado: 'cancelado',
+          notas_cocina: 'Anulación total desde el POS' 
+        });
+
+        // 2. Limpieza total del estado local
+        vaciarCarrito();
+        setCarritoAbierto(false);
+        
+        // 3. Volvemos al salón
+        onVolver();
+        
+      } catch (error) {
+        console.error("Error al anular pedido:", error);
+        alert("No se pudo anular. Verifica la conexión.");
+      } finally {
+        setProcesando(false);
+      }
+    }
+  };
+
   const manejarAnularItem = async (detalleId, nombrePlato) => {
     const motivo = window.prompt(`¿Motivo de anulación para "${nombrePlato}"?`);
     if (!motivo) return;
@@ -259,6 +295,7 @@ export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
       notificarEstadoMesa={notificarEstadoMesa} 
       formatearSoles={formatearSoles} 
       manejarCancelarOrden={manejarCancelarOrden}
+      manejarAnulacionCompleta={manejarAnulacionCompleta}
       />
 
       {/* MODALES */}

@@ -20,7 +20,8 @@ export default function CartDrawer({
   setModalCobroAbierto,
   notificarEstadoMesa,
   formatearSoles,
-  manejarCancelarOrden
+  manejarCancelarOrden,
+  manejarAnulacionCompleta
 }) {
   const contenedorClasses = esDesktop
     ? `relative w-full h-full flex flex-col ${tema === 'dark' ? 'bg-[#0d0d0d]' : 'bg-white'}`
@@ -55,7 +56,7 @@ export default function CartDrawer({
             <p className={`text-4xl sm:text-5xl font-black tracking-tighter leading-none ${tema === 'dark' ? 'text-white' : 'text-gray-900'}`}>{formatearSoles(totalMesa)}</p>
             <p className={`text-xs font-bold mt-2 ${tema === 'dark' ? 'text-neutral-400' : 'text-gray-500'}`}>{cantItemsMesa} artículos en total</p>
           </div>
-          <div className="flex flex-col items-end gap-3">
+          <div className="flex flex-col items-end gap-2">
             {/* Botón X SOLO en móvil */}
             {!esDesktop && (
               <button
@@ -65,15 +66,22 @@ export default function CartDrawer({
                 ✕
               </button>
             )}
-            {carrito.length > 0 && (
-              <button
-                onClick={vaciarStore}
-                className="text-red-500 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 transition-colors font-bold text-xs active:scale-95 border border-red-500/20"
+
+            {/* Botón para órdenes ya enviadas (DATABASE) */}
+            {ordenActiva && (
+              <button 
+                onClick={manejarAnulacionCompleta}
+                className="text-red-500 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 transition-all font-bold text-[10px] uppercase tracking-wider border border-red-500/20"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-                Limpiar
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                Anular Pedido
+              </button>
+            )}
+
+            {/* Botón para lo que está en el carrito (LOCAL) */}
+            {carrito.length > 0 && !ordenActiva && (
+              <button onClick={vaciarStore} className="text-gray-500 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gray-500/10 hover:bg-gray-500/20 transition-all font-bold text-[10px] uppercase tracking-wider border border-gray-500/20">
+                Vaciar Carrito
               </button>
             )}
           </div>
@@ -193,7 +201,7 @@ export default function CartDrawer({
                   </button>
                 ) : (
                   <button
-                    onClick={manejarCancelarOrden}
+                    onClick={manejarAnulacionCompleta} // 👈 USA LA FUNCIÓN MAESTRA AQUÍ TAMBIÉN
                     className="w-full bg-red-500 hover:bg-red-600 text-white rounded-2xl h-16 sm:h-20 font-black text-lg sm:text-xl flex justify-center items-center shadow-[0_8px_25px_rgba(239,68,68,0.4)] transition-all active:scale-[0.98] gap-2"
                   >
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
