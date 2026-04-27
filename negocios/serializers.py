@@ -155,24 +155,22 @@ class DetalleOrdenSerializer(serializers.ModelSerializer):
         read_only_fields = ['orden']
 
 class OrdenSerializer(serializers.ModelSerializer):
-    # ✨ CRUCIAL: Añadimos read_only=True. 
-    # Esto le dice a DRF: "Muestra los detalles al leer, pero cuando guardemos, yo lo haré manual en views.py"
     detalles = DetalleOrdenSerializer(many=True, read_only=True)
     mesa_nombre = serializers.ReadOnlyField(source='mesa.numero_o_nombre')
     sede_nombre = serializers.ReadOnlyField(source='sede.nombre')
     mesero_nombre = serializers.ReadOnlyField(source='mesero.nombre')
+
     class Meta:
         model = Orden
-        # 👇 MIRA AQUÍ: Agregué 'metodo' justo después de 'estado_pago'
         fields = [
             'id', 'sede', 'sede_nombre', 'mesa', 'mesa_nombre', 
             'mesero', 'mesero_nombre', 'tipo', 'estado', 'estado_pago', 
             'total', 'cliente_nombre', 'cliente_telefono', 
-            'motivo_cancelacion', 'creado_en', 'detalles'
+            'motivo_cancelacion', 'creado_en', 'detalles',
+            # ✨ AÑADIMOS LOS CAMPOS DE DELIVERY AQUÍ:
+            'direccion_entrega', 'latitud', 'longitud', 
+            'costo_envio', 'metodo_pago_esperado'
         ]
-        
-    # 🧹 ELIMINADO: Quitamos el def create() con bulk_create. 
-    # Ahora la magia segura y atómica ocurre 100% en tu views.py
 
 class PagoSerializer(serializers.ModelSerializer):
     class Meta:
