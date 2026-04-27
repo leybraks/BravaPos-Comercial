@@ -292,13 +292,21 @@ class OrdenViewSet(viewsets.ModelViewSet):
                         opciones_ids.extend(ids)
                         
                 # 3. Sumar precios reales de la BD
-                for opc_id in opciones_ids:
-                    try:
-                        opcion = OpcionVariacion.objects.get(id=opc_id)
-                        subtotal_opciones += opcion.precio_adicional
-                        opciones_a_guardar.append(opcion)
-                    except OpcionVariacion.DoesNotExist:
-                        pass
+                for opc_raw in opciones_ids:
+                    # Detectamos si el bot mandó un diccionario o el número directo
+                    if isinstance(opc_raw, dict):
+                        opc_id = opc_raw.get('id')
+                    else:
+                        opc_id = opc_raw
+
+                    # Solo buscamos si logramos extraer un número válido
+                    if opc_id is not None:
+                        try:
+                            opcion = OpcionVariacion.objects.get(id=opc_id)
+                            subtotal_opciones += opcion.precio_adicional
+                            opciones_a_guardar.append(opcion)
+                        except OpcionVariacion.DoesNotExist:
+                            pass
                 
                 # 4. 🌟 EL PRECIO REAL (Base + Opciones)
                 precio_final_unitario = precio_seguro + subtotal_opciones
