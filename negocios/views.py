@@ -1311,14 +1311,18 @@ class ZonaDeliveryViewSet(viewsets.ReadOnlyModelViewSet):
             if not sede.latitud or not sede.longitud:
                 return Response({"error": "El local no tiene coordenadas configuradas"}, status=400)
 
-            # 1. Calculamos la distancia real
-            distancia = calcular_distancia_km(sede.latitud, sede.longitud, lat_cliente, lon_cliente)
+            # 1. Calculamos la distancia real en línea recta (Modo Helicóptero)
+            distancia_recta = calcular_distancia_km(sede.latitud, sede.longitud, lat_cliente, lon_cliente)
 
-            # 2. Buscamos la zona aplicable: radio mayor a la distancia, ordenada de la más barata a la más cara
+            # ✨ EL HACK: Convertimos a "Modo Moto" multiplicando por 1.35
+            FACTOR_RUTEO = 1.5
+            distancia_estimada_ruta = distancia_recta * FACTOR_RUTEO
+
+            # 2. Buscamos la zona aplicable usando la nueva distancia estimada
             zona = ZonaDelivery.objects.filter(
                 sede_id=sede_id,
                 activa=True,
-                radio_max_km__gte=distancia
+                radio_max_km__gte=distancia_estimada_ruta
             ).order_by('radio_max_km').first()
 
             if zona:
@@ -1326,12 +1330,12 @@ class ZonaDeliveryViewSet(viewsets.ReadOnlyModelViewSet):
                     "zona": zona.nombre,
                     "costo": zona.costo_envio,
                     "minimo": zona.pedido_minimo,
-                    "distancia_km": round(distancia, 2)
+                    "distancia_km": round(distancia_estimada_ruta, 2)
                 })
             else:
-                # El cliente vive más lejos del radio máximo configurado por el dueño
+                # El cliente vive más lejos del radio máximo configurado
                 return Response({
-                    "error": f"Estás a {round(distancia, 2)}km. Por ahora nuestra cobertura máxima no llega hasta tu ubicación.",
+                    "error": f"Estás a {round(distancia_estimada_ruta, 2)}km de ruta. Por ahora nuestra cobertura máxima no llega hasta tu ubicación.",
                     "fuera_de_rango": True
                 }, status=404)
 
