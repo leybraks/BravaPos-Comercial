@@ -1,3 +1,5 @@
+import math
+
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from rest_framework import status
@@ -1272,18 +1274,77 @@ class ClienteViewSet(viewsets.ModelViewSet):
             })
         
         return Response({'encontrado': False, 'mensaje': 'Cliente nuevo'})
-    
+
+def calcular_distancia_km(lat1, lon1, lat2, lon2):
+    R = 6371.0 # Radio de la Tierra en km
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat / 2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return R * c
+
 class ZonaDeliveryViewSet(viewsets.ReadOnlyModelViewSet):
-    serializer_class = ZonaDeliverySerializer # Deberás crearlo en serializers.py
+    serializer_class = ZonaDeliverySerializer
+
     def get_queryset(self):
+        # Este método ahora solo se usa para que el frontend liste las zonas
         sede_id = self.request.query_params.get('sede_id')
-        return ZonaDelivery.objects.filter(sede_id=sede_id, activa=True)
+        if sede_id:
+            return ZonaDelivery.objects.filter(sede_id=sede_id, activa=True)
+        return ZonaDelivery.objects.filter(activa=True)
+
+    # ✨ NUEVO ENDPOINT: /api/zonas-delivery/cotizar/
+    @action(detail=False, methods=['get'])
+    def cotizar(self, request):
+        sede_id = request.query_params.get('sede_id')
+        try:
+            lat_cliente = float(request.query_params.get('lat', 0))
+            lon_cliente = float(request.query_params.get('lon', 0))
+        except ValueError:
+            return Response({"error": "Las coordenadas deben ser números válidos"}, status=400)
+
+        if not sede_id or lat_cliente == 0 or lon_cliente == 0:
+            return Response({"error": "Faltan parámetros (sede_id, lat, lon)"}, status=400)
+
+        try:
+            sede = Sede.objects.get(id=sede_id)
+            if not sede.latitud or not sede.longitud:
+                return Response({"error": "El local no tiene coordenadas configuradas"}, status=400)
+
+            # 1. Calculamos la distancia real
+            distancia = calcular_distancia_km(sede.latitud, sede.longitud, lat_cliente, lon_cliente)
+
+            # 2. Buscamos la zona aplicable: radio mayor a la distancia, ordenada de la más barata a la más cara
+            zona = ZonaDelivery.objects.filter(
+                sede_id=sede_id,
+                activa=True,
+                radio_max_km__gte=distancia
+            ).order_by('radio_max_km').first()
+
+            if zona:
+                return Response({
+                    "zona": zona.nombre,
+                    "costo": zona.costo_envio,
+                    "minimo": zona.pedido_minimo,
+                    "distancia_km": round(distancia, 2)
+                })
+            else:
+                # El cliente vive más lejos del radio máximo configurado por el dueño
+                return Response({
+                    "error": f"Estás a {round(distancia, 2)}km. Por ahora nuestra cobertura máxima no llega hasta tu ubicación.",
+                    "fuera_de_rango": True
+                }, status=404)
+
+        except Sede.DoesNotExist:
+            return Response({"error": "Sede no encontrada"}, status=404)
 
 class ReglaNegocioViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = ReglaNegocioSerializer
     def get_queryset(self):
         negocio_id = self.request.query_params.get('negocio_id')
         return ReglaNegocio.objects.filter(negocio_id=negocio_id, activa=True)
+    
+
 # ============================================================
 # ✅ FIX #1: LoginAdministradorView eliminada.
 # El login ahora lo maneja CustomTokenObtainPairView en serializers_jwt.py

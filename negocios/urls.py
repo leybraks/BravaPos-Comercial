@@ -28,6 +28,7 @@ router.register(r'recetas-opcion', views.RecetaOpcionViewSet, basename='recetaop
 router.register(r'clientes', views.ClienteViewSet, basename='clientes')
 router.register(r'zonas-delivery', views.ZonaDeliveryViewSet, basename='zonadelivery')
 router.register(r'reglas-negocio', views.ReglaNegocioViewSet, basename='reglanegocio')
+router.register(r'zonas-delivery', views.ZonaDeliveryViewSet, basename='zonadelivery')
 urlpatterns = [
     path('', include(router.urls)),
 

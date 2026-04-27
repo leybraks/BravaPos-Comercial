@@ -83,12 +83,6 @@ class CuponPromocionalAdmin(admin.ModelAdmin):
     list_filter = ('activo', 'negocio')
     search_fields = ('codigo',)
 
-@admin.register(ZonaDelivery)
-class ZonaDeliveryAdmin(admin.ModelAdmin):
-    list_display = ('nombre', 'sede', 'costo_envio', 'pedido_minimo', 'activa')
-    list_filter = ('sede', 'activa')
-    search_fields = ('nombre', 'distritos_cobertura')
-
 # ==========================================
 # 🍔 5. PRODUCTOS AVANZADOS (COMBOS Y HORARIOS)
 # ==========================================
@@ -114,7 +108,28 @@ class ProductoAdmin(admin.ModelAdmin):
 
 @admin.register(Sede)
 class SedeAdmin(admin.ModelAdmin):
-    list_display = ('nombre', 'negocio', 'whatsapp_instancia', 'whatsapp_numero', 'activo')
-    list_editable = ('whatsapp_instancia', 'whatsapp_numero', 'activo') # ¡Magia! Edición directa
-    search_fields = ('nombre', 'whatsapp_instancia')
-    list_filter = ('negocio', 'activo')
+    # Agregamos latitud y longitud a la vista de lista
+    list_display = ('nombre', 'negocio', 'latitud', 'longitud', 'activo')
+    list_editable = ('latitud', 'longitud', 'activo')
+    search_fields = ('nombre',)
+    # Organizamos los campos en el formulario de edición
+    fieldsets = (
+        (None, {
+            'fields': ('negocio', 'nombre', 'direccion', 'activo')
+        }),
+        ('Geolocalización', {
+            'fields': ('latitud', 'longitud'),
+        }),
+        ('WhatsApp Config', {
+            'fields': ('whatsapp_instancia', 'whatsapp_numero'),
+        }),
+    )
+
+@admin.register(ZonaDelivery)
+class ZonaDeliveryAdmin(admin.ModelAdmin):
+    # Cambiamos distritos por radio_max_km
+    list_display = ('nombre', 'sede', 'radio_max_km', 'costo_envio', 'activa')
+    list_editable = ('radio_max_km', 'costo_envio', 'activa')
+    list_filter = ('sede', 'activa')
+    # Eliminamos distritos_cobertura de la búsqueda si ya no lo usas
+    search_fields = ('nombre',)

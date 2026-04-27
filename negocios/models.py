@@ -59,7 +59,10 @@ class Sede(models.Model):
     direccion = models.CharField(max_length=200, null=True, blank=True)
     activo = models.BooleanField(default=True)
     columnas_salon = models.IntegerField(default=2)
-    
+
+    latitud = models.FloatField(null=True, blank=True, help_text="Latitud del local")
+    longitud = models.FloatField(null=True, blank=True, help_text="Longitud del local")
+
     # ✨ NUEVOS CAMPOS PARA EL BOT MULTI-SEDE
     whatsapp_instancia = models.CharField(max_length=50, null=True, blank=True, help_text="Nombre exacto de la instancia en Evolution API (Ej: brava_ventanilla)")
     whatsapp_numero = models.CharField(max_length=20, null=True, blank=True, help_text="Número de teléfono del bot para esta sede")
@@ -547,13 +550,17 @@ class Cliente(models.Model):
 # ==========================================
 class ZonaDelivery(models.Model):
     sede = models.ForeignKey('Sede', on_delete=models.CASCADE, related_name='zonas_delivery')
-    nombre = models.CharField(max_length=100) # Ej: "Sector A - Surco"
+    nombre = models.CharField(max_length=100) # Ej: "Radio Corto (0-2km)"
     costo_envio = models.DecimalField(max_digits=6, decimal_places=2)
     pedido_minimo = models.DecimalField(max_digits=6, decimal_places=2, default=0.00)
     
-    # Texto para que el Bot busque coincidencias (puedes usar geolocalización después)
-    distritos_cobertura = models.TextField(help_text="Lista de distritos o barrios separados por comas")
+    # ✨ EL NUEVO CORAZÓN DEL CÁLCULO
+    radio_max_km = models.FloatField(help_text="Radio máximo en kilómetros para esta tarifa", default=2.0)
+    
     activa = models.BooleanField(default=True)
+
+    def __str__(self):
+        return f"{self.nombre} (hasta {self.radio_max_km}km) - S/ {self.costo_envio}"
 
 # ==========================================
 # 3. MOTOR DE REGLAS Y PROMOCIONES
