@@ -10,29 +10,40 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 🔔 Notificar inicio
-        run: |
-          curl -s -H "Content-Type: application/json" \
-          -d '{"content": "🚀 Iniciando deploy de Brava POS..."}' \
-          ${{ secrets.DISCORD_WEBHOOK }}
-
-      - name: 📦 Backup y Deploy
+      - name: 📦 Backup, Deploy y Notificaciones
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          # Pasamos el webhook como variable de entorno al servidor
+          WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK }}
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          envs: WEBHOOK_URL
           command_timeout: 15m
           script: |
+            set -e # Detiene el script al primer error
+
+            # ✨ FUNCIÓN PARA ENVIAR MENSAJES RÁPIDOS A DISCORD
+            notificar() {
+              curl -s -H "Content-Type: application/json" \
+              -d "{\"content\": \"$1\"}" \
+              $WEBHOOK_URL
+            }
+
+            notificar "🚀 **[BRAVA POS]** Nuevo push detectado. Iniciando pipeline..."
+
             cd BravaPos-Comercial
 
+            notificar "🗄️ [1/5] Haciendo backup de seguridad de la base de datos..."
             echo "--- Haciendo backup de la BD ---"
             sudo docker compose exec -T db pg_dump --clean -U bravapos_user bravapos_db > pre_deploy.sql
 
+            notificar "📥 [2/5] Descargando el nuevo código de GitHub..."
             echo "--- Pulling código nuevo ---"
             git pull origin V2-Estable-Cloud
 
-            # ✨ AQUÍ ESTÁ LA MAGIA ANTI-FANTASMAS
+            notificar "🏗️ [3/5] Reconstruyendo el frontend y levantando contenedores..."
             echo "--- Destruyendo caché viejo del frontend ---"
             sudo docker compose build --no-cache frontend
             
@@ -44,49 +55,40 @@ jobs:
 
             echo "--- Verificando que el backend esté corriendo ---"
             if ! sudo docker compose ps backend | grep -q "Up"; then
+              notificar "🚨 **ERROR FATAL:** El backend no logró levantar. Abortando."
               echo "❌ El backend no está corriendo. Logs:"
               sudo docker compose logs --tail=80 backend
               exit 1
             fi
 
-            echo "--- Logs del backend (últimas 30 líneas) ---"
-            sudo docker compose logs --tail=30 backend
-
+            notificar "⚙️ [4/5] Contenedores arriba. Ejecutando migraciones de Django..."
             echo "--- Ejecutando migraciones ---"
             sudo docker compose exec -T backend python manage.py migrate
 
+            notificar "✅ [5/5] **¡Deploy completado con éxito!** El sistema está 100% operativo."
             echo "--- ✅ Deploy completado ---"
 
-      - name: ❌ Mostrar logs y hacer rollback si falla
+      - name: ❌ Notificar y hacer rollback si falla
         if: failure()
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK }}
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          envs: WEBHOOK_URL
           script: |
+            # Volvemos a declarar la función para este paso aislado
+            notificar() {
+              curl -s -H "Content-Type: application/json" -d "{\"content\": \"$1\"}" $WEBHOOK_URL
+            }
+
+            notificar "⚠️ **¡ALERTA ROJA!** El deploy falló. Iniciando protocolo de Rollback automático..."
+            
             cd BravaPos-Comercial
-
-            echo "=== LOGS DEL BACKEND ==="
-            sudo docker compose logs --tail=100 backend
-
-            echo "=== LOGS DEL FRONTEND ==="
-            sudo docker compose logs --tail=30 frontend
-
+            
             echo "=== Iniciando rollback de BD ==="
             cat pre_deploy.sql | sudo docker compose exec -T db psql -U bravapos_user bravapos_db
-            echo "=== Rollback completado ==="
-
-      - name: ❌ Notificar fallo
-        if: failure()
-        run: |
-          curl -s -H "Content-Type: application/json" \
-          -d '{"content": "⚠️ Deploy falló. Rollback ejecutado. Revisa los logs en GitHub Actions."}' \
-          ${{ secrets.DISCORD_WEBHOOK }}
-
-      - name: ✅ Notificar éxito
-        if: success()
-        run: |
-          curl -s -H "Content-Type: application/json" \
-          -d '{"content": "✅ Brava POS actualizado con éxito 🚀"}' \
-          ${{ secrets.DISCORD_WEBHOOK }}
+            
+            notificar "⏪ Rollback de base de datos completado. Revisa los logs en GitHub Actions."
