@@ -16,22 +16,14 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # ============================================================
-# SEGURIDAD CRÍTICA  (leer de variables de entorno, nunca hardcodeado)
+# SEGURIDAD CRÍTICA
 # ============================================================
-# ✅ FIX #1: SECRET_KEY desde variable de entorno
-# Genera una nueva con:
-#   python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
-# Luego ponla en tu archivo .env:  SECRET_KEY=<valor>
 SECRET_KEY = os.environ.get('SECRET_KEY')
 if not SECRET_KEY:
     raise ValueError("La variable de entorno SECRET_KEY no está definida.")
 
-# ✅ FIX #1b: DEBUG desactivado en producción
 DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
-# ✅ FIX #2: Sin wildcard en ALLOWED_HOSTS
-# Agrega tus dominios reales en la variable de entorno:
-#   ALLOWED_HOSTS=163.176.135.213,tu-dominio.com
 _allowed = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1')
 ALLOWED_HOSTS = [h.strip() for h in _allowed.split(',') if h.strip()]
 
@@ -48,11 +40,9 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    # Herramientas de terceros
     'rest_framework',
     'rest_framework.authtoken',
     'corsheaders',
-    # Nuestras Apps
     'negocios',
 ]
 
@@ -61,7 +51,7 @@ ASGI_APPLICATION = 'core.asgi.application'
 # ============================================================
 # CHANNEL LAYERS
 # ============================================================
-REDIS_URL = os.environ.get('REDIS_URL', 'redis://redis:6379')  # 'redis' = nombre del servicio en docker-compose
+REDIS_URL = os.environ.get('REDIS_URL', 'redis://redis:6379')
 
 if os.environ.get('USE_REDIS', 'True') == 'True':
     CHANNEL_LAYERS = {
@@ -73,7 +63,6 @@ if os.environ.get('USE_REDIS', 'True') == 'True':
         },
     }
 else:
-    # Solo para desarrollo local sin Docker
     CHANNEL_LAYERS = {
         "default": {
             "BACKEND": "channels.layers.InMemoryChannelLayer"
@@ -140,9 +129,6 @@ AUTH_PASSWORD_VALIDATORS = [
 LANGUAGE_CODE = 'es-pe'
 TIME_ZONE = 'America/Lima'
 USE_I18N = True
-
-# ✅ FIX #13: USE_TZ = True para evitar datos financieros incorrectos
-# Con USE_TZ=True Django guarda en UTC y convierte a America/Lima al mostrar.
 USE_TZ = True
 
 # ============================================================
@@ -155,48 +141,62 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # ============================================================
-# CORS
+# CORS & CSRF  — definido UNA sola vez
 # ============================================================
-# ✅ FIX #3: NUNCA usar CORS_ALLOW_ALL_ORIGINS = True en producción
 CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOW_CREDENTIALS = True  # Necesario para que el navegador envíe cookies cross-origin
 
-# Agrega orígenes extra desde .env:  CORS_EXTRA_ORIGINS=https://mi-app.com
 _extra_cors = os.environ.get('CORS_EXTRA_ORIGINS', '')
 CORS_ALLOWED_ORIGINS = [o.strip() for o in _extra_cors.split(',') if o.strip()]
 
 if DEBUG:
+    # Solo en desarrollo local
     CORS_ALLOWED_ORIGINS += [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
     ]
 
+# CSRF debe coincidir exactamente con los orígenes permitidos
+CSRF_TRUSTED_ORIGINS = list(CORS_ALLOWED_ORIGINS)
+
 CORS_ALLOW_HEADERS = [
-    'accept', 'accept-encoding', 'authorization', 'content-type',
-    'dnt', 'origin', 'user-agent', 'x-csrftoken', 'x-requested-with', 'x-empleado-id',
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+    'x-empleado-id',
 ]
 
 # ============================================================
-# HEADERS DE SEGURIDAD HTTP  (✅ FIX #15)
+# HEADERS DE SEGURIDAD HTTP
 # ============================================================
 SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
-X_FRAME_OPTIONS = 'DENY'                    # Previene Clickjacking
+X_FRAME_OPTIONS = 'DENY'
 SECURE_REFERRER_POLICY = 'same-origin'
 
-# Activa estos cuando tengas HTTPS/TLS (✅ FIX #12):
-# SECURE_SSL_REDIRECT = True
-# SESSION_COOKIE_SECURE = True
-# CSRF_COOKIE_SECURE = True
-# SECURE_HSTS_SECONDS = 31536000
-# SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-# SECURE_HSTS_PRELOAD = True
+# ✅ HTTPS controlado por variable de entorno — nunca hardcodeado
+# Cuando tengas TLS activo, pon HTTPS_ENABLED=True en tu .env
+_https = os.environ.get('HTTPS_ENABLED', 'False') == 'True'
+SECURE_SSL_REDIRECT             = _https
+SESSION_COOKIE_SECURE           = _https
+CSRF_COOKIE_SECURE              = _https
+SECURE_HSTS_SECONDS             = 31536000 if _https else 0
+SECURE_HSTS_INCLUDE_SUBDOMAINS  = _https
+SECURE_HSTS_PRELOAD             = _https
 
 # ============================================================
-# REST FRAMEWORK + JWT
+# REST FRAMEWORK
 # ============================================================
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        # ✅ Solo CookieJWTAuthentication — lee el token desde la cookie HttpOnly
+        # El JWTAuthentication estándar (que lee el header Authorization) ya no es necesario
         'negocios.authentication.CookieJWTAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': [
@@ -207,32 +207,41 @@ REST_FRAMEWORK = {
         'rest_framework.throttling.UserRateThrottle',
     ],
     'DEFAULT_THROTTLE_RATES': {
-        'anon': '60/hour',   
+        'anon': '60/hour',
         'user': '1000/hour',
         'intentos_pin': '5/minute',
-        # ✅ FIX #8: Límite estricto para evitar fuerza bruta en el login
-        'login': '5/minute' 
+        'login': '5/minute',   # ✅ FIX #8: frena fuerza bruta en endpoints de login
     },
 }
 
+# ============================================================
+# SIMPLE JWT
+# ============================================================
 SIMPLE_JWT = {
-    # 🛡️ Solución Problema #7: Bajamos los tiempos de vida
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),    # 1 hora es suficiente para una sesión activa
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=90),       # Bajamos de 1 año a 1 día
-    
+    # ✅ FIX #7: Tiempos de vida reducidos
+    'ACCESS_TOKEN_LIFETIME':  timedelta(minutes=15),  # sesión activa corta
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),       # una semana, no un año
+
     'AUTH_HEADER_TYPES': ('Bearer',),
-    'BLACKLIST_AFTER_ROTATION': True,
-    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,   # el refresh usado queda en lista negra
+    'ROTATE_REFRESH_TOKENS': True,      # cada refresh emite un nuevo par de tokens
     'UPDATE_LAST_LOGIN': True,
     'TOKEN_OBTAIN_SERIALIZER': 'negocios.serializers.CustomTokenObtainPairSerializer',
-    
-    # 🛡️ Solución Problema #2: Configuración para Cookies HttpOnly
-    'AUTH_COOKIE': 'access_token',           # Nombre de la cookie de acceso
-    'AUTH_COOKIE_REFRESH': 'refresh_token',  # Nombre de la cookie de refresh
-    'AUTH_COOKIE_HTTP_ONLY': True,           # 🚫 Impide que JavaScript lea el token (Blindaje XSS)
-    'AUTH_COOKIE_SECURE': False,             # Cambiar a True cuando actives HTTPS (Problema #6)
-    'AUTH_COOKIE_SAMESITE': 'Lax',           # Protección contra ataques CSRF
-    'AUTH_COOKIE_PATH': '/',
+
+    # ── Configuración de cookies HttpOnly (FIX #2) ──────────────────────────
+    # IMPORTANTE: SimpleJWT no lee estas claves automáticamente.
+    # Son usadas por negocios/authentication.py (CookieJWTAuthentication)
+    # y por las vistas de login/refresh/logout para set_cookie / delete_cookie.
+    'AUTH_COOKIE':          'access_token',
+    'AUTH_COOKIE_REFRESH':  'refresh_token',
+    'AUTH_COOKIE_HTTP_ONLY': True,       # JS nunca puede leer el token
+    'AUTH_COOKIE_SECURE':   _https,      # True automáticamente cuando HTTPS esté activo
+    'AUTH_COOKIE_SAMESITE': 'Strict',    # ✅ Strict > Lax para un POS interno
+    'AUTH_COOKIE_PATH':     '/',
 }
 
-CORS_ALLOW_CREDENTIALS = True
+# ============================================================
+# EVOLUTION API
+# ============================================================
+EVO_API_URL    = os.environ.get('EVO_API_URL',    'http://evolution-api:8080')
+EVO_GLOBAL_KEY = os.environ.get('EVO_GLOBAL_KEY', '')

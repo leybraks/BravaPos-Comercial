@@ -110,19 +110,14 @@ class SedeViewSet(viewsets.ModelViewSet):
             return Sede.objects.filter(negocio=self.request.user.negocio)
         return Sede.objects.none()
 
-    # ✨ EL NUEVO ENDPOINT PARA EVOLUTION API Y N8N
+    # ✨ ENDPOINT EXISTENTE PARA N8N
     @action(detail=False, methods=['get'], url_path='info_bot', permission_classes=[AllowAny])
     def info_bot(self, request):
-        """
-        n8n consulta este endpoint pasándole el nombre de la instancia 
-        para saber a qué Sede y a qué Negocio pertenece el mensaje.
-        """
         instancia = request.query_params.get('instancia')
         
         if not instancia:
             return Response({'error': 'Falta el parámetro instancia'}, status=400)
 
-        # Buscamos qué sede tiene configurada esta instancia de WhatsApp
         sede = Sede.objects.filter(whatsapp_instancia=instancia).first()
         
         if not sede:
@@ -134,6 +129,85 @@ class SedeViewSet(viewsets.ModelViewSet):
             'nombre_sede': sede.nombre,
             'nombre_negocio': sede.negocio.nombre
         })
+
+    # ==========================================
+    # 🤖 CONTROLES DE EVOLUTION API
+    # ==========================================
+    
+    @action(detail=True, methods=['post'])
+    def crear_instancia_whatsapp(self, request, pk=None):
+        sede = self.get_object()
+        
+        # Generamos un identificador único seguro
+        nombre_instancia = f"brava_{sede.negocio.id}_sede_{sede.id}"
+        
+        url = f"{settings.EVO_API_URL}/instance/create"
+        headers = {
+            "apikey": settings.EVO_GLOBAL_KEY,
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "instanceName": nombre_instancia,
+            "qrcode": True,
+            "integration": "WHATSAPP-BAILEYS"
+        }
+
+        try:
+            response = requests.post(url, json=payload, headers=headers)
+            if response.status_code in [200, 201]:
+                data = response.json()
+                
+                # Actualizamos la sede en nuestra BD
+                sede.whatsapp_instancia = nombre_instancia
+                sede.save()
+
+                return Response({
+                    "mensaje": "Instancia creada con éxito",
+                    "instancia": nombre_instancia,
+                    "qr_base64": data.get('qrcode', {}).get('base64') 
+                })
+            return Response({"error": response.json()}, status=response.status_code)
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)
+
+    @action(detail=True, methods=['get'])
+    def obtener_qr(self, request, pk=None):
+        sede = self.get_object()
+        if not sede.whatsapp_instancia:
+            return Response({"error": "La sede no tiene instancia de WhatsApp vinculada"}, status=400)
+
+        url = f"{settings.EVO_API_URL}/instance/connect/{sede.whatsapp_instancia}"
+        headers = {"apikey": settings.EVO_GLOBAL_KEY}
+
+        try:
+            response = requests.get(url, headers=headers)
+            if response.status_code == 200:
+                # Retorna el QR en base64 para que React lo dibuje directo
+                return Response(response.json()) 
+            return Response({"error": "No se pudo obtener el QR"}, status=response.status_code)
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)
+
+    @action(detail=True, methods=['delete'])
+    def eliminar_instancia(self, request, pk=None):
+        sede = self.get_object()
+        if not sede.whatsapp_instancia:
+            return Response({"error": "No hay instancia para eliminar"}, status=400)
+
+        url = f"{settings.EVO_API_URL}/instance/delete/{sede.whatsapp_instancia}"
+        headers = {"apikey": settings.EVO_GLOBAL_KEY}
+
+        try:
+            response = requests.delete(url, headers=headers)
+            if response.status_code in [200, 201, 204] or response.status_code == 404:
+                # Si se borró en Evo (o si ya no existía allá), limpiamos nuestra BD
+                sede.whatsapp_instancia = None
+                sede.whatsapp_numero = None
+                sede.save()
+                return Response({"mensaje": "Instancia desconectada y eliminada"})
+            return Response({"error": "Error al eliminar en Evolution API"}, status=response.status_code)
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)
 
 
 # ============================================================
@@ -401,13 +475,21 @@ class OrdenViewSet(viewsets.ModelViewSet):
                     if isinstance(ids, list):
                         opciones_ids.extend(ids)
                         
-                for opc_id in opciones_ids:
-                    try:
-                        opcion = OpcionVariacion.objects.get(id=opc_id)
-                        subtotal_opciones += opcion.precio_adicional
-                        opciones_a_guardar.append(opcion)
-                    except OpcionVariacion.DoesNotExist:
-                        pass
+                for opc_raw in opciones_ids:
+                    # 🛡️ BLINDAJE ANTI-BOT: Detectamos si mandó un objeto {'id': 7} o el número 7
+                    if isinstance(opc_raw, dict):
+                        opc_id = opc_raw.get('id')
+                    else:
+                        opc_id = opc_raw
+
+                    # Solo buscamos si logramos extraer un número válido
+                    if opc_id is not None:
+                        try:
+                            opcion = OpcionVariacion.objects.get(id=opc_id)
+                            subtotal_opciones += opcion.precio_adicional
+                            opciones_a_guardar.append(opcion)
+                        except OpcionVariacion.DoesNotExist:
+                            pass
 
                 # 🌟 EL PRECIO REAL
                 precio_final_unitario = precio_seguro + subtotal_opciones

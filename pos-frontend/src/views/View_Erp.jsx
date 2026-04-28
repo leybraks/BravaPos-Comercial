@@ -12,6 +12,7 @@ import Erp_Inventario from '../features/ERP/Erp_Inventario';
 import Erp_Personal from '../features/ERP/Erp_Personal';
 import Erp_Crm from '../features/ERP/Erp_Crm';
 import Erp_Configuracion from '../features/ERP/Erp_Configuracion';
+import Erp_BotWsp from '../features/ERP/Erp_BotWsp'; 
 
 // 🧩 MODALES MODULARIZADOS
 import Erp_ModalCambios from '../features/ERP/Erp_ModalCambios';
@@ -101,15 +102,14 @@ export default function ErpDashboard({ onVolverAlPos }) {
           {vistaActiva === 'diseno_salon' && (
             <Erp_EditorPlanos />
           )}
-
-          {/* Vistas en construcción */}
-          {['bot_wsp', 'facturacion'].includes(vistaActiva) && (
+          {vistaActiva === 'bot_wsp' && (
+            <Erp_BotWsp sedesReales={sedesReales} />
+      )}
+          {vistaActiva === 'facturacion' && (
             <div className="animate-fadeIn max-w-4xl mx-auto space-y-6">
               <div className={`rounded-3xl p-8 text-center border ${tema === 'dark' ? 'bg-[#121212] border-[#222]' : 'bg-white border-gray-200 shadow-sm'}`}>
-                <div className="text-7xl mb-4">{vistaActiva === 'bot_wsp' ? '🤖' : '🧾'}</div>
-                <h2 className={`text-2xl font-black mb-2 ${tema === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                  {vistaActiva === 'bot_wsp' ? 'Bot de Pedidos por WhatsApp' : 'Facturación Electrónica'}
-                </h2>
+                <div className="text-7xl mb-4">🧾</div>
+                <h2 className={`text-2xl font-black mb-2 ${tema === 'dark' ? 'text-white' : 'text-gray-900'}`}>Facturación Electrónica</h2>
                 <p className={`mb-6 ${tema === 'dark' ? 'text-neutral-400' : 'text-gray-600'}`}>Módulo en desarrollo. Próximamente disponible.</p>
                 <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#ff5a1f]/10 text-[#ff5a1f] text-sm font-bold">🚧 Próximamente</div>
               </div>

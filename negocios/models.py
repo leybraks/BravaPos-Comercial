@@ -3,6 +3,7 @@ from django.contrib.auth.models import User
 from django.contrib.auth.hashers import make_password, is_password_usable
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
+from openlocationcode import openlocationcode as olc
 
 class ActivoManager(models.Manager):
     def get_queryset(self):
@@ -56,16 +57,18 @@ class Negocio(models.Model):
 class Sede(models.Model):
     negocio = models.ForeignKey(Negocio, on_delete=models.CASCADE, related_name='sedes')
     nombre = models.CharField(max_length=100) # Ej: "Local Ventanilla", "Sede Centro"
-    direccion = models.CharField(max_length=200, null=True, blank=True)
+    
+    # Actualizamos el help_text para guiar al usuario
+    direccion = models.CharField(max_length=200, null=True, blank=True, help_text="Pega el Plus Code de Google Maps (Ej: 6MC5+QQ Ventanilla)")
     activo = models.BooleanField(default=True)
     columnas_salon = models.IntegerField(default=2)
 
-    latitud = models.FloatField(null=True, blank=True, help_text="Latitud del local")
-    longitud = models.FloatField(null=True, blank=True, help_text="Longitud del local")
+    latitud = models.FloatField(null=True, blank=True, help_text="Se autocompleta al guardar")
+    longitud = models.FloatField(null=True, blank=True, help_text="Se autocompleta al guardar")
 
-    # ✨ NUEVOS CAMPOS PARA EL BOT MULTI-SEDE
-    whatsapp_instancia = models.CharField(max_length=50, null=True, blank=True, help_text="Nombre exacto de la instancia en Evolution API (Ej: brava_ventanilla)")
-    whatsapp_numero = models.CharField(max_length=20, null=True, blank=True, help_text="Número de teléfono del bot para esta sede")
+    # ✨ CAMPOS PARA EL BOT MULTI-SEDE
+    whatsapp_instancia = models.CharField(max_length=50, null=True, blank=True, help_text="Nombre exacto en Evolution API")
+    whatsapp_numero = models.CharField(max_length=20, null=True, blank=True, help_text="Número del bot")
 
     objects = ActivoManager()      
     all_objects = models.Manager()
@@ -75,6 +78,22 @@ class Sede(models.Model):
 
     def __str__(self):
         return f"{self.nombre} ({self.negocio.nombre})"
+
+    # ✨ LA MAGIA: Interceptamos el guardado para calcular las coordenadas
+    def save(self, *args, **kwargs):
+        if self.direccion and '+' in self.direccion:
+            try:
+                # Extraemos solo el código, ignorando si el usuario pegó la ciudad (Ej: "6MC5+QQ Ventanilla")
+                codigo_limpio = self.direccion.split(' ')[0] 
+                
+                if olc.isFull(codigo_limpio):
+                    code_area = olc.decode(codigo_limpio)
+                    self.latitud = code_area.latitudeCenter
+                    self.longitud = code_area.longitudeCenter
+            except Exception as e:
+                print(f"Error decodificando Plus Code: {e}")
+                
+        super().save(*args, **kwargs)
 
 class Mesa(models.Model):
     # Cambio clave: La mesa ahora pertenece a la Sede, no al Negocio general
