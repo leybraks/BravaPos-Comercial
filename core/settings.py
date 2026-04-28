@@ -243,5 +243,5 @@ SIMPLE_JWT = {
 # ============================================================
 # EVOLUTION API
 # ============================================================
-EVO_API_URL    = os.environ.get('EVO_API_URL',    'http://evolution-api:8080')
-EVO_GLOBAL_KEY = os.environ.get('EVO_GLOBAL_KEY', '')
+EVO_API_URL = os.environ.get('EVO_API_URL', 'http://163.176.135.213:8080')
+EVO_GLOBAL_KEY = os.environ.get('EVO_GLOBAL_KEY', 'BravaSuperSecret2026')
