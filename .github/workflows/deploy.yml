@@ -24,19 +24,12 @@ jobs:
             set -e
             DEPLOY_START=$SECONDS
 
-            # 🛠️ FIX 1: notificar usa variable de entorno en vez de $1 dentro de heredoc
+            # ✅ Volvemos a curl (funciona sin problemas con Discord)
             # FIX 4: || true para que un fallo de notificación no corte el deploy
             notificar() {
-              NOTIF_MSG="$1" python3 - <<'PYEOF' || true
-            import urllib.request, json, os
-            msg = os.environ.get('NOTIF_MSG', '')
-            req = urllib.request.Request(
-                os.environ['WEBHOOK_URL'],
-                data=json.dumps({'content': msg}).encode(),
-                headers={'Content-Type': 'application/json'}
-            )
-            urllib.request.urlopen(req)
-            PYEOF
+              curl -s -H "Content-Type: application/json" \
+                -d "{\"content\": \"$1\"}" \
+                "$WEBHOOK_URL" || true
             }
 
             notificar "🚀 **[BRAVA POS]** Iniciando pipeline de despliegue..."
@@ -60,16 +53,16 @@ jobs:
             git reset --hard origin/V2-Estable-Cloud
 
             # 🏗️ [4/7] Build y Recreación
-            # FIX 3: --force-recreate eliminado; solo recrea si el build cambia
-            notificar "🏗️ Reconstruyendo contenedores y refrescando .env..."
+            # FIX 3: sin --force-recreate, Docker solo recrea lo que cambió
+            notificar "🏗️ Reconstruyendo contenedores..."
             sudo docker compose up -d --build
 
             # ⚙️ [5/7] Migraciones
             notificar "⚙️ Aplicando cambios en la base de datos..."
             sudo docker compose exec -T backend python manage.py migrate
 
-            # 🩺 [6/7] Healthcheck Pro
-            # FIX 5: curl desde el host en vez de python requests dentro del contenedor
+            # 🩺 [6/7] Healthcheck con curl desde el host
+            # FIX 5: curl directo, sin depender de librerías Python del contenedor
             notificar "🩺 Verificando estabilidad del servicio..."
             HEALTH_SUCCESS=false
             for i in {1..10}; do
@@ -86,7 +79,6 @@ jobs:
               exit 1
             fi
 
-            # Tiempo total del deploy
             DEPLOY_SECS=$(( SECONDS - DEPLOY_START ))
             notificar "✅ **[BRAVA POS]** ¡Sistema online y estable! Commit: $COMMIT_NUEVO — ⏱️ ${DEPLOY_SECS}s"
 
@@ -101,31 +93,21 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           envs: WEBHOOK_URL
           script: |
+            notificar() {
+              curl -s -H "Content-Type: application/json" \
+                -d "{\"content\": \"$1\"}" \
+                "$WEBHOOK_URL" || true
+            }
+
             cd BravaPos-Comercial
             LAST_COMMIT=$(cat .last_commit)
-
-            # FIX 1: notificar con variable de entorno también en el rollback
-            notificar() {
-              NOTIF_MSG="$1" python3 - <<'PYEOF' || true
-            import urllib.request, json, os
-            msg = os.environ.get('NOTIF_MSG', '')
-            req = urllib.request.Request(
-                os.environ['WEBHOOK_URL'],
-                data=json.dumps({'content': msg}).encode(),
-                headers={'Content-Type': 'application/json'}
-            )
-            urllib.request.urlopen(req)
-            PYEOF
-            }
 
             notificar "⚠️ **FALLO DETECTADO:** Revirtiendo código al commit $LAST_COMMIT..."
 
             git reset --hard $LAST_COMMIT
             sudo docker compose up -d --build
 
-            # Nota: la DB puede quedar con migraciones aplicadas.
-            # Si migrate ya corrió antes del fallo, revisar manualmente con:
+            # Nota: si el fallo ocurrió DESPUÉS del paso [5/7] (migrate),
+            # la DB puede tener migraciones nuevas. Verificar con:
             #   docker compose exec backend python manage.py showmigrations
-            # y hacer rollback con:
-            #   docker compose exec backend python manage.py migrate <app> <migration_anterior>
-            notificar "⏪ Rollback de código completado al commit $LAST_COMMIT. ⚠️ Verificar estado de migraciones manualmente si el fallo ocurrió después del paso [5/7]."
+            notificar "⏪ Rollback completado al commit $LAST_COMMIT. ⚠️ Verificar migraciones si el fallo fue en paso 5 o posterior."
