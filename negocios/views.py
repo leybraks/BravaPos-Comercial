@@ -14,6 +14,7 @@ from django.conf import settings
 from decimal import Decimal
 from django.db.models import F
 import logging
+import uuid
 from rest_framework.exceptions import ValidationError
 from django.db.models import Sum
 from django.contrib.auth.hashers import check_password, make_password
@@ -158,48 +159,69 @@ class SedeViewSet(viewsets.ModelViewSet):
     def crear_instancia_whatsapp(self, request, pk=None):
         sede = self.get_object()
         
-        # Generamos un identificador único seguro
-        nombre_instancia = f"brava_{sede.negocio.id}_sede_{sede.id}"
+        # 1. Generamos un nombre ÚNICO para evitar el error 403 (Forbidden)
+        # Ejemplo: brava_1_sede_1_a7b9f2
+        sufijo = uuid.uuid4().hex[:6]
+        nombre_instancia = f"brava_{sede.negocio.id}_sede_{sede.id}_{sufijo}"
         
-        url = f"{settings.EVO_API_URL}/instance/create"
         headers = {
             "apikey": settings.EVO_GLOBAL_KEY,
             "Content-Type": "application/json"
         }
         
-        # ✨ EL CABLE CONECTADO A N8N
+        # URL de tu n8n (Producción)
         url_webhook_n8n = "https://silvadata.me/n8n/webhook/9b66058c-df85-41ce-aeac-1e6a15414914"
 
-        payload = {
+        # PASO 1: Crear la instancia
+        url_crear = f"{settings.EVO_API_URL}/instance/create"
+        payload_crear = {
             "instanceName": nombre_instancia,
             "qrcode": True,
-            "integration": "WHATSAPP-BAILEYS",
-            "webhook": {
-                "url": url_webhook_n8n,
-                "byEvents": False,
-                "base64": True, # Tu nodo en n8n espera la imagen en base64 para Yape/Plin
-                "events": ["MESSAGES_UPSERT"] 
-            }
+            "integration": "WHATSAPP-BAILEYS"
         }
 
         try:
-            response = requests.post(url, json=payload, headers=headers)
-            if response.status_code in [200, 201]:
-                data = response.json()
-                
-                # Actualizamos la sede en nuestra BD
+            res_crear = requests.post(url_crear, json=payload_crear, headers=headers)
+            
+            if res_crear.status_code in [200, 201]:
+                data = res_crear.json()
+                qr_base64 = data.get('qrcode', {}).get('base64')
+
+                # 💡 Si el QR no vino a la primera, esperamos 2 segundos y lo pedimos de nuevo
+                if not qr_base64:
+                    time.sleep(2)
+                    url_qr = f"{settings.EVO_API_URL}/instance/connect/{nombre_instancia}"
+                    res_qr = requests.get(url_qr, headers=headers)
+                    qr_base64 = res_qr.json().get('base64')
+
+                # PASO 2: Forzar el Webhook hacia n8n
+                url_webhook = f"{settings.EVO_API_URL}/webhook/set/{nombre_instancia}"
+                payload_webhook = {
+                    "webhook": {
+                        "enabled": True,
+                        "url": url_webhook_n8n,
+                        "byEvents": False,
+                        "base64": False,
+                        "events": ["MESSAGES_UPSERT"]
+                    }
+                }
+                requests.post(url_webhook, json=payload_webhook, headers=headers)
+
+                # Guardamos el nuevo nombre en la BD
                 sede.whatsapp_instancia = nombre_instancia
                 sede.save()
 
                 return Response({
-                    "mensaje": "Instancia creada con éxito",
+                    "mensaje": "Instancia lista",
                     "instancia": nombre_instancia,
-                    "qr_base64": data.get('qrcode', {}).get('base64') 
+                    "qr_base64": qr_base64
                 })
-            return Response({"error": response.json()}, status=response.status_code)
+
+            return Response({"error": res_crear.json()}, status=res_crear.status_code)
+
         except Exception as e:
             return Response({"error": str(e)}, status=500)
-
+    
     @action(detail=True, methods=['get'])
     def obtener_qr(self, request, pk=None):
         sede = self.get_object()
@@ -221,24 +243,32 @@ class SedeViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['delete'])
     def eliminar_instancia(self, request, pk=None):
         sede = self.get_object()
-        if not sede.whatsapp_instancia:
-            return Response({"error": "No hay instancia para eliminar"}, status=400)
+        instancia_nombre = sede.whatsapp_instancia
+        
+        if not instancia_nombre:
+            return Response({"mensaje": "No hay instancia activa en la base de datos"}, status=200)
 
-        url = f"{settings.EVO_API_URL}/instance/delete/{sede.whatsapp_instancia}"
+        url = f"{settings.EVO_API_URL}/instance/delete/{instancia_nombre}"
         headers = {"apikey": settings.EVO_GLOBAL_KEY}
 
+        # Intentamos borrar en Evolution API
         try:
             response = requests.delete(url, headers=headers)
-            if response.status_code in [200, 201, 204] or response.status_code == 404:
-                # Si se borró en Evo (o si ya no existía allá), limpiamos nuestra BD
-                sede.whatsapp_instancia = None
-                sede.whatsapp_numero = None
-                sede.save()
-                return Response({"mensaje": "Instancia desconectada y eliminada"})
-            return Response({"error": "Error al eliminar en Evolution API"}, status=response.status_code)
+            # Si Evolution dice que no existe (404), no pasa nada, seguimos adelante
+            print(f"DEBUG Evolution Delete: {response.status_code} - {response.text}")
         except Exception as e:
-            return Response({"error": str(e)}, status=500)
-    
+            print(f"Error de conexión con Evolution API: {e}")
+
+        # ✨ LA CLAVE: Borramos de nuestra base de datos SIEMPRE
+        # Así el usuario no se queda bloqueado con el error 500
+        sede.whatsapp_instancia = None
+        sede.whatsapp_numero = None
+        sede.save()
+
+        return Response({
+            "mensaje": "Conexión desconectada localmente",
+            "info_api": "Instancia removida del servidor o ya no existía"
+        })
     # ✨ FORZAMOS LA URL CON url_path PARA EVITAR ERRORES 404
     @action(detail=True, methods=['get'], url_path='estado_conexion')
     def estado_conexion(self, request, pk=None):

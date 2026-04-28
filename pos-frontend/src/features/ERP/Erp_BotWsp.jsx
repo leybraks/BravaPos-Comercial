@@ -242,7 +242,15 @@ export default function Erp_BotWsp({ sedesReales = [] }) {
                           className="w-full mt-4 py-3.5 rounded-xl font-black text-xs uppercase tracking-widest transition-all disabled:opacity-50 text-white shadow-lg active:scale-95 flex items-center justify-center gap-2"
                           style={{ backgroundColor: colorPrimario, boxShadow: `0 8px 20px ${colorPrimario}30` }}
                         >
-                          <i className="fi fi-rr-qrcode"></i> {loadingAction === `vincular_${sede.id}` ? 'Generando...' : 'Conectar WhatsApp'}
+                          {loadingAction === `vincular_${sede.id}` ? (
+                            <>
+                              <i className="fi fi-rr-spinner animate-spin"></i> Iniciando Motor (Puede tardar 10s)...
+                            </>
+                          ) : (
+                            <>
+                              <i className="fi fi-rr-qrcode"></i> Conectar WhatsApp
+                            </>
+                          )}
                         </button>
                       </div>
                     )}
