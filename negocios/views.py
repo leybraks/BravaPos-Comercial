@@ -163,27 +163,27 @@ class SedeViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
     def crear_instancia_whatsapp(self, request, pk=None):
         sede = self.get_object()
- 
         nombre_instancia = f"brava_{sede.negocio.id}_sede_{sede.id}"
- 
+
         headers = {
             "apikey": settings.EVO_GLOBAL_KEY,
             "Content-Type": "application/json"
         }
- 
-        # 💀 PASO 0: MATAR AL ZOMBIE
-        # Borramos la instancia previa en Evolution antes de recrearla.
-        # Si no existe, Evolution dará error pero lo ignoramos (pass).
+
+        # 💀 PASO 0: MATAR AL ZOMBIE (Doble golpe)
+        url_logout = f"{settings.EVO_API_URL}/instance/logout/{nombre_instancia}"
         url_borrar = f"{settings.EVO_API_URL}/instance/delete/{nombre_instancia}"
         try:
+            requests.delete(url_logout, headers=headers)
+            time.sleep(1)
             requests.delete(url_borrar, headers=headers)
             time.sleep(1)
         except Exception:
             pass
- 
+
         # URL de n8n
         url_webhook_n8n = "https://silvadata.me/n8n/webhook/9b66058c-df85-41ce-aeac-1e6a15414914"
- 
+
         # --- PASO A: CREAR LA INSTANCIA LIMPIA ---
         url_crear = f"{settings.EVO_API_URL}/instance/create"
         payload_crear = {
@@ -191,47 +191,54 @@ class SedeViewSet(viewsets.ModelViewSet):
             "qrcode": True,
             "integration": "WHATSAPP-BAILEYS"
         }
- 
+
         try:
             res_crear = requests.post(url_crear, json=payload_crear, headers=headers)
- 
+
             if res_crear.status_code in [200, 201]:
                 data = res_crear.json()
                 qr_base64 = data.get('qrcode', {}).get('base64')
- 
-                time.sleep(1)
- 
+
+                # 🛡️ FIX: Si Evolution tardó en generar el QR, le damos 2 segs y lo exigimos
+                if not qr_base64:
+                    time.sleep(2)
+                    url_qr = f"{settings.EVO_API_URL}/instance/connect/{nombre_instancia}"
+                    res_qr = requests.get(url_qr, headers=headers)
+                    if res_qr.status_code == 200:
+                        qr_base64 = res_qr.json().get('base64')
+
+                # ⏳ PAUSA DE SEGURIDAD: 3 segundos para que la DB interna de Evolution despierte
+                time.sleep(3)
+
                 # --- PASO B: CONFIGURAR EL WEBHOOK ---
-                # FIX: camelCase correcto + webhookBase64 en False para que
-                #      n8n reciba JSON limpio sin problemas de parseo.
                 url_set_webhook = f"{settings.EVO_API_URL}/webhook/set/{nombre_instancia}"
                 payload_webhook = {
                     "webhook": {
                         "enabled": True,
                         "url": url_webhook_n8n,
-                        "webhookByEvents": False,   # ✅ camelCase correcto
-                        "webhookBase64": False,     # ✅ False → n8n recibe JSON limpio
+                        "webhookByEvents": False,
+                        "webhookBase64": False, # 💡 Ponlo en True después si quieres procesar bauchers de Yape
                         "events": ["MESSAGES_UPSERT"]
                     }
                 }
                 res_webhook = requests.post(url_set_webhook, json=payload_webhook, headers=headers)
-                print(f"DEBUG Webhook set: {res_webhook.status_code} - {res_webhook.text}")
- 
+                print(f"📡 Webhook conectado: {res_webhook.status_code} - {res_webhook.text}")
+
                 # Guardamos el nombre en la BD
                 sede.whatsapp_instancia = nombre_instancia
                 sede.save()
- 
+
                 return Response({
                     "mensaje": "Instancia recreada y Webhook configurado",
                     "instancia": nombre_instancia,
                     "qr_base64": qr_base64
                 })
- 
+
             return Response({"error": res_crear.json()}, status=res_crear.status_code)
- 
+
         except Exception as e:
             return Response({"error": str(e)}, status=500)
- 
+    
     @action(detail=True, methods=['get'], permission_classes=[IsAuthenticated])
     def obtener_qr(self, request, pk=None):
         sede = self.get_object()
