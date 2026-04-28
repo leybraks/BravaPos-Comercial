@@ -170,31 +170,18 @@ class SedeViewSet(viewsets.ModelViewSet):
             "Content-Type": "application/json"
         }
 
-        # 💀 PASO 0: MATAR AL ZOMBIE (Doble golpe)
+        # 💀 PASO 0: MATAR AL ZOMBIE 
         url_logout = f"{settings.EVO_API_URL}/instance/logout/{nombre_instancia}"
         url_borrar = f"{settings.EVO_API_URL}/instance/delete/{nombre_instancia}"
-        print(f"\n🧹 --- INICIANDO LIMPIEZA DE: {nombre_instancia} ---")
-        
         try:
-            # 1. Intentar Logout
-            res_logout = requests.delete(url_logout, headers=headers)
-            print(f"LOGOUT Status: {res_logout.status_code} | Respuesta: {res_logout.text}")
+            requests.delete(url_logout, headers=headers, timeout=5)
             time.sleep(1)
-            
-            # 2. Intentar Delete
-            res_delete = requests.delete(url_borrar, headers=headers)
-            print(f"DELETE Status: {res_delete.status_code} | Respuesta: {res_delete.text}")
-            time.sleep(2) # Le damos un segundo extra para que Evolution limpie su BD
-            
-        except Exception as e:
-            print(f"🚨 ERROR CRÍTICO DE RED EN PASO 0: {str(e)}")
-            
-        print("🧹 --- FIN DE LIMPIEZA, PROCEDIENDO A CREAR --- \n")
+            requests.delete(url_borrar, headers=headers, timeout=5)
+            time.sleep(1)
+        except Exception:
+            pass
 
-        # URL de n8n
-        url_webhook_n8n = "https://silvadata.me/n8n/webhook/9b66058c-df85-41ce-aeac-1e6a15414914"
-
-        # --- PASO A: CREAR LA INSTANCIA LIMPIA ---
+        # --- PASO 1: CREAR LA INSTANCIA LIMPIA ---
         url_crear = f"{settings.EVO_API_URL}/instance/create"
         payload_crear = {
             "instanceName": nombre_instancia,
@@ -206,51 +193,43 @@ class SedeViewSet(viewsets.ModelViewSet):
             res_crear = requests.post(url_crear, json=payload_crear, headers=headers)
 
             if res_crear.status_code in [200, 201]:
+                data = res_crear.json()
+                qr_base64 = data.get('qrcode', {}).get('base64')
+
+                # --- PASO 2: CONFIGURAR EL WEBHOOK INMEDIATAMENTE ---
+                # Lo hacemos ANTES de que el usuario escanee el QR
+                url_webhook_n8n = f"https://silvadata.me/n8n/webhook/9b66058c-df85-41ce-aeac-1e6a15414914?instancia={nombre_instancia}"
                 
-                # 🚀 MEJORA 1: ESPERA ACTIVA DEL QR
-                qr_base64 = None
-                for _ in range(4): # Intentamos 4 veces (8 segundos máximo)
-                    time.sleep(2)
-                    url_qr = f"{settings.EVO_API_URL}/instance/connect/{nombre_instancia}"
-                    res_qr = requests.get(url_qr, headers=headers)
-                    if res_qr.status_code == 200:
-                        qr_base64 = res_qr.json().get('base64')
-                        if qr_base64:
-                            break # Tenemos el QR, salimos del bucle!
-
-                # 🚀 MEJORA 2: ESPERA ACTIVA DEL ESTADO (Readiness)
-                url_estado = f"{settings.EVO_API_URL}/instance/connectionState/{nombre_instancia}"
-                for _ in range(4):
-                    time.sleep(2)
-                    res_estado = requests.get(url_estado, headers=headers)
-                    if res_estado.status_code == 200:
-                        estado = res_estado.json().get("instance", {}).get("state")
-                        if estado in ["close", "connecting", "open"]:
-                            print(f"✅ Instancia {nombre_instancia} reporta estado: {estado}")
-                            break # Evolution ya la reconoció, ¡está viva!
-
-                # --- PASO B: CONFIGURAR EL WEBHOOK SEGURO ---
-                # Ahora estamos 100% seguros de que Evolution está listo para recibir esto
                 url_set_webhook = f"{settings.EVO_API_URL}/webhook/set/{nombre_instancia}"
                 payload_webhook = {
                     "webhook": {
                         "enabled": True,
                         "url": url_webhook_n8n,
-                        "webhookByEvents": False, # 🔥 Mantenlo en False para n8n
+                        "webhookByEvents": False,
                         "webhookBase64": False,
                         "events": ["MESSAGES_UPSERT"]
                     }
                 }
                 
-                res_webhook = requests.post(url_set_webhook, json=payload_webhook, headers=headers)
-                print(f"📡 Webhook configurado definitivamente: {res_webhook.status_code}")
+                # Le damos un segundito a Evolution para que asimile la creación
+                time.sleep(1) 
+                requests.post(url_set_webhook, json=payload_webhook, headers=headers)
 
-                # Guardamos el nombre en la BD
+                # --- PASO 3: ASEGURAR EL QR ---
+                if not qr_base64:
+                    time.sleep(2)
+                    url_qr = f"{settings.EVO_API_URL}/instance/connect/{nombre_instancia}"
+                    res_qr = requests.get(url_qr, headers=headers)
+                    if res_qr.status_code == 200:
+                        qr_base64 = res_qr.json().get('base64')
+
+                # Guardamos en la BD de Brava POS
                 sede.whatsapp_instancia = nombre_instancia
                 sede.save()
 
+                # Le devolvemos el QR a React para que el usuario lo escanee tranquilamente
                 return Response({
-                    "mensaje": "Instancia recreada y Webhook configurado",
+                    "mensaje": "Instancia creada y Webhook armado",
                     "instancia": nombre_instancia,
                     "qr_base64": qr_base64
                 })
