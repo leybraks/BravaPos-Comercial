@@ -196,33 +196,44 @@ class SedeViewSet(viewsets.ModelViewSet):
             res_crear = requests.post(url_crear, json=payload_crear, headers=headers)
 
             if res_crear.status_code in [200, 201]:
-                data = res_crear.json()
-                qr_base64 = data.get('qrcode', {}).get('base64')
-
-                # 🛡️ FIX: Si Evolution tardó en generar el QR, le damos 2 segs y lo exigimos
-                if not qr_base64:
+                
+                # 🚀 MEJORA 1: ESPERA ACTIVA DEL QR
+                qr_base64 = None
+                for _ in range(4): # Intentamos 4 veces (8 segundos máximo)
                     time.sleep(2)
                     url_qr = f"{settings.EVO_API_URL}/instance/connect/{nombre_instancia}"
                     res_qr = requests.get(url_qr, headers=headers)
                     if res_qr.status_code == 200:
                         qr_base64 = res_qr.json().get('base64')
+                        if qr_base64:
+                            break # Tenemos el QR, salimos del bucle!
 
-                # ⏳ PAUSA DE SEGURIDAD: 3 segundos para que la DB interna de Evolution despierte
-                time.sleep(3)
+                # 🚀 MEJORA 2: ESPERA ACTIVA DEL ESTADO (Readiness)
+                url_estado = f"{settings.EVO_API_URL}/instance/connectionState/{nombre_instancia}"
+                for _ in range(4):
+                    time.sleep(2)
+                    res_estado = requests.get(url_estado, headers=headers)
+                    if res_estado.status_code == 200:
+                        estado = res_estado.json().get("instance", {}).get("state")
+                        if estado in ["close", "connecting", "open"]:
+                            print(f"✅ Instancia {nombre_instancia} reporta estado: {estado}")
+                            break # Evolution ya la reconoció, ¡está viva!
 
-                # --- PASO B: CONFIGURAR EL WEBHOOK ---
+                # --- PASO B: CONFIGURAR EL WEBHOOK SEGURO ---
+                # Ahora estamos 100% seguros de que Evolution está listo para recibir esto
                 url_set_webhook = f"{settings.EVO_API_URL}/webhook/set/{nombre_instancia}"
                 payload_webhook = {
                     "webhook": {
                         "enabled": True,
                         "url": url_webhook_n8n,
-                        "webhookByEvents": False,
-                        "webhookBase64": False, # 💡 Ponlo en True después si quieres procesar bauchers de Yape
+                        "webhookByEvents": False, # 🔥 Mantenlo en False para n8n
+                        "webhookBase64": False,
                         "events": ["MESSAGES_UPSERT"]
                     }
                 }
+                
                 res_webhook = requests.post(url_set_webhook, json=payload_webhook, headers=headers)
-                print(f"📡 Webhook conectado: {res_webhook.status_code} - {res_webhook.text}")
+                print(f"📡 Webhook configurado definitivamente: {res_webhook.status_code}")
 
                 # Guardamos el nombre en la BD
                 sede.whatsapp_instancia = nombre_instancia
@@ -243,11 +254,11 @@ class SedeViewSet(viewsets.ModelViewSet):
     def obtener_qr(self, request, pk=None):
         sede = self.get_object()
         if not sede.whatsapp_instancia:
-            return Response({"error": "La sede no tiene instancia de WhatsApp vinculada"}, status=400)
- 
+            return Response({"error": "La sede no tiene instancia vinculada"}, status=400)
+
         url = f"{settings.EVO_API_URL}/instance/connect/{sede.whatsapp_instancia}"
         headers = {"apikey": settings.EVO_GLOBAL_KEY}
- 
+
         try:
             response = requests.get(url, headers=headers)
             if response.status_code == 200:
@@ -255,56 +266,53 @@ class SedeViewSet(viewsets.ModelViewSet):
             return Response({"error": "No se pudo obtener el QR"}, status=response.status_code)
         except Exception as e:
             return Response({"error": str(e)}, status=500)
- 
+
     @action(detail=True, methods=['delete'], permission_classes=[IsAuthenticated])
     def eliminar_instancia(self, request, pk=None):
         sede = self.get_object()
         instancia_nombre = sede.whatsapp_instancia
- 
+
         if not instancia_nombre:
             return Response({"mensaje": "No hay instancia activa en la base de datos"}, status=200)
- 
+
         url = f"{settings.EVO_API_URL}/instance/delete/{instancia_nombre}"
         headers = {"apikey": settings.EVO_GLOBAL_KEY}
- 
-        # Intentamos borrar en Evolution API
+
         try:
             response = requests.delete(url, headers=headers)
             print(f"DEBUG Evolution Delete: {response.status_code} - {response.text}")
         except Exception as e:
             print(f"Error de conexión con Evolution API: {e}")
- 
-        # Borramos de nuestra BD SIEMPRE, aunque Evolution falle
+
         sede.whatsapp_instancia = None
         sede.whatsapp_numero = None
         sede.save()
- 
+
         return Response({
             "mensaje": "Conexión desconectada localmente",
             "info_api": "Instancia removida del servidor o ya no existía"
         })
- 
+
     @action(detail=True, methods=['get'], url_path='estado_conexion', permission_classes=[IsAuthenticated])
     def estado_conexion(self, request, pk=None):
         sede = self.get_object()
         if not sede.whatsapp_instancia:
             return Response({"estado": "desconectado"})
- 
+
         url = f"{settings.EVO_API_URL}/instance/connectionState/{sede.whatsapp_instancia}"
         headers = {"apikey": settings.EVO_GLOBAL_KEY}
- 
+
         try:
             response = requests.get(url, headers=headers)
- 
+
             if response.status_code == 200:
                 data = response.json()
-                # Evolution API devuelve "open" cuando ya se escaneó y está listo
                 estado_evo = data.get("instance", {}).get("state", "")
- 
+
                 if estado_evo == "open":
                     return Response({"estado": "conectado"})
                 return Response({"estado": "esperando"})
- 
+
             return Response({"estado": "desconectado"})
         except Exception as e:
             return Response({"error": str(e)}, status=500)
