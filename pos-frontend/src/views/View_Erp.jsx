@@ -7,7 +7,7 @@ import { useErpDashboard } from '../features/ERP/useErpDashboard';
 import Erp_DashboardVentas from '../features/ERP/Erp_DashboardVentas';
 import Erp_DashboardCartaQR from '../features/ERP/Erp_DashboardCartaQR';
 import Erp_EditorMenu from '../features/ERP/Erp_EditorMenu';
-import Erp_GestionSedes from '../features/ERP/Erp_GestionSedes'; // 👈 1. IMPORTAMOS EL NUEVO MÓDULO FUSIONADO
+import Erp_GestionSedes from '../features/ERP/Erp_GestionSedes'; 
 import Erp_Inventario from '../features/ERP/Erp_Inventario';
 import Erp_Personal from '../features/ERP/Erp_Personal';
 import Erp_Crm from '../features/ERP/Erp_Crm';
@@ -23,6 +23,111 @@ import Erp_ModalReceta from '../features/ERP/Erp_ModalReceta';
 import Erp_ModalVariaciones from '../features/ERP/Erp_ModalVariaciones';
 import Erp_Sidebar from '../features/ERP/Erp_Sidebar';
 
+
+// ==========================================
+// 🌟 COMPONENTE HEADER INTEGRADOR (TOPBAR)
+// ==========================================
+const Topbar = ({ vistaActiva, setMenuAbierto, tema, colorPrimario }) => {
+  const isDark = tema === 'dark';
+  
+  // Extraemos la data real de la sesión activa
+  const usuarioNombre = localStorage.getItem('usuario_nombre') || 'Administrador';
+  const usuarioRol = localStorage.getItem('usuario_rol') || 'Dueño';
+  const sedeNombre = localStorage.getItem('sede_nombre') || 'Todas las Sedes';
+
+  // Reloj dinámico
+  const [fechaHora, setFechaHora] = React.useState(new Date());
+
+  React.useEffect(() => {
+    const timer = setInterval(() => setFechaHora(new Date()), 60000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const formatearFecha = (fecha) => {
+    return fecha.toLocaleDateString('es-PE', { weekday: 'long', day: 'numeric', month: 'long' });
+  };
+
+  return (
+    <header className={`px-6 py-4 md:px-8 md:py-5 flex justify-between items-center sticky top-0 z-30 border-b transition-colors duration-300 ${
+      isDark ? 'bg-[#111] border-[#222]' : 'bg-white border-gray-200 shadow-sm'
+    }`}>
+      {/* 👈 LADO IZQUIERDO: Menú y Título */}
+      <div className="flex items-center gap-5">
+        <button 
+          onClick={() => setMenuAbierto(true)} 
+          className={`md:hidden w-11 h-11 flex items-center justify-center rounded-xl border transition-colors ${
+            isDark ? 'bg-[#1a1a1a] border-[#333] text-white hover:bg-[#222]' : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100'
+          }`}
+        >
+          <i className="fi fi-rr-menu-burger mt-0.5"></i>
+        </button>
+        
+        <div>
+          <h2 className={`text-xl md:text-2xl font-black capitalize tracking-tight leading-none ${isDark ? 'text-white' : 'text-gray-900'}`}>
+            {vistaActiva.replace(/_/g, ' ')}
+          </h2>
+          <p className={`text-[10px] font-bold uppercase tracking-widest mt-1.5 hidden sm:block ${isDark ? 'text-neutral-500' : 'text-gray-500'}`}>
+            {formatearFecha(fechaHora)}
+          </p>
+        </div>
+      </div>
+
+      {/* 👉 LADO DERECHO: Herramientas y Perfil */}
+      <div className="flex items-center gap-4 sm:gap-6">
+        
+        {/* Indicador de Sede Activa (Desktop) */}
+        <div className={`hidden md:flex items-center gap-2.5 px-4 py-2 rounded-xl border ${
+          isDark ? 'bg-[#141414] border-[#222]' : 'bg-gray-50 border-gray-200'
+        }`}>
+          <i className="fi fi-rr-shop text-sm" style={{ color: colorPrimario }}></i>
+          <span className={`text-[10px] font-black uppercase tracking-widest ${isDark ? 'text-neutral-300' : 'text-gray-700'}`}>
+            {sedeNombre}
+          </span>
+        </div>
+
+        {/* Campana de Notificaciones con Efecto Ping */}
+        <button 
+          className={`relative w-11 h-11 rounded-xl border flex items-center justify-center transition-all shadow-sm ${
+            isDark ? 'bg-[#141414] border-[#333] text-neutral-400 hover:text-white hover:border-neutral-500' : 'bg-white border-gray-200 text-gray-600 hover:text-gray-900 hover:border-gray-300'
+          }`}
+          title="Notificaciones"
+        >
+          <i className="fi fi-rr-bell text-lg mt-0.5"></i>
+          <span className="absolute top-2.5 right-3 flex h-2.5 w-2.5">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: colorPrimario }}></span>
+            <span className="relative inline-flex rounded-full h-2.5 w-2.5" style={{ backgroundColor: colorPrimario }}></span>
+          </span>
+        </button>
+
+        <div className={`w-px h-8 hidden sm:block ${isDark ? 'bg-[#333]' : 'bg-gray-200'}`}></div>
+
+        {/* Perfil de Usuario */}
+        <div className="flex items-center gap-3 cursor-pointer group">
+          <div className="hidden sm:block text-right">
+            <p className={`text-sm font-black leading-tight ${isDark ? 'text-white' : 'text-gray-900'}`}>
+              {usuarioNombre}
+            </p>
+            <p className={`text-[9px] font-bold uppercase tracking-widest mt-1 ${isDark ? 'text-neutral-500' : 'text-gray-500'}`}>
+              {usuarioRol}
+            </p>
+          </div>
+          <div 
+            className="w-11 h-11 rounded-xl flex items-center justify-center font-black text-white text-lg shadow-md transition-transform group-hover:scale-105" 
+            style={{ backgroundColor: colorPrimario }}
+          >
+            {usuarioNombre.charAt(0).toUpperCase()}
+          </div>
+        </div>
+
+      </div>
+    </header>
+  );
+};
+
+
+// ==========================================
+// 🚀 VISTA PRINCIPAL (LAYOUT)
+// ==========================================
 export default function ErpDashboard({ onVolverAlPos }) {
   const {
     tema, colorPrimario, config, setConfig, vistaActiva, 
@@ -36,7 +141,6 @@ export default function ErpDashboard({ onVolverAlPos }) {
     modalRecetaOpen, setModalRecetaOpen, productoParaReceta, setProductoParaReceta, 
     modalCambiosPendientes, rolesFiltrados, ordenesReales,
     
-    // Funciones
     manejarCambioVista, descartarCambios, guardarYCambiarVista,
     cancelarCambioVista, manejarGuardarConfig, abrirModalEdicion, toggleActivo,
     manejarGuardarEmpleado, manejarGuardarPlato, manejarCrearCategoria,
@@ -59,13 +163,13 @@ export default function ErpDashboard({ onVolverAlPos }) {
 
       <div className={`flex-1 flex flex-col min-h-screen min-w-0 transition-all duration-300 ease-in-out ${isCollapsed ? 'md:ml-20' : 'md:ml-72'}`}>
         
-        {/* 🏷️ CABECERA MÓVIL Y TÍTULO */}
-        <header className="bg-[#111] border-b border-[#222] p-4 flex justify-between items-center sticky top-0 z-30">
-          <div className="flex items-center gap-4">
-            <button onClick={() => setMenuAbierto(true)} className="md:hidden bg-[#222] p-2 rounded-lg text-white">☰</button>
-            <h2 className="text-xl font-black capitalize tracking-tight text-white">{vistaActiva.replace('_', ' ')}</h2>
-          </div>
-        </header>
+        {/* ✨ CABECERA PROFESIONAL APLICADA AQUÍ */}
+        <Topbar 
+          vistaActiva={vistaActiva} 
+          setMenuAbierto={setMenuAbierto} 
+          tema={tema} 
+          colorPrimario={colorPrimario} 
+        />
 
         {/* 🖥️ ÁREA PRINCIPAL DE RENDERIZADO */}
         <main className="p-4 md:p-8 flex-1 overflow-y-auto overflow-x-hidden min-w-0 w-full">
@@ -74,9 +178,14 @@ export default function ErpDashboard({ onVolverAlPos }) {
             <Erp_DashboardVentas config={config} sedeFiltro={sedeFiltro} cambiarSedeFiltro={cambiarSedeFiltro} sedesReales={sedesReales} metricas={metricas} ordenesReales={ordenesReales} />
           )}
 
-          {/* 👈 2. AHORA RESPONDE A 'negocio' EN VEZ DE 'config' */}
           {vistaActiva === 'negocio' && (
-            <Erp_Configuracion config={config} setConfig={setConfig} manejarGuardarConfig={manejarGuardarConfig} guardandoConfig={guardandoConfig} />
+            <Erp_Configuracion 
+              config={config} 
+              setConfig={setConfig} 
+              manejarGuardarConfig={manejarGuardarConfig} 
+              guardandoConfig={guardandoConfig} 
+              sedesReales={sedesReales} 
+            />
           )}
 
           {vistaActiva === 'menu' && (
@@ -99,7 +208,6 @@ export default function ErpDashboard({ onVolverAlPos }) {
             <Erp_DashboardCartaQR config={config} />
           )}
 
-          {/* 👈 3. AHORA RESPONDE A 'sedes' Y CARGA EL COMPONENTE FUSIONADO */}
           {vistaActiva === 'sedes' && (
             <Erp_GestionSedes />
           )}

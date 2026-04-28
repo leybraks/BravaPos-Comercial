@@ -166,10 +166,20 @@ class SedeViewSet(viewsets.ModelViewSet):
             "apikey": settings.EVO_GLOBAL_KEY,
             "Content-Type": "application/json"
         }
+        
+        # ✨ EL CABLE CONECTADO A N8N
+        url_webhook_n8n = "https://silvadata.me/n8n/webhook/9b66058c-df85-41ce-aeac-1e6a15414914"
+
         payload = {
             "instanceName": nombre_instancia,
             "qrcode": True,
-            "integration": "WHATSAPP-BAILEYS"
+            "integration": "WHATSAPP-BAILEYS",
+            "webhook": {
+                "url": url_webhook_n8n,
+                "byEvents": False,
+                "base64": True, # Tu nodo en n8n espera la imagen en base64 para Yape/Plin
+                "events": ["MESSAGES_UPSERT"] 
+            }
         }
 
         try:

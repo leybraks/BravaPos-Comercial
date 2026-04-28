@@ -20,11 +20,10 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           envs: WEBHOOK_URL
-          command_timeout: 15m
+          command_timeout: 40m
           script: |
-            set -e # Detiene el script al primer error
+            set -e
 
-            # ✨ FUNCIÓN PARA ENVIAR MENSAJES RÁPIDOS A DISCORD
             notificar() {
               curl -s -H "Content-Type: application/json" \
               -d "{\"content\": \"$1\"}" \
@@ -36,38 +35,29 @@ jobs:
             cd BravaPos-Comercial
 
             notificar "🗄️ [1/5] Haciendo backup de seguridad de la base de datos..."
-            echo "--- Haciendo backup de la BD ---"
             sudo docker compose exec -T db pg_dump --clean -U bravapos_user bravapos_db > pre_deploy.sql
 
             notificar "📥 [2/5] Descargando el nuevo código de GitHub..."
-            echo "--- Pulling código nuevo ---"
             git pull origin V2-Estable-Cloud
 
-            notificar "🏗️ [3/5] Reconstruyendo el frontend y levantando contenedores..."
-            echo "--- Destruyendo caché viejo del frontend ---"
+            notificar "🏗️ [3/5] Reconstruyendo imágenes y levantando contenedores..."
+            # ✅ Un solo build con --no-cache solo al frontend, luego up sin rebuild
             sudo docker compose build --no-cache frontend
-            
-            echo "--- Levantando servicios ---"
-            sudo docker compose up -d --build
+            sudo docker compose up -d   # ← sin --build, ya están construidas
 
             echo "--- Esperando que el backend esté listo ---"
             sleep 8
 
-            echo "--- Verificando que el backend esté corriendo ---"
             if ! sudo docker compose ps backend | grep -q "Up"; then
               notificar "🚨 **ERROR FATAL:** El backend no logró levantar. Abortando."
-              echo "❌ El backend no está corriendo. Logs:"
               sudo docker compose logs --tail=80 backend
               exit 1
             fi
 
-            notificar "⚙️ [4/5] Contenedores arriba. Ejecutando migraciones de Django..."
-            echo "--- Ejecutando migraciones ---"
+            notificar "⚙️ [4/5] Ejecutando migraciones de Django..."
             sudo docker compose exec -T backend python manage.py migrate
 
             notificar "✅ [5/5] **¡Deploy completado con éxito!** El sistema está 100% operativo."
-            echo "--- ✅ Deploy completado ---"
-
       - name: ❌ Notificar y hacer rollback si falla
         if: failure()
         uses: appleboy/ssh-action@v1.0.3

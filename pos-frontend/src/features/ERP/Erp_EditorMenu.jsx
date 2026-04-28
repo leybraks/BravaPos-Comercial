@@ -28,15 +28,15 @@ export default function EditorMenu({
   return (
     <div className="animate-fadeIn space-y-8 max-w-7xl mx-auto min-w-0 pb-24 h-full flex flex-col">
       
-      {/* ========== 🏗️ 1. CABECERA INTEGRADA (No Isla) ========== */}
+      {/* ========== 🏗️ 1. CABECERA INTEGRADA ========== */}
       <div className="flex flex-col md:flex-row justify-between md:items-center gap-6 pt-2 pb-6 border-b" style={{ borderColor: isDark ? '#222' : '#e5e7eb' }}>
         <div className="flex items-center gap-5">
           <div 
-            className="w-16 h-16 rounded-2xl flex items-center justify-center text-4xl shrink-0"
+            className="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl shrink-0"
             style={{ backgroundColor: colorPrimario + '15', color: colorPrimario }}
           >
-            {/* ✨ Ícono corregido para asegurar carga */}
-            <i className="fi fi-rr-chef-hat-slice mt-1"></i> 
+            {/* ✨ Ícono clásico y seguro que siempre carga */}
+            <i className="fi fi-rr-restaurant mt-1"></i> 
           </div>
           <div>
             <h2 className={`text-2xl font-black tracking-tight ${isDark ? 'text-white' : 'text-gray-900'}`}>
@@ -48,7 +48,7 @@ export default function EditorMenu({
           </div>
         </div>
 
-        {/* ✨ CONTROLES DE DUEÑO (Botones limpios con ícono) */}
+        {/* ✨ CONTROLES DE DUEÑO */}
         {esDueño && (
           <div className="flex flex-col sm:flex-row gap-3 shrink-0">
             <button 
@@ -80,7 +80,7 @@ export default function EditorMenu({
             Filtro de Catálogo
           </h4>
           
-          {/* Menú de categorías (Scroll horizontal en móvil, vertical en PC) */}
+          {/* Menú de categorías */}
           <div className="flex lg:flex-col gap-1.5 overflow-x-auto lg:overflow-visible custom-scrollbar pb-2 lg:pb-0">
             <button 
               onClick={() => setCategoriaSeleccionada('Todos')}
@@ -136,7 +136,7 @@ export default function EditorMenu({
                     }`}
                   >
                     
-                    {/* Placeholder Imagen con ícono robusto */}
+                    {/* Placeholder Imagen */}
                     <div className={`w-full h-36 rounded-2xl flex items-center justify-center text-5xl mb-5 ${
                       isDark ? 'bg-[#0a0a0a] border border-[#222]' : 'bg-gray-50 border border-gray-100 shadow-inner'
                     }`}>
@@ -145,7 +145,7 @@ export default function EditorMenu({
                     
                     {/* Textos de Producto */}
                     <div className="flex-1">
-                      <p className={`text-[9px] font-black uppercase tracking-widest mb-1truncate ${isDark ? 'text-neutral-500' : 'text-gray-400'}`}>
+                      <p className={`text-[9px] font-black uppercase tracking-widest mb-1 truncate ${isDark ? 'text-neutral-500' : 'text-gray-400'}`}>
                         {nombreCategoriaMuestra}
                       </p>
                       <h5 className={`font-black text-lg leading-snug mb-5 ${isDark ? 'text-white' : 'text-gray-900'}`} style={{
@@ -155,7 +155,7 @@ export default function EditorMenu({
                       </h5>
                     </div>
                     
-                    {/* ========== 🦾 3. PIE DE TARJETA REDISEÑADO (Botones Útiles) ========== */}
+                    {/* ========== 🦾 3. PIE DE TARJETA REDISEÑADO ========== */}
                     <div className={`mt-auto flex items-end justify-between pt-5 border-t ${isDark ? 'border-[#222]' : 'border-gray-100'}`}>
                       
                       {/* Precio */}
@@ -174,10 +174,10 @@ export default function EditorMenu({
                         )}
                       </div>
                       
-                      {/* ACCIONES (Foco en el cliente: Intuitivos) */}
+                      {/* ACCIONES */}
                       <div className="flex gap-2.5 shrink-0 z-10">
                         
-                        {/* ✨ INTERRUPTOR (Toggle Switch) - Súper intuitivo */}
+                        {/* ✨ INTERRUPTOR (Toggle Switch) */}
                         <button 
                           onClick={(e) => { e.stopPropagation(); onToggleDisponibilidad(plato); }}
                           className={`w-14 h-8 rounded-full border p-1 flex items-center transition-all ${
@@ -196,7 +196,7 @@ export default function EditorMenu({
                           />
                         </button>
 
-                        {/* ✨ ÍCONO DE RECETA/VARIACIÓN (Corregido: fi-rr-pot o fi-rr-list) */}
+                        {/* ✨ ÍCONO DE RECETA/VARIACIÓN (Cambiado para no parecer un tacho) */}
                         {esDueño && (
                           esVariable ? (
                             <button 
@@ -214,10 +214,10 @@ export default function EditorMenu({
                               className={`w-9 h-9 flex items-center justify-center rounded-lg transition-colors border text-sm ${
                                 isDark ? 'bg-[#1a1a1a] border-[#333] text-neutral-400 hover:text-white hover:bg-[#333]' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-900'
                               }`}
-                              title="Configurar Receta (Olla)"
+                              title="Receta del Plato"
                             >
-                              {/* Olla para la receta */}
-                              <i className="fi fi-rr-pot mt-0.5"></i> 
+                              {/* Libro de Recetas (Nada de basureros) */}
+                              <i className="fi fi-rr-book-alt mt-0.5"></i> 
                             </button>
                           )
                         )}
