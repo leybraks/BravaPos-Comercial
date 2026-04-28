@@ -1,5 +1,5 @@
 import React from 'react';
-import { useErpDashboard } from '../features/ERP/useErpDashboard'; // 👈 Importamos nuestro Hook
+import { useErpDashboard } from '../features/ERP/useErpDashboard'; 
 
 // ==========================================
 // 📦 IMPORTACIÓN DE COMPONENTES MODULARIZADOS
@@ -7,7 +7,7 @@ import { useErpDashboard } from '../features/ERP/useErpDashboard'; // 👈 Impor
 import Erp_DashboardVentas from '../features/ERP/Erp_DashboardVentas';
 import Erp_DashboardCartaQR from '../features/ERP/Erp_DashboardCartaQR';
 import Erp_EditorMenu from '../features/ERP/Erp_EditorMenu';
-import Erp_EditorPlanos from '../features/ERP/Erp_EditorPlanos';
+import Erp_GestionSedes from '../features/ERP/Erp_GestionSedes'; // 👈 1. IMPORTAMOS EL NUEVO MÓDULO FUSIONADO
 import Erp_Inventario from '../features/ERP/Erp_Inventario';
 import Erp_Personal from '../features/ERP/Erp_Personal';
 import Erp_Crm from '../features/ERP/Erp_Crm';
@@ -24,7 +24,6 @@ import Erp_ModalVariaciones from '../features/ERP/Erp_ModalVariaciones';
 import Erp_Sidebar from '../features/ERP/Erp_Sidebar';
 
 export default function ErpDashboard({ onVolverAlPos }) {
-  // ✨ LA MAGIA: Extraemos todo el estado y funciones desde nuestro custom hook en una sola línea
   const {
     tema, colorPrimario, config, setConfig, vistaActiva, 
     sedeFiltro, cambiarSedeFiltro, sedeFiltroId, setSedeFiltroId, 
@@ -58,7 +57,7 @@ export default function ErpDashboard({ onVolverAlPos }) {
         setIsCollapsed={setIsCollapsed} 
       />
 
-      <div className={`flex-1 flex flex-col min-h-screen min-w-0 transition-all duration-300 ease-in-out ${isCollapsed ? 'md:ml-24' : 'md:ml-72'}`}>
+      <div className={`flex-1 flex flex-col min-h-screen min-w-0 transition-all duration-300 ease-in-out ${isCollapsed ? 'md:ml-20' : 'md:ml-72'}`}>
         
         {/* 🏷️ CABECERA MÓVIL Y TÍTULO */}
         <header className="bg-[#111] border-b border-[#222] p-4 flex justify-between items-center sticky top-0 z-30">
@@ -75,7 +74,8 @@ export default function ErpDashboard({ onVolverAlPos }) {
             <Erp_DashboardVentas config={config} sedeFiltro={sedeFiltro} cambiarSedeFiltro={cambiarSedeFiltro} sedesReales={sedesReales} metricas={metricas} ordenesReales={ordenesReales} />
           )}
 
-          {vistaActiva === 'config' && (
+          {/* 👈 2. AHORA RESPONDE A 'negocio' EN VEZ DE 'config' */}
+          {vistaActiva === 'negocio' && (
             <Erp_Configuracion config={config} setConfig={setConfig} manejarGuardarConfig={manejarGuardarConfig} guardandoConfig={guardandoConfig} />
           )}
 
@@ -99,12 +99,15 @@ export default function ErpDashboard({ onVolverAlPos }) {
             <Erp_DashboardCartaQR config={config} />
           )}
 
-          {vistaActiva === 'diseno_salon' && (
-            <Erp_EditorPlanos />
+          {/* 👈 3. AHORA RESPONDE A 'sedes' Y CARGA EL COMPONENTE FUSIONADO */}
+          {vistaActiva === 'sedes' && (
+            <Erp_GestionSedes />
           )}
+
           {vistaActiva === 'bot_wsp' && (
             <Erp_BotWsp sedesReales={sedesReales} />
-      )}
+          )}
+
           {vistaActiva === 'facturacion' && (
             <div className="animate-fadeIn max-w-4xl mx-auto space-y-6">
               <div className={`rounded-3xl p-8 text-center border ${tema === 'dark' ? 'bg-[#121212] border-[#222]' : 'bg-white border-gray-200 shadow-sm'}`}>
@@ -120,19 +123,14 @@ export default function ErpDashboard({ onVolverAlPos }) {
       </div>
 
       {/* ========================================== */}
-      {/* 🧩 ZONA DE MODALES (Invisibles hasta usarse) */}
+      {/* 🧩 ZONA DE MODALES */}
       {/* ========================================== */}
       
       <Erp_ModalEmpleado isOpen={modalEmpleado} config={config} formEmpleado={formEmpleado} setFormEmpleado={setFormEmpleado} rolesFiltrados={rolesFiltrados} sedesReales={sedesReales} onGuardar={manejarGuardarEmpleado} onClose={() => { setModalEmpleado(false); setFormEmpleado({ id: null, nombre: '', pin: '', rol: rolesFiltrados[0]?.id || '', sede: sedesReales[0]?.id || '' }); }} />
-      
       <Erp_ModalPlato isOpen={modalPlato} onClose={cerrarModalPlato} formPlato={formPlato} setFormPlato={setFormPlato} pasoModal={pasoModal} setPasoModal={setPasoModal} categorias={categorias} manejarGuardarPlato={manejarGuardarPlato} />
-      
       <Erp_ModalCategorias isOpen={modalCategorias} onClose={() => setModalCategorias(false)} tema={tema} colorPrimario={colorPrimario} nombreNuevaCat={nombreNuevaCat} setNombreNuevaCat={setNombreNuevaCat} manejarCrearCategoria={manejarCrearCategoria} categorias={categorias} eliminarCategoriaLocal={eliminarCategoriaLocal} />
-      
       <Erp_ModalCambios isOpen={modalCambiosPendientes} config={config} onGuardar={guardarYCambiarVista} onDescartar={descartarCambios} onCancelar={cancelarCambioVista} />
-      
       <Erp_ModalReceta isOpen={modalRecetaOpen} onClose={() => setModalRecetaOpen(false)} producto={productoParaReceta} config={config} />
-      
       <Erp_ModalVariaciones isOpen={modalVariacionesOpen} onClose={() => setModalVariacionesOpen(false)} producto={productoParaVariaciones} config={config} />
 
     </div>

@@ -9,9 +9,12 @@ from django.utils import timezone
 from django.db import models
 from django.db import transaction
 import json
+import requests
+from django.conf import settings
 from decimal import Decimal
 from django.db.models import F
 import logging
+from rest_framework.exceptions import ValidationError
 from django.db.models import Sum
 from django.contrib.auth.hashers import check_password, make_password
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -109,7 +112,24 @@ class SedeViewSet(viewsets.ModelViewSet):
         if hasattr(self.request.user, 'negocio'):
             return Sede.objects.filter(negocio=self.request.user.negocio)
         return Sede.objects.none()
-
+    
+    def perform_create(self, serializer):
+        negocio = self.request.user.negocio
+        
+        # 1. Contamos las sedes activas
+        cantidad_actual = Sede.objects.filter(negocio=negocio, activo=True).count()
+        
+        # 2. Verificamos el plan (Si por error no tiene plan, el límite es 1)
+        limite = negocio.plan.max_sedes if negocio.plan else 1
+        
+        # 3. La regla matemática inquebrantable
+        if cantidad_actual >= limite:
+            raise ValidationError({
+                "detail": f"¡Límite alcanzado! Tu plan actual permite un máximo de {limite} sedes. Contáctanos para subir de plan."
+            })
+            
+        # 4. Si pasa, la guardamos forzando a que pertenezca al negocio del usuario
+        serializer.save(negocio=negocio)
     # ✨ ENDPOINT EXISTENTE PARA N8N
     @action(detail=False, methods=['get'], url_path='info_bot', permission_classes=[AllowAny])
     def info_bot(self, request):
@@ -206,6 +226,33 @@ class SedeViewSet(viewsets.ModelViewSet):
                 sede.save()
                 return Response({"mensaje": "Instancia desconectada y eliminada"})
             return Response({"error": "Error al eliminar en Evolution API"}, status=response.status_code)
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)
+    
+    # ✨ FORZAMOS LA URL CON url_path PARA EVITAR ERRORES 404
+    @action(detail=True, methods=['get'], url_path='estado_conexion')
+    def estado_conexion(self, request, pk=None):
+        sede = self.get_object()
+        if not sede.whatsapp_instancia:
+            return Response({"estado": "desconectado"})
+
+        url = f"{settings.EVO_API_URL}/instance/connectionState/{sede.whatsapp_instancia}"
+        headers = {"apikey": settings.EVO_GLOBAL_KEY}
+
+        try:
+            import requests # Importamos por si acaso
+            response = requests.get(url, headers=headers)
+            
+            if response.status_code == 200:
+                data = response.json()
+                # Evolution API devuelve "open" cuando ya se escaneó y está listo
+                estado_evo = data.get("instance", {}).get("state", "")
+                
+                if estado_evo == "open":
+                    return Response({"estado": "conectado"})
+                return Response({"estado": "esperando"})
+                
+            return Response({"estado": "desconectado"})
         except Exception as e:
             return Response({"error": str(e)}, status=500)
 

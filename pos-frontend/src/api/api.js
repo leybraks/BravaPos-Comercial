@@ -245,7 +245,7 @@ export const actualizarEmpleado = (id, data)  => api.patch(`/empleados/${id}/`, 
 export const getRoles           = (params)    => api.get('/roles/', { params });
 export const getSedes           = (params)    => api.get('/sedes/', { params });
 export const actualizarSede     = (id, data)  => api.patch(`/sedes/${id}/`, data);
-
+export const crearSede          = (data)      => api.post('/sedes/', data);
 // ============================================================
 // PRODUCTOS Y CATEGORÍAS
 // ============================================================

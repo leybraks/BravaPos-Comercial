@@ -69,6 +69,8 @@ class Sede(models.Model):
     # ✨ CAMPOS PARA EL BOT MULTI-SEDE
     whatsapp_instancia = models.CharField(max_length=50, null=True, blank=True, help_text="Nombre exacto en Evolution API")
     whatsapp_numero = models.CharField(max_length=20, null=True, blank=True, help_text="Número del bot")
+    enlace_carta_virtual = models.URLField(max_length=500, null=True, blank=True, help_text="Link a tu menú digital, Canva, Drive o Instagram")
+    carta_pdf = models.FileField(upload_to='cartas_pdf/', null=True, blank=True, help_text="Sube tu carta en formato PDF")
 
     objects = ActivoManager()      
     all_objects = models.Manager()
@@ -631,3 +633,45 @@ class ComponenteCombo(models.Model):
     combo = models.ForeignKey('Producto', on_delete=models.CASCADE, related_name='items_combo')
     producto_hijo = models.ForeignKey('Producto', on_delete=models.CASCADE, related_name='+')
     cantidad = models.PositiveIntegerField(default=1)
+
+# ==========================================
+# 5. CEREBRO DEL BOT DE WHATSAPP
+# ==========================================
+class ReglaBot(models.Model):
+    TRIGGERS = [
+        ('saludo', 'Mensaje de Bienvenida (Primer contacto)'),
+        ('fuera_horario', 'Mensaje de Fuera de Horario'),
+        ('despedida', 'Despedida tras compra exitosa'),
+        ('espera', 'Mensaje de espera (Cuando hay alta demanda)'),
+    ]
+    
+    sede = models.ForeignKey('Sede', on_delete=models.CASCADE, related_name='reglas_bot')
+    trigger = models.CharField(max_length=50, choices=TRIGGERS)
+    mensaje = models.TextField(help_text="Usa {nombre} para que el bot diga el nombre del cliente.")
+    activa = models.BooleanField(default=True)
+
+    class Meta:
+        unique_together = ('sede', 'trigger')
+
+    def __str__(self):
+        return f"Regla {self.get_trigger_display()} - {self.sede.nombre}"
+
+class PromocionBot(models.Model):
+    TIPOS_PROMO = [
+        ('cumpleanos', 'Felicitación de Cumpleaños'),
+        ('inactivo_15d', 'Cliente inactivo por 15 días'),
+        ('vip', 'Oferta exclusiva para clientes VIP'),
+    ]
+    
+    sede = models.ForeignKey('Sede', on_delete=models.CASCADE, related_name='promociones_bot')
+    nombre = models.CharField(max_length=100)
+    tipo = models.CharField(max_length=50, choices=TIPOS_PROMO)
+    
+    # Podemos enlazarlo a un cupón existente en tu modelo CuponPromocional
+    cupon = models.ForeignKey('CuponPromocional', on_delete=models.SET_NULL, null=True, blank=True)
+    
+    mensaje_gancho = models.TextField(help_text="Ej: ¡Feliz cumple {nombre}! Usa el código {cupon} para un 20% de dscto.")
+    activa = models.BooleanField(default=True)
+
+    def __str__(self):
+        return f"{self.nombre} ({self.sede.nombre})"
