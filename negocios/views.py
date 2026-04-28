@@ -160,19 +160,28 @@ class SedeViewSet(viewsets.ModelViewSet):
     def crear_instancia_whatsapp(self, request, pk=None):
         sede = self.get_object()
         
-        # 1. Nombre dinámico único (brava_negocioID_sedeID_uuid)
-        sufijo = uuid.uuid4().hex[:6]
-        nombre_instancia = f"brava_{sede.negocio.id}_sede_{sede.id}_{sufijo}"
+        # 1. Volvemos al nombre original, exacto y predecible (sin sufijos)
+        nombre_instancia = f"brava_{sede.negocio.id}_sede_{sede.id}"
         
         headers = {
             "apikey": settings.EVO_GLOBAL_KEY,
             "Content-Type": "application/json"
         }
         
+        # 💀 PASO 0: MATAR AL ZOMBIE (El truco maestro)
+        # Intentamos borrar la instancia en Evolution API antes de crearla.
+        # Si no existe, Evolution dará error pero lo ignoramos (pass).
+        url_borrar = f"{settings.EVO_API_URL}/instance/delete/{nombre_instancia}"
+        try:
+            requests.delete(url_borrar, headers=headers)
+            time.sleep(1) # Le damos 1 segundo a Evolution para limpiar su memoria
+        except:
+            pass
+
         # URL de n8n
         url_webhook_n8n = "https://silvadata.me/n8n/webhook/9b66058c-df85-41ce-aeac-1e6a15414914"
 
-        # PASO A: Crear la instancia
+        # --- PASO A: CREAR LA INSTANCIA LIMPIA ---
         url_crear = f"{settings.EVO_API_URL}/instance/create"
         payload_crear = {
             "instanceName": nombre_instancia,
@@ -187,30 +196,27 @@ class SedeViewSet(viewsets.ModelViewSet):
                 data = res_crear.json()
                 qr_base64 = data.get('qrcode', {}).get('base64')
 
-                # Espera de seguridad para que la instancia se asiente
                 time.sleep(1)
 
-                # PASO B: Configurar Webhook (Copia exacta de tu cURL manual)
-                url_webhook = f"{settings.EVO_API_URL}/webhook/set/{nombre_instancia}"
+                # --- PASO B: CONFIGURAR EL WEBHOOK ---
+                url_set_webhook = f"{settings.EVO_API_URL}/webhook/set/{nombre_instancia}"
                 payload_webhook = {
                     "webhook": {
                         "enabled": True,
                         "url": url_webhook_n8n,
-                        "webhook_by_events": False, # 👈 Como en tu cURL manual
-                        "base64": True,            # 👈 Habilitado para recibir imágenes/bauchers
+                        "webhook_by_events": False,
+                        "base64": True, 
                         "events": ["MESSAGES_UPSERT"]
                     }
                 }
+                requests.post(url_set_webhook, json=payload_webhook, headers=headers)
                 
-                res_web = requests.post(url_webhook, json=payload_webhook, headers=headers)
-                print(f"📡 Webhook Configurado: {res_web.status_code}")
-
-                # Guardamos en BD
+                # 3. Guardamos el nombre limpio en la BD
                 sede.whatsapp_instancia = nombre_instancia
                 sede.save()
 
                 return Response({
-                    "mensaje": "Instancia y Webhook configurados",
+                    "mensaje": "Instancia recreada y Webhook configurado",
                     "instancia": nombre_instancia,
                     "qr_base64": qr_base64
                 })
@@ -218,7 +224,7 @@ class SedeViewSet(viewsets.ModelViewSet):
             return Response({"error": res_crear.json()}, status=res_crear.status_code)
 
         except Exception as e:
-            return Response({"error": str(e)}, status=500)
+            return Response({"error": str(e)}, status=500) 
         
     @action(detail=True, methods=['get'])
     def obtener_qr(self, request, pk=None):
