@@ -173,13 +173,23 @@ class SedeViewSet(viewsets.ModelViewSet):
         # 💀 PASO 0: MATAR AL ZOMBIE (Doble golpe)
         url_logout = f"{settings.EVO_API_URL}/instance/logout/{nombre_instancia}"
         url_borrar = f"{settings.EVO_API_URL}/instance/delete/{nombre_instancia}"
+        print(f"\n🧹 --- INICIANDO LIMPIEZA DE: {nombre_instancia} ---")
+        
         try:
-            requests.delete(url_logout, headers=headers)
+            # 1. Intentar Logout
+            res_logout = requests.delete(url_logout, headers=headers)
+            print(f"LOGOUT Status: {res_logout.status_code} | Respuesta: {res_logout.text}")
             time.sleep(1)
-            requests.delete(url_borrar, headers=headers)
-            time.sleep(1)
-        except Exception:
-            pass
+            
+            # 2. Intentar Delete
+            res_delete = requests.delete(url_borrar, headers=headers)
+            print(f"DELETE Status: {res_delete.status_code} | Respuesta: {res_delete.text}")
+            time.sleep(2) # Le damos un segundo extra para que Evolution limpie su BD
+            
+        except Exception as e:
+            print(f"🚨 ERROR CRÍTICO DE RED EN PASO 0: {str(e)}")
+            
+        print("🧹 --- FIN DE LIMPIEZA, PROCEDIENDO A CREAR --- \n")
 
         # URL de n8n
         url_webhook_n8n = "https://silvadata.me/n8n/webhook/9b66058c-df85-41ce-aeac-1e6a15414914"
