@@ -10,55 +10,87 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 📦 Backup, Deploy y Notificaciones
+      - name: 🚀 Despliegue Profesional Brava POS
         uses: appleboy/ssh-action@v1.0.3
         env:
-          # Pasamos el webhook como variable de entorno al servidor
           WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK }}
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           envs: WEBHOOK_URL
-          command_timeout: 40m
+          command_timeout: 15m
           script: |
             set -e
+            DEPLOY_START=$SECONDS
 
+            # 🛠️ FIX 1: notificar usa variable de entorno en vez de $1 dentro de heredoc
+            # FIX 4: || true para que un fallo de notificación no corte el deploy
             notificar() {
-              curl -s -H "Content-Type: application/json" \
-              -d "{\"content\": \"$1\"}" \
-              $WEBHOOK_URL
+              NOTIF_MSG="$1" python3 - <<'PYEOF' || true
+            import urllib.request, json, os
+            msg = os.environ.get('NOTIF_MSG', '')
+            req = urllib.request.Request(
+                os.environ['WEBHOOK_URL'],
+                data=json.dumps({'content': msg}).encode(),
+                headers={'Content-Type': 'application/json'}
+            )
+            urllib.request.urlopen(req)
+            PYEOF
             }
 
-            notificar "🚀 **[BRAVA POS]** Nuevo push detectado. Iniciando pipeline..."
+            notificar "🚀 **[BRAVA POS]** Iniciando pipeline de despliegue..."
 
             cd BravaPos-Comercial
 
-            notificar "🗄️ [1/5] Haciendo backup de seguridad de la base de datos..."
-            sudo docker compose exec -T db pg_dump --clean -U bravapos_user bravapos_db > pre_deploy.sql
+            # 📌 [1/7] Trazabilidad y Seguridad
+            mkdir -p backups
+            COMMIT_ANTERIOR=$(git rev-parse HEAD)
+            echo $COMMIT_ANTERIOR > .last_commit
+            COMMIT_NUEVO=$(git rev-parse --short origin/V2-Estable-Cloud || echo "nuevo")
 
-            notificar "📥 [2/5] Descargando el nuevo código de GitHub..."
-            git pull origin V2-Estable-Cloud
+            # 🗄️ [2/7] Backup con Timestamp
+            TIMESTAMP=$(date +%F_%H-%M-%S)
+            notificar "🗄️ Backup de seguridad: pre_deploy_$TIMESTAMP.sql"
+            sudo docker compose exec -T db pg_dump -U bravapos_user bravapos_db > "backups/pre_deploy_$TIMESTAMP.sql"
 
-            notificar "🏗️ [3/5] Reconstruyendo imágenes y levantando contenedores..."
-            # ✅ Un solo build con --no-cache solo al frontend, luego up sin rebuild
-            sudo docker compose build --no-cache frontend
-            sudo docker compose up -d   # ← sin --build, ya están construidas
+            # 📥 [3/7] Sincronización Real
+            notificar "📥 Sincronizando commit: $COMMIT_NUEVO"
+            git fetch origin V2-Estable-Cloud
+            git reset --hard origin/V2-Estable-Cloud
 
-            echo "--- Esperando que el backend esté listo ---"
-            sleep 8
+            # 🏗️ [4/7] Build y Recreación
+            # FIX 3: --force-recreate eliminado; solo recrea si el build cambia
+            notificar "🏗️ Reconstruyendo contenedores y refrescando .env..."
+            sudo docker compose up -d --build
 
-            if ! sudo docker compose ps backend | grep -q "Up"; then
-              notificar "🚨 **ERROR FATAL:** El backend no logró levantar. Abortando."
-              sudo docker compose logs --tail=80 backend
+            # ⚙️ [5/7] Migraciones
+            notificar "⚙️ Aplicando cambios en la base de datos..."
+            sudo docker compose exec -T backend python manage.py migrate
+
+            # 🩺 [6/7] Healthcheck Pro
+            # FIX 5: curl desde el host en vez de python requests dentro del contenedor
+            notificar "🩺 Verificando estabilidad del servicio..."
+            HEALTH_SUCCESS=false
+            for i in {1..10}; do
+              if curl -sf --max-time 5 http://localhost:8000/api/health/ | grep -q "ok"; then
+                HEALTH_SUCCESS=true
+                break
+              fi
+              echo "Esperando backend... ($i/10)"
+              sleep 5
+            done
+
+            if [ "$HEALTH_SUCCESS" = false ]; then
+              notificar "🚨 **ERROR:** El sistema no responde tras el deploy."
               exit 1
             fi
 
-            notificar "⚙️ [4/5] Ejecutando migraciones de Django..."
-            sudo docker compose exec -T backend python manage.py migrate
+            # Tiempo total del deploy
+            DEPLOY_SECS=$(( SECONDS - DEPLOY_START ))
+            notificar "✅ **[BRAVA POS]** ¡Sistema online y estable! Commit: $COMMIT_NUEVO — ⏱️ ${DEPLOY_SECS}s"
 
-            notificar "✅ [5/5] **¡Deploy completado con éxito!** El sistema está 100% operativo."
-      - name: ❌ Notificar y hacer rollback si falla
+      - name: ⏪ Rollback Seguro de Código
         if: failure()
         uses: appleboy/ssh-action@v1.0.3
         env:
@@ -69,16 +101,31 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           envs: WEBHOOK_URL
           script: |
-            # Volvemos a declarar la función para este paso aislado
+            cd BravaPos-Comercial
+            LAST_COMMIT=$(cat .last_commit)
+
+            # FIX 1: notificar con variable de entorno también en el rollback
             notificar() {
-              curl -s -H "Content-Type: application/json" -d "{\"content\": \"$1\"}" $WEBHOOK_URL
+              NOTIF_MSG="$1" python3 - <<'PYEOF' || true
+            import urllib.request, json, os
+            msg = os.environ.get('NOTIF_MSG', '')
+            req = urllib.request.Request(
+                os.environ['WEBHOOK_URL'],
+                data=json.dumps({'content': msg}).encode(),
+                headers={'Content-Type': 'application/json'}
+            )
+            urllib.request.urlopen(req)
+            PYEOF
             }
 
-            notificar "⚠️ **¡ALERTA ROJA!** El deploy falló. Iniciando protocolo de Rollback automático..."
-            
-            cd BravaPos-Comercial
-            
-            echo "=== Iniciando rollback de BD ==="
-            cat pre_deploy.sql | sudo docker compose exec -T db psql -U bravapos_user bravapos_db
-            
-            notificar "⏪ Rollback de base de datos completado. Revisa los logs en GitHub Actions."
+            notificar "⚠️ **FALLO DETECTADO:** Revirtiendo código al commit $LAST_COMMIT..."
+
+            git reset --hard $LAST_COMMIT
+            sudo docker compose up -d --build
+
+            # Nota: la DB puede quedar con migraciones aplicadas.
+            # Si migrate ya corrió antes del fallo, revisar manualmente con:
+            #   docker compose exec backend python manage.py showmigrations
+            # y hacer rollback con:
+            #   docker compose exec backend python manage.py migrate <app> <migration_anterior>
+            notificar "⏪ Rollback de código completado al commit $LAST_COMMIT. ⚠️ Verificar estado de migraciones manualmente si el fallo ocurrió después del paso [5/7]."

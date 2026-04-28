@@ -186,7 +186,9 @@ class SedeViewSet(viewsets.ModelViewSet):
         payload_crear = {
             "instanceName": nombre_instancia,
             "qrcode": True,
-            "integration": "WHATSAPP-BAILEYS"
+            "integration": "WHATSAPP-BAILEYS",
+            "syncFullHistory": False,    # 👈 NO descargar todo el pasado
+            "readMessages": True
         }
 
         try:
@@ -1540,3 +1542,18 @@ class ReglaNegocioViewSet(viewsets.ReadOnlyModelViewSet):
 # que está registrado en urls.py como:
 #   path('login-admin/', CustomTokenObtainPairView.as_view())
 # ============================================================
+
+
+# ============================================================
+# 🩺 HEALTHCHECK (público — usado por GitHub Actions)
+# ============================================================
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def health_check(request):
+    """
+    Endpoint público para verificar que el backend está operativo.
+    Lo llama el script de deploy (curl) sin necesidad de token ni cookies.
+    """
+    from django.http import JsonResponse
+    return JsonResponse({"status": "ok", "message": "Backend operando correctamente"})

@@ -52,6 +52,9 @@ urlpatterns = [
     path('movimientos-caja/', views.registrar_movimiento_caja, name='registrar_movimiento_caja'),
     path('verificar-sesion/', views.verificar_sesion, name='verificar_sesion'),
 
+    # 🩺 HEALTHCHECK PARA GITHUB ACTIONS (público, sin token)
+    path('health/', views.health_check, name='health_check'),
+
     # ==========================================
     # RUTAS PÚBLICAS (Sin Token - Carta QR)
     # ==========================================
