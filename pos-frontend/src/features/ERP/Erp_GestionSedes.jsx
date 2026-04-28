@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { getSedes, actualizarSede, getMesas, actualizarMesa, crearMesa, crearSede } from '../../api/api';
 import usePosStore from '../../store/usePosStore';
-import { useSedeColors } from './useSedeColors';
+import { useSedeColors } from './Usesedecolors';
 import TabInfo          from './Erp_Tabinfo';
 import TabMapaResumen   from './Erp_Tabmaparesumen';
 import ModalEditorPlano from './Erp_ModalEditorPlano';

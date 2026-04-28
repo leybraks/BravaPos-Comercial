@@ -12,141 +12,108 @@ export default function EditorMenu({
   onOpenVariaciones
 }) {
   const { configuracionGlobal } = usePosStore();
-  const config = configuracionGlobal || { temaFondo: 'dark', colorPrimario: '#ff5a1f' };
+  const colorPrimario = configuracionGlobal?.colorPrimario || '#ff5a1f';
+  const temaFondo = configuracionGlobal?.temaFondo || 'dark';
+  const isDark = temaFondo === 'dark';
 
   // ==========================================
   // 🛡️ SEGURIDAD DE ROLES
   // ==========================================
   const rolUsuario = localStorage.getItem('usuario_rol')?.toLowerCase() || '';
-  const esDueño = rolUsuario === 'dueño'; // Administrador NO es dueño aquí
+  const esDueño = ['dueño', 'admin', 'administrador'].includes(rolUsuario.trim());
 
-  // Estados que solo le importan a esta vista
+  // Estado local para el filtro
   const [categoriaSeleccionada, setCategoriaSeleccionada] = useState('Todos');
-  const [dropdownAbierto, setDropdownAbierto] = useState(false);
 
   return (
-    <div className="animate-fadeIn space-y-6 max-w-6xl mx-auto min-w-0 pb-24">
+    <div className="animate-fadeIn space-y-8 max-w-7xl mx-auto min-w-0 pb-24 h-full flex flex-col">
       
-      {/* ========== CABECERA DEL EDITOR DE MENÚ ========== */}
-      <div className={`flex flex-col md:flex-row justify-between items-start md:items-center gap-5 p-8 rounded-[2rem] border shadow-xl relative overflow-hidden transition-colors ${
-        config.temaFondo === 'dark' ? 'bg-[#111] border-[#222]' : 'bg-white border-gray-200'
-      }`}>
-        <div className="absolute top-0 right-0 w-64 h-64 bg-[#ff5a1f] opacity-5 blur-[100px] rounded-full pointer-events-none"></div>
-
-        <div className="z-10">
-          <h2 className={`text-3xl font-black tracking-tight ${config.temaFondo === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-            Ingeniería de <span style={{ color: config.colorPrimario }}>Menú</span>
-          </h2>
-          <p className={`text-sm mt-1 font-medium ${config.temaFondo === 'dark' ? 'text-neutral-500' : 'text-gray-500'}`}>
-            {esDueño ? 'Crea platos, categorías y configura las recetas maestras.' : 'Consulta el catálogo y gestiona la disponibilidad de tu local.'}
-          </p>
+      {/* ========== 🏗️ 1. CABECERA INTEGRADA (No Isla) ========== */}
+      <div className="flex flex-col md:flex-row justify-between md:items-center gap-6 pt-2 pb-6 border-b" style={{ borderColor: isDark ? '#222' : '#e5e7eb' }}>
+        <div className="flex items-center gap-5">
+          <div 
+            className="w-16 h-16 rounded-2xl flex items-center justify-center text-4xl shrink-0"
+            style={{ backgroundColor: colorPrimario + '15', color: colorPrimario }}
+          >
+            {/* ✨ Ícono corregido para asegurar carga */}
+            <i className="fi fi-rr-chef-hat-slice mt-1"></i> 
+          </div>
+          <div>
+            <h2 className={`text-2xl font-black tracking-tight ${isDark ? 'text-white' : 'text-gray-900'}`}>
+              Ingeniería de <span style={{ color: colorPrimario }}>Menú</span>
+            </h2>
+            <p className={`text-sm mt-1 ${isDark ? 'text-neutral-400' : 'text-gray-500'}`}>
+              {esDueño ? 'Estructura tu catálogo, recetas maestras y variaciones.' : 'Gestión rápida de disponibilidad de platos.'}
+            </p>
+          </div>
         </div>
 
-        {/* ✨ SOLO EL DUEÑO PUEDE CREAR CATEGORÍAS Y PLATOS */}
+        {/* ✨ CONTROLES DE DUEÑO (Botones limpios con ícono) */}
         {esDueño && (
-          <div className="flex flex-col sm:flex-row w-full md:w-auto gap-3 shrink-0 z-10">
+          <div className="flex flex-col sm:flex-row gap-3 shrink-0">
             <button 
               onClick={onOpenCategorias}
-              className={`flex items-center justify-center gap-2 px-6 py-4 rounded-2xl font-bold transition-all w-full sm:w-auto text-sm ${
-                config.temaFondo === 'dark' ? 'bg-[#1a1a1a] hover:bg-[#222] text-neutral-300 border border-[#333]' : 'bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-300'
+              className={`px-5 py-3 rounded-xl font-bold text-xs uppercase tracking-widest transition-all border flex items-center justify-center gap-2 ${
+                isDark ? 'bg-[#1a1a1a] hover:bg-[#222] text-neutral-300 border-[#333]' : 'bg-gray-50 hover:bg-gray-100 text-gray-700 border-gray-200'
               }`}
             >
-              📁 Categorías
+              <i className="fi fi-rr-folder text-sm"></i> Categorías
             </button>
             
             <button 
               onClick={onOpenPlatoNuevo}
-              style={{ backgroundColor: config.colorPrimario }}
-              className="flex items-center justify-center gap-2 text-white px-8 py-4 rounded-2xl font-black shadow-lg shadow-orange-900/20 transition-all w-full sm:w-auto text-sm hover:scale-[1.02] active:scale-95"
+              style={{ backgroundColor: colorPrimario }}
+              className="px-6 py-3 rounded-xl text-white font-black text-xs uppercase tracking-widest shadow-lg transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-2"
             >
-              🍔 NUEVO PLATO
+              <i className="fi fi-rr-add text-sm"></i> Nuevo Plato
             </button>
           </div>
         )}
       </div>
 
-      {/* ========== CUERPO: CATEGORÍAS + PLATOS ========== */}
-      <div className="flex flex-col lg:flex-row gap-6">
+      {/* ========== 🧩 2. CUERPO: CATEGORÍAS + PLATOS ========== */}
+      <div className="flex flex-col lg:flex-row gap-8 items-start flex-1 min-h-0">
         
-        {/* Columna Izquierda: Categorías */}
-        <div className="w-full lg:w-1/4 shrink-0 mb-4 lg:mb-0">
-          <h4 className={`text-[10px] font-black uppercase tracking-widest mb-4 px-2 hidden lg:block ${config.temaFondo === 'dark' ? 'text-neutral-500' : 'text-gray-500'}`}>
-            Categorías
+        {/* 📁 COLUMNA IZQUIERDA: CATEGORÍAS (Sidebar Minimalista) */}
+        <div className="w-full lg:w-64 shrink-0 lg:sticky lg:top-24 h-auto">
+          <h4 className={`text-[10px] font-black uppercase tracking-widest mb-4 px-2 hidden lg:block ${isDark ? 'text-neutral-500' : 'text-gray-500'}`}>
+            Filtro de Catálogo
           </h4>
           
-          {/* VERSIÓN MÓVIL (Dropdown) */}
-          <div className="block lg:hidden relative z-40">
-            <button
-              onClick={() => setDropdownAbierto(!dropdownAbierto)}
-              className={`w-full flex items-center justify-between font-bold px-5 py-4 rounded-2xl shadow-lg transition-all ${
-                config.temaFondo === 'dark' ? 'bg-[#1a1a1a] border-[#333] text-white' : 'bg-gray-100 border-gray-300 text-gray-800'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <span className="text-xl">{categoriaSeleccionada === 'Todos' ? '🍔' : '📌'}</span>
-                <span>{categoriaSeleccionada === 'Todos' ? 'Todas las Categorías' : categoriaSeleccionada}</span>
-              </div>
-              <span className={`transition-transform duration-300 ${dropdownAbierto ? 'rotate-180' : ''}`}>▼</span>
-            </button>
-
-            {dropdownAbierto && (
-              <div className={`absolute mt-2 w-full rounded-2xl shadow-2xl overflow-hidden animate-fadeIn ${
-                config.temaFondo === 'dark' ? 'bg-[#1a1a1a] border border-[#333]' : 'bg-white border border-gray-200'
-              }`}>
-                <button
-                  onClick={() => { setCategoriaSeleccionada('Todos'); setDropdownAbierto(false); }}
-                  className={`w-full text-left px-5 py-4 font-bold transition-all border-b flex items-center gap-3 ${
-                    config.temaFondo === 'dark' ? 'border-[#222] text-neutral-300' : 'border-gray-100 text-gray-700'
-                  } ${categoriaSeleccionada === 'Todos' ? (config.temaFondo === 'dark' ? 'bg-[#ff5a1f]/10 text-[#ff5a1f]' : 'bg-gray-100 text-gray-900') : ''}`}
-                >
-                  <span className="text-xl">🍔</span> Todas las Categorías
-                </button>
-                <div className="max-h-60 overflow-y-auto">
-                  {categorias.map(cat => (
-                    <button
-                      key={cat.id}
-                      onClick={() => { setCategoriaSeleccionada(cat.nombre); setDropdownAbierto(false); }}
-                      className={`w-full text-left px-5 py-4 font-bold transition-all border-b flex items-center gap-3 ${
-                        config.temaFondo === 'dark' ? 'border-[#222] text-neutral-300' : 'border-gray-100 text-gray-700'
-                      } ${categoriaSeleccionada === cat.nombre ? (config.temaFondo === 'dark' ? 'bg-[#ff5a1f]/10 text-[#ff5a1f]' : 'bg-gray-100 text-gray-900') : ''}`}
-                    >
-                      <span className="text-xl opacity-50">📌</span> {cat.nombre}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* VERSIÓN PC (Botones laterales) */}
-          <div className="hidden lg:flex flex-col space-y-2">
+          {/* Menú de categorías (Scroll horizontal en móvil, vertical en PC) */}
+          <div className="flex lg:flex-col gap-1.5 overflow-x-auto lg:overflow-visible custom-scrollbar pb-2 lg:pb-0">
             <button 
               onClick={() => setCategoriaSeleccionada('Todos')}
-              className={`w-full text-left px-5 py-4 rounded-2xl font-bold transition-all flex justify-between items-center ${
-                categoriaSeleccionada === 'Todos' ? 'text-white shadow-lg' : config.temaFondo === 'dark' ? 'bg-[#161616] text-neutral-400 hover:bg-[#222] border border-[#2a2a2a]' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              className={`whitespace-nowrap lg:whitespace-normal text-left px-5 py-3 rounded-xl font-black transition-all text-sm flex items-center gap-3 border border-transparent ${
+                categoriaSeleccionada === 'Todos' 
+                ? 'text-white shadow-md' 
+                : isDark ? 'text-neutral-400 hover:bg-[#1a1a1a] hover:border-[#333]' : 'text-gray-600 hover:bg-gray-100 hover:border-gray-200'
               }`}
-              style={categoriaSeleccionada === 'Todos' ? { backgroundColor: config.colorPrimario } : {}}
+              style={categoriaSeleccionada === 'Todos' ? { backgroundColor: colorPrimario } : {}}
             >
-              Todos
+              <i className="fi fi-rr-apps text-base opacity-70"></i> Todo el Catálogo
             </button>
+
             {categorias.map(cat => (
               <button 
                 key={cat.id} 
                 onClick={() => setCategoriaSeleccionada(cat.nombre)}
-                className={`w-full text-left px-5 py-4 rounded-2xl font-bold transition-all flex justify-between items-center ${
-                  categoriaSeleccionada === cat.nombre ? 'text-white shadow-lg' : config.temaFondo === 'dark' ? 'bg-[#161616] text-neutral-400 hover:bg-[#222] border border-[#2a2a2a]' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                className={`whitespace-nowrap lg:whitespace-normal text-left px-5 py-3 rounded-xl font-bold transition-all text-sm flex items-center gap-3 border border-transparent ${
+                  categoriaSeleccionada === cat.nombre 
+                  ? 'text-white shadow-md' 
+                  : isDark ? 'text-neutral-400 hover:bg-[#1a1a1a] hover:border-[#333]' : 'text-gray-600 hover:bg-gray-100 hover:border-gray-200'
                 }`}
-                style={categoriaSeleccionada === cat.nombre ? { backgroundColor: config.colorPrimario } : {}}
+                style={categoriaSeleccionada === cat.nombre ? { backgroundColor: colorPrimario } : {}}
               >
-                {cat.nombre}
+                <i className="fi fi-rr-angle-small-right text-base opacity-50"></i> {cat.nombre}
               </button>
             ))}
           </div>
         </div>
 
-        {/* Columna Derecha: Cuadrícula de Platos */}
-        <div className="lg:w-3/4 z-0">
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+        {/* 🍔 COLUMNA DERECHA: CUADRÍCULA DE PLATOS */}
+        <div className="flex-1 w-full min-w-0">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
             
             {productosReales
               .filter(plato => {
@@ -161,82 +128,100 @@ export default function EditorMenu({
                 return (
                   <div 
                     key={plato.id} 
-                    // ✨ SOLO EL DUEÑO PUEDE ABRIR EL MODAL DE EDICIÓN DEL PLATO
                     onClick={() => { if(esDueño) onEditPlato(plato) }} 
-                    className={`rounded-[2rem] p-6 flex flex-col relative overflow-hidden transition-all duration-300 ${esDueño ? 'cursor-pointer hover:-translate-y-1 hover:shadow-lg' : 'cursor-default'} ${!plato.disponible ? 'opacity-60 grayscale' : ''} ${
-                      config.temaFondo === 'dark' ? `bg-[#161616] border border-[#2a2a2a] group ${esDueño ? 'hover:border-[#ff5a1f]/50' : ''}` : `bg-white border border-gray-200 shadow-sm group ${esDueño ? 'hover:border-[#ff5a1f]/50' : ''}`
+                    className={`rounded-3xl p-6 flex flex-col relative transition-all duration-200 border ${esDueño ? 'cursor-pointer hover:-translate-y-1' : 'cursor-default'} ${
+                      isDark 
+                        ? `bg-[#141414] border-[#222] ${esDueño ? 'hover:border-neutral-500 hover:shadow-lg' : ''}` 
+                        : `bg-white border-gray-200 shadow-sm ${esDueño ? 'hover:border-gray-300 hover:shadow-lg' : ''}`
                     }`}
                   >
-                    {/* Indicador de Disponibilidad (Todos pueden apretarlo) */}
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); onToggleDisponibilidad(plato); }}
-                      className={`absolute top-5 right-5 flex items-center gap-2 px-3 py-1.5 rounded-full border z-10 transition-all hover:scale-105 ${
-                        config.temaFondo === 'dark' ? 'bg-[#111] border-[#333]' : 'bg-gray-100 border-gray-200'
-                      }`}
-                      title={esDueño ? "Cambiar disponibilidad global" : "Cambiar disponibilidad en esta sede"}
-                    >
-                      <span className={`w-2 h-2 rounded-full ${plato.disponible ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500'}`}></span>
-                      <span className={`text-[10px] font-bold uppercase tracking-widest ${config.temaFondo === 'dark' ? 'text-neutral-400' : 'text-gray-500'}`}>
-                        {plato.disponible ? 'Activo' : 'Agotado'}
-                      </span>
-                    </button>
-
-                    {/* Imagen placeholder */}
-                    <div className={`w-full h-36 rounded-2xl flex items-center justify-center text-6xl mb-6 shadow-inner transition-transform ${esDueño ? 'group-hover:scale-105' : ''} ${
-                      config.temaFondo === 'dark' ? 'bg-gradient-to-br from-[#1a1a1a] to-[#111] border border-[#222]' : 'bg-gradient-to-br from-gray-100 to-gray-50 border border-gray-200'
+                    
+                    {/* Placeholder Imagen con ícono robusto */}
+                    <div className={`w-full h-36 rounded-2xl flex items-center justify-center text-5xl mb-5 ${
+                      isDark ? 'bg-[#0a0a0a] border border-[#222]' : 'bg-gray-50 border border-gray-100 shadow-inner'
                     }`}>
-                      🍽️
+                      🍲
                     </div>
                     
-                    <h5 className={`font-black text-xl leading-tight mb-1 truncate ${config.temaFondo === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                      {plato.nombre}
-                    </h5>
-                    <p className={`text-[10px] font-bold uppercase tracking-widest mb-6 line-clamp-1 ${config.temaFondo === 'dark' ? 'text-neutral-500' : 'text-gray-500'}`}>
-                      {nombreCategoriaMuestra}
-                    </p>
+                    {/* Textos de Producto */}
+                    <div className="flex-1">
+                      <p className={`text-[9px] font-black uppercase tracking-widest mb-1truncate ${isDark ? 'text-neutral-500' : 'text-gray-400'}`}>
+                        {nombreCategoriaMuestra}
+                      </p>
+                      <h5 className={`font-black text-lg leading-snug mb-5 ${isDark ? 'text-white' : 'text-gray-900'}`} style={{
+                          display: '-webkit-box', WebkitLineClamp: '2', WebkitBoxOrient: 'vertical', overflow: 'hidden'
+                      }}>
+                        {plato.nombre}
+                      </h5>
+                    </div>
                     
-                    <div className="mt-auto flex items-center justify-between gap-3 pt-2">
-                      {!esVariable ? (
-                        <p className="font-black text-2xl sm:text-3xl tracking-tighter truncate" style={{ color: config.colorPrimario }}>
-                          <span className="text-sm mr-1">S/</span>{parseFloat(plato.precio_base).toFixed(2)}
-                        </p>
-                      ) : (
-                        <div 
-                          className="flex items-center px-4 py-1.5 rounded-xl border"
-                          style={{ backgroundColor: `${config.colorPrimario}15`, borderColor: `${config.colorPrimario}40` }}
-                        >
-                          <span className="text-xs font-black uppercase tracking-widest" style={{ color: config.colorPrimario }}>
-                            Variable
-                          </span>
-                        </div>
-                      )}
+                    {/* ========== 🦾 3. PIE DE TARJETA REDISEÑADO (Botones Útiles) ========== */}
+                    <div className={`mt-auto flex items-end justify-between pt-5 border-t ${isDark ? 'border-[#222]' : 'border-gray-100'}`}>
                       
-                      {/* ✨ SOLO EL DUEÑO VE LOS BOTONES DE VARIACIONES O RECETA */}
-                      {esDueño && (
-                        <div className="flex shrink-0 z-10">
-                          {esVariable ? (
+                      {/* Precio */}
+                      <div>
+                        <p className={`text-[9px] font-black uppercase tracking-widest mb-0.5 ${isDark ? 'text-neutral-500' : 'text-gray-400'}`}>
+                          Precio Base
+                        </p>
+                        {!esVariable ? (
+                          <p className={`font-black text-xl ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                            <span className="text-xs mr-0.5 opacity-80" style={{color: colorPrimario}}>S/</span>{parseFloat(plato.precio_base).toFixed(2)}
+                          </p>
+                        ) : (
+                          <div className="px-2 py-1 rounded border inline-block" style={{ backgroundColor: colorPrimario + '10', borderColor: colorPrimario + '30' }}>
+                            <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: colorPrimario }}>Variable</span>
+                          </div>
+                        )}
+                      </div>
+                      
+                      {/* ACCIONES (Foco en el cliente: Intuitivos) */}
+                      <div className="flex gap-2.5 shrink-0 z-10">
+                        
+                        {/* ✨ INTERRUPTOR (Toggle Switch) - Súper intuitivo */}
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); onToggleDisponibilidad(plato); }}
+                          className={`w-14 h-8 rounded-full border p-1 flex items-center transition-all ${
+                            plato.disponible 
+                              ? `bg-green-500/10 border-green-500/30 justify-end shadow-inner` 
+                              : `justify-start shadow-inner ${isDark ? 'bg-[#222] border-[#333]' : 'bg-gray-100 border-gray-200'}`
+                          }`}
+                          title={`Click para marcar como ${plato.disponible ? 'Agotado' : 'Disponible'}`}
+                        >
+                          <div 
+                            className={`w-6 h-6 rounded-full transition-all shadow-md ${
+                              plato.disponible 
+                                ? 'bg-green-500' 
+                                : ` ${isDark ? 'bg-neutral-600' : 'bg-gray-300'}`
+                            }`}
+                          />
+                        </button>
+
+                        {/* ✨ ÍCONO DE RECETA/VARIACIÓN (Corregido: fi-rr-pot o fi-rr-list) */}
+                        {esDueño && (
+                          esVariable ? (
                             <button 
                               onClick={(e) => { e.stopPropagation(); onOpenVariaciones(plato); }}
-                              className={`w-12 h-12 flex items-center justify-center rounded-xl transition-all shadow-md ${
-                                config.temaFondo === 'dark' ? 'bg-[#1a1a1a] hover:bg-[#ff5a1f] text-neutral-400 hover:text-white border border-[#333] hover:border-[#ff5a1f]' : 'bg-gray-100 hover:bg-[#ff5a1f] hover:text-white border border-gray-200'
+                              className={`w-9 h-9 flex items-center justify-center rounded-lg transition-colors border text-sm ${
+                                isDark ? 'bg-[#1a1a1a] border-[#333] text-neutral-400 hover:text-white hover:bg-[#333]' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-900'
                               }`}
                               title="Configurar Variaciones"
                             >
-                              🏷️
+                              <i className="fi fi-rr-list mt-0.5"></i>
                             </button>
                           ) : (
                             <button 
                               onClick={(e) => { e.stopPropagation(); onOpenReceta(plato); }}
-                              className={`w-12 h-12 flex items-center justify-center rounded-xl transition-all shadow-md ${
-                                config.temaFondo === 'dark' ? 'bg-[#1a1a1a] hover:bg-[#ff5a1f] text-neutral-400 hover:text-white border border-[#333] hover:border-[#ff5a1f]' : 'bg-gray-100 hover:bg-[#ff5a1f] hover:text-white border border-gray-200'
+                              className={`w-9 h-9 flex items-center justify-center rounded-lg transition-colors border text-sm ${
+                                isDark ? 'bg-[#1a1a1a] border-[#333] text-neutral-400 hover:text-white hover:bg-[#333]' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-900'
                               }`}
-                              title="Configurar Receta Base"
+                              title="Configurar Receta (Olla)"
                             >
-                              🍳
+                              {/* Olla para la receta */}
+                              <i className="fi fi-rr-pot mt-0.5"></i> 
                             </button>
-                          )}
-                        </div>
-                      )}
+                          )
+                        )}
+                      </div>
 
                     </div>
                   </div>
@@ -244,6 +229,7 @@ export default function EditorMenu({
               })}
           </div>
         </div>
+
       </div>
     </div>
   );
