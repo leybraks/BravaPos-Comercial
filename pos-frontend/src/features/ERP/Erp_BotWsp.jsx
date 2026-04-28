@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import api from '../../api/api';
 import usePosStore from '../../store/usePosStore';
 
-export default function Erp_BotWsp({ sedesReales = [] }) {
+export default function Erp_BotWsp({ sedesReales = [], onRefrescar }) {
   const { configuracionGlobal } = usePosStore();
   const colorPrimario = configuracionGlobal?.colorPrimario || '#ff5a1f';
 
@@ -105,17 +105,22 @@ export default function Erp_BotWsp({ sedesReales = [] }) {
   };
 
   const manejarDesvincularWsp = async (sedeId) => {
-    if (!window.confirm("¿Estás seguro de desconectar el Bot? Dejará de responder mensajes automáticamente.")) return;
-    setLoadingAction(`desvincular_${sedeId}`);
-    try {
-      await api.delete(`/sedes/${sedeId}/eliminar_instancia/`);
-      setSedesVisibles(prev => prev.map(s => s.id === sedeId ? { ...s, whatsapp_instancia: null, estado_fake: null } : s));
-    } catch (error) {
-      alert('Error al desconectar el Bot.');
-    } finally {
-      setLoadingAction(null);
-    }
-  };
+  if (!window.confirm("¿Estás seguro de desconectar el Bot?...")) return;
+  setLoadingAction(`desvincular_${sedeId}`);
+  try {
+    await api.delete(`/sedes/${sedeId}/eliminar_instancia/`);
+    // Actualiza visual inmediato
+    setSedesVisibles(prev =>
+      prev.map(s => s.id === sedeId ? { ...s, whatsapp_instancia: null, estado_fake: null } : s)
+    );
+    // ✅ Avisa al padre para que recargue datos frescos del backend
+    if (onRefrescar) onRefrescar();
+  } catch (error) {
+    alert('Error al desconectar el Bot.');
+  } finally {
+    setLoadingAction(null);
+  }
+};
 
   // ... (Las funciones de guardarNumero y Menu Digital siguen intactas, omitidas aquí para enfocarnos en la UI)
   const manejarGuardarNumero = async (sedeId) => {
@@ -128,25 +133,22 @@ export default function Erp_BotWsp({ sedesReales = [] }) {
   };
   // ✨ Función para cancelar y borrar lo que se creó a medias
   const manejarCancelarVinculacion = async () => {
-    if (qrModal.sedeId) {
-      setLoadingAction(`desvincular_${qrModal.sedeId}`);
-      try {
-        // Aprovechamos el endpoint de eliminar que ya creamos en Django
-        await api.delete(`/sedes/${qrModal.sedeId}/eliminar_instancia/`);
-        
-        // Limpiamos el estado local para que vuelva a salir el botón de "Conectar"
-        setSedesVisibles(prev => prev.map(s => 
-          s.id === qrModal.sedeId ? { ...s, whatsapp_instancia: null, estado_fake: null } : s
-        ));
-      } catch (error) {
-        console.error("Error al limpiar instancia cancelada");
-      } finally {
-        setLoadingAction(null);
-      }
+  if (qrModal.sedeId) {
+    setLoadingAction(`desvincular_${qrModal.sedeId}`);
+    try {
+      await api.delete(`/sedes/${qrModal.sedeId}/eliminar_instancia/`);
+      setSedesVisibles(prev =>
+        prev.map(s => s.id === qrModal.sedeId ? { ...s, whatsapp_instancia: null, estado_fake: null } : s)
+      );
+      if (onRefrescar) onRefrescar(); // ✅ también aquí
+    } catch (error) {
+      console.error("Error al limpiar instancia cancelada");
+    } finally {
+      setLoadingAction(null);
     }
-    // Cerramos el modal
-    setQrModal({ open: false, qrBase64: '', sedeId: null, sedeNombre: '' });
-  };
+  }
+  setQrModal({ open: false, qrBase64: '', sedeId: null, sedeNombre: '' });
+};
   return (
     <div className="max-w-6xl mx-auto space-y-6 animate-fadeIn">
       

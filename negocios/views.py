@@ -10,6 +10,7 @@ from django.db import models
 from django.db import transaction
 import json
 import time
+from rest_framework_simplejwt.authentication import JWTAuthentication
 import requests
 from django.conf import settings
 from decimal import Decimal
@@ -107,80 +108,82 @@ class NegocioViewSet(viewsets.ModelViewSet):
 
 class SedeViewSet(viewsets.ModelViewSet):
     serializer_class = SedeSerializer
-
+ 
     def get_queryset(self):
         if self.request.user.is_superuser:
             return Sede.objects.all()
         if hasattr(self.request.user, 'negocio'):
             return Sede.objects.filter(negocio=self.request.user.negocio)
         return Sede.objects.none()
-    
+ 
     def perform_create(self, serializer):
         negocio = self.request.user.negocio
-        
+ 
         # 1. Contamos las sedes activas
         cantidad_actual = Sede.objects.filter(negocio=negocio, activo=True).count()
-        
+ 
         # 2. Verificamos el plan (Si por error no tiene plan, el límite es 1)
         limite = negocio.plan.max_sedes if negocio.plan else 1
-        
+ 
         # 3. La regla matemática inquebrantable
         if cantidad_actual >= limite:
             raise ValidationError({
                 "detail": f"¡Límite alcanzado! Tu plan actual permite un máximo de {limite} sedes. Contáctanos para subir de plan."
             })
-            
+ 
         # 4. Si pasa, la guardamos forzando a que pertenezca al negocio del usuario
         serializer.save(negocio=negocio)
-    # ✨ ENDPOINT EXISTENTE PARA N8N
+ 
+    # ==========================================
+    # ✨ ENDPOINT PARA N8N (público, sin auth)
+    # ==========================================
     @action(detail=False, methods=['get'], url_path='info_bot', permission_classes=[AllowAny])
     def info_bot(self, request):
         instancia = request.query_params.get('instancia')
-        
+ 
         if not instancia:
             return Response({'error': 'Falta el parámetro instancia'}, status=400)
-
+ 
         sede = Sede.objects.filter(whatsapp_instancia=instancia).first()
-        
+ 
         if not sede:
             return Response({'error': 'Instancia no registrada en ninguna Sede'}, status=404)
-
+ 
         return Response({
             'sede_id': sede.id,
             'negocio_id': sede.negocio.id,
             'nombre_sede': sede.nombre,
             'nombre_negocio': sede.negocio.nombre
         })
-
+ 
     # ==========================================
     # 🤖 CONTROLES DE EVOLUTION API
     # ==========================================
-    
-    @action(detail=True, methods=['post'])
+ 
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
     def crear_instancia_whatsapp(self, request, pk=None):
         sede = self.get_object()
-        
-        # 1. Volvemos al nombre original, exacto y predecible (sin sufijos)
+ 
         nombre_instancia = f"brava_{sede.negocio.id}_sede_{sede.id}"
-        
+ 
         headers = {
             "apikey": settings.EVO_GLOBAL_KEY,
             "Content-Type": "application/json"
         }
-        
-        # 💀 PASO 0: MATAR AL ZOMBIE (El truco maestro)
-        # Intentamos borrar la instancia en Evolution API antes de crearla.
+ 
+        # 💀 PASO 0: MATAR AL ZOMBIE
+        # Borramos la instancia previa en Evolution antes de recrearla.
         # Si no existe, Evolution dará error pero lo ignoramos (pass).
         url_borrar = f"{settings.EVO_API_URL}/instance/delete/{nombre_instancia}"
         try:
             requests.delete(url_borrar, headers=headers)
-            time.sleep(1) # Le damos 1 segundo a Evolution para limpiar su memoria
-        except:
+            time.sleep(1)
+        except Exception:
             pass
-
+ 
         # URL de n8n
         url_webhook_n8n = "https://silvadata.me/n8n/webhook/9b66058c-df85-41ce-aeac-1e6a15414914"
-
+ 
         # --- PASO A: CREAR LA INSTANCIA LIMPIA ---
         url_crear = f"{settings.EVO_API_URL}/instance/create"
         payload_crear = {
@@ -188,119 +191,116 @@ class SedeViewSet(viewsets.ModelViewSet):
             "qrcode": True,
             "integration": "WHATSAPP-BAILEYS"
         }
-
+ 
         try:
             res_crear = requests.post(url_crear, json=payload_crear, headers=headers)
-            
+ 
             if res_crear.status_code in [200, 201]:
                 data = res_crear.json()
                 qr_base64 = data.get('qrcode', {}).get('base64')
-
+ 
                 time.sleep(1)
-
+ 
                 # --- PASO B: CONFIGURAR EL WEBHOOK ---
+                # FIX: camelCase correcto + webhookBase64 en False para que
+                #      n8n reciba JSON limpio sin problemas de parseo.
                 url_set_webhook = f"{settings.EVO_API_URL}/webhook/set/{nombre_instancia}"
                 payload_webhook = {
                     "webhook": {
                         "enabled": True,
                         "url": url_webhook_n8n,
-                        "webhook_by_events": False,
-                        "base64": True, 
+                        "webhookByEvents": False,   # ✅ camelCase correcto
+                        "webhookBase64": False,     # ✅ False → n8n recibe JSON limpio
                         "events": ["MESSAGES_UPSERT"]
                     }
                 }
-                requests.post(url_set_webhook, json=payload_webhook, headers=headers)
-                
-                # 3. Guardamos el nombre limpio en la BD
+                res_webhook = requests.post(url_set_webhook, json=payload_webhook, headers=headers)
+                print(f"DEBUG Webhook set: {res_webhook.status_code} - {res_webhook.text}")
+ 
+                # Guardamos el nombre en la BD
                 sede.whatsapp_instancia = nombre_instancia
                 sede.save()
-
+ 
                 return Response({
                     "mensaje": "Instancia recreada y Webhook configurado",
                     "instancia": nombre_instancia,
                     "qr_base64": qr_base64
                 })
-
+ 
             return Response({"error": res_crear.json()}, status=res_crear.status_code)
-
+ 
         except Exception as e:
-            return Response({"error": str(e)}, status=500) 
-        
-    @action(detail=True, methods=['get'])
+            return Response({"error": str(e)}, status=500)
+ 
+    @action(detail=True, methods=['get'], permission_classes=[IsAuthenticated])
     def obtener_qr(self, request, pk=None):
         sede = self.get_object()
         if not sede.whatsapp_instancia:
             return Response({"error": "La sede no tiene instancia de WhatsApp vinculada"}, status=400)
-
+ 
         url = f"{settings.EVO_API_URL}/instance/connect/{sede.whatsapp_instancia}"
         headers = {"apikey": settings.EVO_GLOBAL_KEY}
-
+ 
         try:
             response = requests.get(url, headers=headers)
             if response.status_code == 200:
-                # Retorna el QR en base64 para que React lo dibuje directo
-                return Response(response.json()) 
+                return Response(response.json())
             return Response({"error": "No se pudo obtener el QR"}, status=response.status_code)
         except Exception as e:
             return Response({"error": str(e)}, status=500)
-
-    @action(detail=True, methods=['delete'])
+ 
+    @action(detail=True, methods=['delete'], permission_classes=[IsAuthenticated])
     def eliminar_instancia(self, request, pk=None):
         sede = self.get_object()
         instancia_nombre = sede.whatsapp_instancia
-        
+ 
         if not instancia_nombre:
             return Response({"mensaje": "No hay instancia activa en la base de datos"}, status=200)
-
+ 
         url = f"{settings.EVO_API_URL}/instance/delete/{instancia_nombre}"
         headers = {"apikey": settings.EVO_GLOBAL_KEY}
-
+ 
         # Intentamos borrar en Evolution API
         try:
             response = requests.delete(url, headers=headers)
-            # Si Evolution dice que no existe (404), no pasa nada, seguimos adelante
             print(f"DEBUG Evolution Delete: {response.status_code} - {response.text}")
         except Exception as e:
             print(f"Error de conexión con Evolution API: {e}")
-
-        # ✨ LA CLAVE: Borramos de nuestra base de datos SIEMPRE
-        # Así el usuario no se queda bloqueado con el error 500
+ 
+        # Borramos de nuestra BD SIEMPRE, aunque Evolution falle
         sede.whatsapp_instancia = None
         sede.whatsapp_numero = None
         sede.save()
-
+ 
         return Response({
             "mensaje": "Conexión desconectada localmente",
             "info_api": "Instancia removida del servidor o ya no existía"
         })
-    # ✨ FORZAMOS LA URL CON url_path PARA EVITAR ERRORES 404
-    @action(detail=True, methods=['get'], url_path='estado_conexion')
+ 
+    @action(detail=True, methods=['get'], url_path='estado_conexion', permission_classes=[IsAuthenticated])
     def estado_conexion(self, request, pk=None):
         sede = self.get_object()
         if not sede.whatsapp_instancia:
             return Response({"estado": "desconectado"})
-
+ 
         url = f"{settings.EVO_API_URL}/instance/connectionState/{sede.whatsapp_instancia}"
         headers = {"apikey": settings.EVO_GLOBAL_KEY}
-
+ 
         try:
-            import requests # Importamos por si acaso
             response = requests.get(url, headers=headers)
-            
+ 
             if response.status_code == 200:
                 data = response.json()
                 # Evolution API devuelve "open" cuando ya se escaneó y está listo
                 estado_evo = data.get("instance", {}).get("state", "")
-                
+ 
                 if estado_evo == "open":
                     return Response({"estado": "conectado"})
                 return Response({"estado": "esperando"})
-                
+ 
             return Response({"estado": "desconectado"})
         except Exception as e:
             return Response({"error": str(e)}, status=500)
-
-
 # ============================================================
 # MESA
 # ============================================================
