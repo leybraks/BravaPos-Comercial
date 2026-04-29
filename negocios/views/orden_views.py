@@ -535,15 +535,24 @@ class OrdenViewSet(viewsets.ModelViewSet):
             solicitud.save()
 
         if orden.sede.whatsapp_instancia and orden.cliente_telefono:
+            # 🇵🇪 Formatear el número: Aseguramos que tenga el '51' al inicio
+            numero_limpio = str(orden.cliente_telefono).strip()
+            if not numero_limpio.startswith('51'):
+                numero_limpio = f"51{numero_limpio}"
+
             url = f"{settings.EVO_API_URL}/message/sendText/{orden.sede.whatsapp_instancia}"
             headers = {"apikey": settings.EVO_GLOBAL_KEY, "Content-Type": "application/json"}
+            
             payload = {
-                "number": orden.cliente_telefono,
+                "number": numero_limpio, # 👈 Ahora lleva el 51
                 "options": {"delay": 1200, "presence": "composing"},
                 "text": mensaje_whatsapp
             }
+
             try:
-                requests.post(url, json=payload, headers=headers, timeout=3)
+                response = requests.post(url, json=payload, headers=headers, timeout=5)                
+                if response.status_code != 201 and response.status_code != 200:
+                    logger.error(f"Error de Evolution API: {response.text}")
             except Exception as e:
                 logger.error(f"Error enviando mensaje Evo: {e}")
 
