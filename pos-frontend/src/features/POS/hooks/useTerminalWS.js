@@ -82,11 +82,11 @@ export const useTerminalWS = (sedeActualId, setMesas, setOrdenesLlevar, setSolic
       };
 
       ws.onclose = (e) => {
+        // ✨ FIX: Ya no matamos la conexión. Si falla la auth, reintenta en 5s.
         if (e.code === 4001 || e.code === 4003) {
-          console.error(`🔒 WebSocket cerrado por seguridad (Código ${e.code}). No se reconectará.`);
-          return;
+          console.error(`🔒 WebSocket rechazado (Código ${e.code}). Reintentando conexión...`);
         }
-        if (!unmounted) reconnectTimeout = setTimeout(conectar, 3000);
+        if (!unmounted) reconnectTimeout = setTimeout(conectar, 5000);
       };
 
       ws.onerror = () => {
