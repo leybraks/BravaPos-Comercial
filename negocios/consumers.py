@@ -68,6 +68,9 @@ class CocinaConsumer(AsyncWebsocketConsumer):
             'type': 'nueva_orden',
             'orden': event['orden']
         }))
+    
+    async def solicitud_cambio_nueva(self, event):
+        await self.send(text_data=json.dumps(event))
 
 
 # ============================================================
@@ -158,7 +161,8 @@ class SalonConsumer(AsyncWebsocketConsumer):
             'orden': event['orden'],
             'accion': event['accion'],
         }))
-
+    async def solicitud_cambio_nueva(self, event):
+        await self.send(text_data=json.dumps(event))
     @database_sync_to_async
     def _validar_mesa(self, mesa_id):
         """
