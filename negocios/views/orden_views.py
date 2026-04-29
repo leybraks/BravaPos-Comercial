@@ -439,16 +439,23 @@ class OrdenViewSet(viewsets.ModelViewSet):
         """
         Paso 1: El bot (n8n) llama a este endpoint cuando el cliente pide un cambio.
         """
-        orden = self.get_object()
+        # ✨ FIX: Búsqueda directa a la base de datos (Saltamos el get_queryset)
+        try:
+            orden = Orden.objects.get(id=pk)
+        except Orden.DoesNotExist:
+            return Response({"error": f"La orden {pk} no existe."}, status=404)
+            
         accion = request.data.get('accion')
         datos = request.data.get('datos', {})
 
+        # 🛑 RECHAZO INMEDIATO: Si ya está listo o entregado
         if orden.estado in ['listo', 'completado']:
             return Response({
                 "status": "rechazado",
                 "mensaje": "¡Uf! Casi. Pero tu pedido ya salió de la cocina o fue entregado. Ya no puedo modificarlo. 🛵"
             }, status=status.HTTP_400_BAD_REQUEST)
 
+        # ✅ APROBACIÓN AUTOMÁTICA: Si aún está en 'pendiente' (no ha entrado a fuego)
         if orden.estado == 'pendiente':
             with transaction.atomic():
                 if accion == 'cancelar':
@@ -463,6 +470,7 @@ class OrdenViewSet(viewsets.ModelViewSet):
                     orden.save()
                     return Response({"status": "aprobado", "mensaje": "¡Anotado! Ya le pasé el dato a la cocina. 📝"})
 
+        # ⏳ REVISIÓN HUMANA: Si ya se está preparando en la cocina
         if orden.estado == 'preparando':
             solicitud = SolicitudCambio.objects.create(
                 orden=orden,
@@ -488,7 +496,7 @@ class OrdenViewSet(viewsets.ModelViewSet):
             })
 
         return Response({"status": "error", "mensaje": "Acción no reconocida."}, status=400)
-
+    
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
     def resolver_solicitud_bot(self, request, pk=None):
         """
