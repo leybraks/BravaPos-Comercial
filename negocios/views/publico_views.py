@@ -66,39 +66,6 @@ def orden_publica(request, sede_id, mesa_id):
         return Response({"error": "Ocurrió un error interno en el servidor."}, status=500)
 
 
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def estado_orden_bot(request):
-    """
-    Endpoint consumido por n8n para que el bot consulte el estado
-    del pedido actual de un cliente vía WhatsApp.
-    """
-    sede_id = request.query_params.get('sede_id')
-    telefono = request.query_params.get('telefono')
-
-    if not sede_id or not telefono:
-        return Response({"error": "Se requiere sede_id y telefono."}, status=400)
-
-    try:
-        orden = Orden.objects.prefetch_related(
-            'detalles__producto', 'detalles__opciones_seleccionadas'
-        ).filter(
-            sede_id=sede_id,
-            cliente_telefono=telefono
-        ).exclude(
-            estado__in=['cancelado', 'completado']
-        ).order_by('-creado_en').first()
-
-        if not orden:
-            return Response({'orden': None})
-
-        return Response({'orden': OrdenSerializer(orden).data})
-
-    except Exception as e:
-        logger.error("Error en estado_orden_bot para sede %s telefono %s", sede_id, telefono, exc_info=True)
-        return Response({"error": "Ocurrió un error interno en el servidor."}, status=500)
-
-
 # ============================================================
 # AUTH
 # ============================================================

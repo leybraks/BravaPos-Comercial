@@ -401,6 +401,39 @@ class OrdenViewSet(viewsets.ModelViewSet):
             logger.error(f"Error procesando cobro de orden {orden.id}: {str(e)}", exc_info=True)
             return Response({'error': 'Error interno al procesar el pago.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+    @action(detail=False, methods=['get'], permission_classes=[AllowAny])
+    def estado_orden_bot(self, request):
+        """
+        Endpoint consumido por n8n para que el bot consulte el estado 
+        del pedido actual de un cliente vía WhatsApp.
+        """
+        sede_id = request.query_params.get('sede_id')
+        telefono = request.query_params.get('telefono')
+
+        if not sede_id or not telefono:
+            return Response({"error": "Se requiere sede_id y telefono."}, status=400)
+
+        try:
+            # Buscamos la última orden activa de ese número
+            orden = Orden.objects.prefetch_related(
+                'detalles__producto', 'detalles__opciones_seleccionadas'
+            ).filter(
+                sede_id=sede_id,
+                cliente_telefono=telefono
+            ).exclude(
+                estado__in=['cancelado', 'completado']
+            ).order_by('-creado_en').first() # 👈 Trae la más reciente
+
+            if not orden:
+                return Response({'orden': None})
+                
+            # ✅ Corregido: Usamos self.get_serializer para mantener compatibilidad con el ViewSet
+            return Response({'orden': self.get_serializer(orden).data})
+            
+        except Exception as e:
+            logger.error("Error en estado_orden_bot para sede %s telefono %s", sede_id, telefono, exc_info=True)
+            return Response({"error": "Ocurrió un error interno en el servidor."}, status=500)
+
     @action(detail=True, methods=['post'], permission_classes=[AllowAny])
     def modificar_desde_bot(self, request, pk=None):
         """
