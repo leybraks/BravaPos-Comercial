@@ -11,14 +11,13 @@ def get_user_from_token(token_str):
     from django.contrib.auth.models import AnonymousUser
     from django.contrib.auth import get_user_model
     from rest_framework_simplejwt.tokens import AccessToken
-    from rest_framework_simplejwt.exceptions import TokenError, InvalidToken
 
     User = get_user_model()
     try:
         token = AccessToken(token_str)
         user_id = token['user_id']
         user = User.objects.get(id=user_id)
-        print(f"✅ WS: Usuario {user.username} autenticado vía cookie.")
+        print(f"✅ WS: Usuario {user.username} autenticado con éxito.")
         return user
     except Exception as e:
         print(f"⚠️ WS: Token inválido o expirado. {e}")
@@ -31,12 +30,19 @@ class JWTWebSocketMiddleware(BaseMiddleware):
             headers = dict(scope.get('headers', []))
             raw_token = None
 
-            print("\n🕵️‍♂️ WS: Iniciando Handshake. Buscando cookies...")
+            print("\n🕵️‍♂️ WS: Iniciando Handshake...")
 
-            if b'cookie' in headers:
+            # 1. INTENTAR LEER DESDE LA URL (?token=...)
+            query_string = scope.get('query_string', b'').decode()
+            parsed_query = parse_qs(query_string)
+            
+            if 'token' in parsed_query:
+                raw_token = parsed_query['token'][0]
+                print("🔑 WS: Token de acceso encontrado en la URL (Query String).")
+            
+            # 2. SI NO HAY EN LA URL, INTENTAR LEER DESDE LAS COOKIES
+            elif b'cookie' in headers:
                 cookies_str = headers[b'cookie'].decode('utf-8')
-                print(f"🍪 WS: Header de cookies detectado.")
-                
                 parsed_cookies = SimpleCookie(cookies_str)
                 cookie_name = settings.SIMPLE_JWT.get('AUTH_COOKIE', 'access_token')
 
@@ -46,8 +52,9 @@ class JWTWebSocketMiddleware(BaseMiddleware):
                 else:
                     print(f"❌ WS: La cookie '{cookie_name}' no está en la petición.")
             else:
-                print("❌ WS: El navegador no envió ninguna cookie.")
+                print("❌ WS: El navegador no envió ninguna cookie ni token en la URL.")
 
+            # 3. VALIDAR EL TOKEN
             if raw_token:
                 scope['user'] = await get_user_from_token(raw_token)
             else:
@@ -57,6 +64,6 @@ class JWTWebSocketMiddleware(BaseMiddleware):
 
         except Exception as e:
             print("🔥 ERROR CRÍTICO EN MIDDLEWARE WS:")
-            traceback.print_exc() # Esto imprimirá la línea exacta del error
+            traceback.print_exc()
             scope['user'] = AnonymousUser()
             return await super().__call__(scope, receive, send)
