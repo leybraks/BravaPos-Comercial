@@ -502,14 +502,14 @@ class OrdenViewSet(viewsets.ModelViewSet):
         """
         Paso 2: El humano (desde React) aprueba o rechaza, y Django avisa al cliente por WS.
         """
-        orden = self.get_object()
-        solicitud_id = request.data.get('solicitud_id')
-        decision = request.data.get('decision')
-
         try:
+            orden = Orden.objects.get(id=pk)
+            solicitud_id = request.data.get('solicitud_id')
+            decision = request.data.get('decision')
+            
             solicitud = SolicitudCambio.objects.get(id=solicitud_id, orden=orden, estado='pendiente')
-        except SolicitudCambio.DoesNotExist:
-            return Response({"error": "La solicitud ya fue resuelta o no existe."}, status=400)
+        except (Orden.DoesNotExist, SolicitudCambio.DoesNotExist):
+            return Response({"error": "La orden o solicitud no existe."}, status=404)
 
         mensaje_whatsapp = ""
 
