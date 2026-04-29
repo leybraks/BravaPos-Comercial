@@ -56,68 +56,101 @@ export default function KdsView({ onVolver }) {
   }, [negocioId]); 
 
   // --- LÓGICA DE WEBSOCKET (CORREGIDA) ---
+  // --- LÓGICA DE WEBSOCKET (MODO PURISTA + AUTO-RECONEXIÓN) ---
   useEffect(() => {
-    if (!accesoPermitido) return; 
+    if (!accesoPermitido || !sedeActualId) return;
 
-    const token = localStorage.getItem('tablet_token') || localStorage.getItem('access_token');
-    if (!token) return;
+    let reconnectTimeout = null;
+    let unmounted = false;
 
-    const urlCocina = `${wsUrl}/ws/cocina/${sedeActualId}/?token=${token}`;
-    ws.current = new WebSocket(urlCocina);
-    
-    ws.current.onopen = () => console.log(`🔥 KDS Conectado a la Cocina (Sede ${sedeActualId})`);
+    const conectar = () => {
+      if (unmounted) return;
 
-    ws.current.onmessage = (event) => {
-      const data = JSON.parse(event.data);
+      // 1. URL robusta y limpia
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api';
+      const baseUrl = apiUrl.replace('http://', 'ws://').replace('https://', 'wss://').replace('/api', '');
       
-      // ✅ CORRECCIÓN: Ahora escucha "orden_nueva" (que es lo que manda Django)
-      if (data.type === 'orden_nueva' || data.type === 'nueva_orden') {
-        const nuevosItems = data.orden.detalles.map(d => ({
-          id: d.id,
-          cant: d.cantidad !== undefined ? d.cantidad : 1, 
-          nombre: d.producto_nombre || d.nombre,
-          listo: false,
-          notas: d.notas_cocina 
-        }));
+      // 🍪 MODO PURISTA: Sin tokens en la URL. Usamos la cookie automática.
+      const urlCocina = `${baseUrl}/ws/cocina/${sedeActualId}/`;
+      
+      ws.current = new WebSocket(urlCocina);
+      
+      ws.current.onopen = () => console.log(`🔥 KDS Conectado a la Cocina con COOKIES (Sede ${sedeActualId})`);
 
-        setOrdenes(prev => {
-          const ticketViejo = prev.find(o => o.id === data.orden.id);
-          if (ticketViejo) {
-            const horaActual = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            const itemsRealmenteNuevos = nuevosItems
-              .filter(nuevo => !ticketViejo.items.some(viejo => viejo.id === nuevo.id))
-              .map(item => ({ ...item, agregado_reciente: true, hora_agregado: horaActual }));
+      ws.current.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        
+        // ✅ RECEPTOR DE NUEVAS ÓRDENES
+        if (data.type === 'orden_nueva' || data.type === 'nueva_orden') {
+          const nuevosItems = data.orden.detalles.map(d => ({
+            id: d.id,
+            cant: d.cantidad !== undefined ? d.cantidad : 1, 
+            nombre: d.producto_nombre || d.nombre,
+            listo: false,
+            notas: d.notas_cocina 
+          }));
 
-            const ticketActualizado = { ...ticketViejo, items: [...ticketViejo.items, ...itemsRealmenteNuevos] };
-            return [ticketActualizado, ...prev.filter(o => o.id !== data.orden.id)];
-          }
+          setOrdenes(prev => {
+            const ticketViejo = prev.find(o => o.id === data.orden.id);
+            if (ticketViejo) {
+              const horaActual = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+              const itemsRealmenteNuevos = nuevosItems
+                .filter(nuevo => !ticketViejo.items.some(viejo => viejo.id === nuevo.id))
+                .map(item => ({ ...item, agregado_reciente: true, hora_agregado: horaActual }));
 
-          const nuevaOrden = {
-            kds_id: `ws_${data.orden.id}_${Date.now()}`,
-            id: data.orden.id,
-            real_id: data.orden.real_id || data.orden.id,
-            origen: data.orden.mesa ? `Mesa ${data.orden.mesa}` : `🛍️ DELIVERY - ${data.orden.cliente_nombre || 'Cliente'}`, 
-            minutos: 0, 
-            estacion: 'COCINA', 
-            items: nuevosItems
-          };
-          return [nuevaOrden, ...prev];
-        });
-      }
+              const ticketActualizado = { ...ticketViejo, items: [...ticketViejo.items, ...itemsRealmenteNuevos] };
+              return [ticketActualizado, ...prev.filter(o => o.id !== data.orden.id)];
+            }
 
-      // ✨ ALERTA DEL BOT LLEGA A LA COCINA
-      if (data.type === 'solicitud_cambio_nueva') {
-        setSolicitudesBot(prev => {
-          if (prev.some(s => s.solicitud_id === data.solicitud_id)) return prev;
-          return [data, ...prev];
-        });
-        try { new Audio('/assets/sounds/notification.mp3').play().catch(() => {}); } catch(e){}
+            const nuevaOrden = {
+              kds_id: `ws_${data.orden.id}_${Date.now()}`,
+              id: data.orden.id,
+              real_id: data.orden.real_id || data.orden.id,
+              origen: data.orden.mesa ? `Mesa ${data.orden.mesa}` : `🛍️ DELIVERY - ${data.orden.cliente_nombre || 'Cliente'}`, 
+              minutos: 0, 
+              estacion: 'COCINA', 
+              items: nuevosItems
+            };
+            return [nuevaOrden, ...prev];
+          });
+        }
+
+        // ✨ RECEPTOR DE LA ALERTA DEL BOT
+        if (data.type === 'solicitud_cambio_nueva') {
+          console.log('🤖 Solicitud del Bot recibida en KDS:', data);
+          setSolicitudesBot(prev => {
+            if (prev.some(s => s.solicitud_id === data.solicitud_id)) return prev;
+            return [data, ...prev];
+          });
+          try { new Audio('/assets/sounds/notification.mp3').play().catch(() => {}); } catch(e){}
+        }
+      };
+      
+      ws.current.onclose = (e) => {
+        if (e.code === 4001 || e.code === 4003) {
+          console.error(`🔒 KDS WS rechazado (Falta cookie). Reintentando en 3s...`);
+        } else {
+          console.warn(`🔌 KDS Desconectado (Código ${e.code}). Reintentando en 3s...`);
+        }
+        if (!unmounted) reconnectTimeout = setTimeout(conectar, 3000);
+      };
+
+      ws.current.onerror = (err) => {
+        console.error('⚠️ Error de red en WS Cocina', err);
+      };
+    };
+
+    conectar();
+
+    return () => {
+      unmounted = true;
+      clearTimeout(reconnectTimeout);
+      if (ws.current) {
+        ws.current.onclose = null;
+        ws.current.close();
       }
     };
-    
-    ws.current.onclose = () => console.log("KDS Desconectado");
-    return () => { if (ws.current) ws.current.close(); };
-  }, [sedeActualId, wsUrl, accesoPermitido]);
+  }, [sedeActualId, accesoPermitido]);
 
   useEffect(() => {
     if (!accesoPermitido) return; 
