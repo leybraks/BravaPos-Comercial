@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 
-export const useTerminalWS = (sedeActualId, setMesas, setOrdenesLlevar) => {
+// ✨ Agregamos setSolicitudesBot al final de los parámetros
+export const useTerminalWS = (sedeActualId, setMesas, setOrdenesLlevar, setSolicitudesBot) => {
   const wsRef = useRef(null);
 
   useEffect(() => {
@@ -12,8 +13,6 @@ export const useTerminalWS = (sedeActualId, setMesas, setOrdenesLlevar) => {
 
     const conectar = () => {
       if (unmounted) return;
-
-      
 
       const apiUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
       const baseUrl = import.meta.env.VITE_WS_URL || apiUrl.replace('https://', 'wss://').replace('http://', 'ws://');
@@ -53,6 +52,26 @@ export const useTerminalWS = (sedeActualId, setMesas, setOrdenesLlevar) => {
             });
           }
 
+          // ====================================================
+          // 🤖 ✨ NUEVO: RECEPTOR DE LA ALERTA DEL BOT
+          // ====================================================
+          if (data.type === 'solicitud_cambio_nueva') {
+            console.log('🤖 Solicitud del Bot recibida en Terminal:', data);
+            
+            if (setSolicitudesBot) {
+              setSolicitudesBot(prev => {
+                // Evita que la misma alerta se duplique si el WebSocket parpadea
+                if (prev.some(s => s.solicitud_id === data.solicitud_id)) return prev;
+                return [data, ...prev];
+              });
+            }
+
+            // Opcional: Sonido para alertar al cajero (asegúrate de tener el archivo o comenta esta línea)
+            try {
+              new Audio('/assets/sounds/notification.mp3').play().catch(() => {});
+            } catch (err) {}
+          }
+
           if (data.type === 'error') {
             console.error('🛑 Django rechazó la conexión:', data.mensaje);
           }
@@ -85,7 +104,8 @@ export const useTerminalWS = (sedeActualId, setMesas, setOrdenesLlevar) => {
         else ws.close();
       }
     };
-  }, [sedeActualId, setMesas, setOrdenesLlevar]);
+  // ✨ Agregamos setSolicitudesBot a las dependencias
+  }, [sedeActualId, setMesas, setOrdenesLlevar, setSolicitudesBot]);
 
   return wsRef;
 };

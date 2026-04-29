@@ -8,6 +8,7 @@ import ModalCobro from '../../components/modals/ModalCobro';
 import ModalCierreCaja from '../../components/modals/ModalCierreCaja';
 import DrawerVentaRapida from './Pos_DrawerVentaRapida';
 import ModalMovimientoCaja from '../../components/modals/ModalMovimientoCaja';
+import ModalAlertaBot from '../../components/modals/ModalAlertaBot';
 
 // Componentes Refactorizados
 import TerminalHeader from './components/TerminalHeader';
@@ -48,6 +49,7 @@ export default function PosTerminal({ onIrAErp }) {
   const [drawerVentaRapidaAbierto, setDrawerVentaRapidaAbierto] = useState(false);
   const [modalMovimientosAbierto, setModalMovimientosAbierto] = useState(false);
   const [ordenACobrar, setOrdenACobrar] = useState(null);
+  const [solicitudesBot, setSolicitudesBot] = useState([]);
 
   // ── HOOKS DE DATOS Y WEBSOCKETS ─────────────────────────────────────────────
   const { 
@@ -55,7 +57,7 @@ export default function PosTerminal({ onIrAErp }) {
     todasLasOrdenesActivas, vistaLocal, setVistaLocal, modulos 
   } = useTerminalData(sedeActualId, triggerRecarga, setConfiguracionGlobal);
 
-  useTerminalWS(sedeActualId, setMesas, setOrdenesLlevar);
+  useTerminalWS(sedeActualId, setMesas, setOrdenesLlevar,setSolicitudesBot);
 
 
   useEffect(() => {
@@ -128,6 +130,26 @@ export default function PosTerminal({ onIrAErp }) {
     } catch { alert('❌ PIN incorrecto o empleado inactivo.'); }
   };
 
+  // ✨ NUEVO: Función que llama a Django y dispara el WhatsApp
+  const manejarResolucionBot = async (solicitud_id, orden_id, decision) => {
+    try {
+      await api.post(`/ordenes/${orden_id}/resolver_solicitud_bot/`, {
+        solicitud_id,
+        decision
+      });
+      
+      // Quitamos la solicitud actual de la cola (por si llegaron 2 a la vez)
+      setSolicitudesBot(prev => prev.filter(s => s.solicitud_id !== solicitud_id));
+      
+      // Si aprobamos una cancelación, recargamos el tablero para liberar la mesa
+      if (decision === 'aprobar') {
+        setTriggerRecarga(p => !p);
+      }
+    } catch (error) {
+      console.error(error);
+      alert("Hubo un error de conexión al resolver la solicitud del bot.");
+    }
+  };
   // ── RENDER DE ESTADOS ESPECIALES ────────────────────────────────────────────
   if (vistaLocal === null) {
     return (
@@ -297,6 +319,11 @@ export default function PosTerminal({ onIrAErp }) {
             alert(`💸 ¡Listo! Se registró el ${datos.tipo} de S/ ${datos.monto} exitosamente.`);
           } catch { alert('❌ Error al guardar el movimiento.'); }
         }}
+      />
+
+      <ModalAlertaBot 
+        solicitud={solicitudesBot[0]} // Le pasamos la más antigua de la cola
+        onResolver={manejarResolucionBot}
       />
     </div>
   );

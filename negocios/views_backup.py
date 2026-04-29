@@ -28,7 +28,7 @@ from .models import (
     GrupoVariacion, InsumoBase, InsumoSede, Negocio, ReglaNegocio, Sede, Mesa, Producto,
     Orden, DetalleOrden, Pago, ModificadorRapido, DetalleOrdenOpcion,
     OpcionVariacion, MovimientoCaja, RecetaDetalle, Rol, Empleado,
-    SesionCaja, Categoria, RecetaOpcion, RegistroAuditoria,Cliente, ZonaDelivery
+    SesionCaja, Categoria, RecetaOpcion, RegistroAuditoria,Cliente, SolicitudCambio, ZonaDelivery
 )
 from .serializers import (
     InsumoBaseSerializer, InsumoSedeSerializer, NegocioSerializer, ReglaNegocioSerializer, SedeSerializer,
@@ -798,7 +798,115 @@ class OrdenViewSet(viewsets.ModelViewSet):
         except Exception as e:
             logger.error(f"Error procesando cobro de orden {orden.id}: {str(e)}", exc_info=True)
             return Response({'error': 'Error interno al procesar el pago.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+   
+    @action(detail=True, methods=['post'], permission_classes=[AllowAny])
+    def modificar_desde_bot(self, request, pk=None):
+        """
+        Paso 1: El bot (n8n) llama a este endpoint cuando el cliente pide un cambio.
+        """
+        orden = self.get_object()
+        accion = request.data.get('accion')  # 'cancelar', 'agregar', 'nota'
+        datos = request.data.get('datos', {})
 
+        if orden.estado in ['listo', 'completado']:
+            return Response({
+                "status": "rechazado",
+                "mensaje": "¡Uf! Casi. Pero tu pedido ya salió de la cocina o fue entregado. Ya no puedo modificarlo. 🛵"
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if orden.estado == 'pendiente':
+            with transaction.atomic():
+                if accion == 'cancelar':
+                    orden.estado = 'cancelado'
+                    orden.motivo_cancelacion = "Cancelado por el cliente vía WhatsApp"
+                    orden.save()
+                    return Response({"status": "aprobado", "mensaje": "Pedido cancelado con éxito. ¡No hay problema! 👍"})
+                
+                elif accion == 'nota':
+                    nota_nueva = datos.get('nota', '')
+                    orden.notas_cocina = f"{orden.notas_cocina or ''} | BOT: {nota_nueva}"
+                    orden.save()
+                    return Response({"status": "aprobado", "mensaje": "¡Anotado! Ya le pasé el dato a la cocina. 📝"})
+
+        if orden.estado == 'preparando':
+            solicitud = SolicitudCambio.objects.create(
+                orden=orden,
+                tipo_accion=accion,
+                detalles_json=datos
+            )
+
+            channel_layer = get_channel_layer()
+            # Avisamos tanto al Salón/Caja como a la Cocina
+            alerta = {
+                "type": "solicitud_cambio_nueva",
+                "solicitud_id": solicitud.id,
+                "orden_id": orden.id,
+                "mesa": orden.mesa.numero_o_nombre if orden.mesa else "Delivery",
+                "accion": accion,
+                "descripcion": f"El cliente quiere {accion}: {datos.get('nota', 'Sin detalles')}"
+            }
+            async_to_sync(channel_layer.group_send)(f"cocina_sede_{orden.sede_id}", alerta)
+            async_to_sync(channel_layer.group_send)(f"salon_sede_{orden.sede_id}", alerta)
+
+            return Response({
+                "status": "en_revision",
+                "mensaje": "Tu pedido ya se está preparando. 👨‍🍳 He enviado una alerta a la cocina para ver si aún llegamos a tiempo. ¡Dame un momento!"
+            })
+
+        return Response({"status": "error", "mensaje": "Acción no reconocida."}, status=400)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
+    def resolver_solicitud_bot(self, request, pk=None):
+        """
+        Paso 2: El humano (desde React) aprueba o rechaza, y Django avisa al cliente por WS.
+        """
+        orden = self.get_object()
+        solicitud_id = request.data.get('solicitud_id')
+        decision = request.data.get('decision') # 'aprobar' o 'rechazar'
+
+        try:
+            solicitud = SolicitudCambio.objects.get(id=solicitud_id, orden=orden, estado='pendiente')
+        except SolicitudCambio.DoesNotExist:
+            return Response({"error": "La solicitud ya fue resuelta o no existe."}, status=400)
+
+        mensaje_whatsapp = ""
+
+        with transaction.atomic():
+            if decision == 'aprobar':
+                solicitud.estado = 'aprobada'
+                
+                if solicitud.tipo_accion == 'cancelar':
+                    orden.estado = 'cancelado'
+                    orden.motivo_cancelacion = "Cancelado por solicitud del bot (Aprobado por staff)"
+                    mensaje_whatsapp = "✅ ¡Listo! El encargado aprobó tu solicitud y hemos anulado el pedido. ¿Te puedo ayudar con algo más?"
+                
+                elif solicitud.tipo_accion == 'nota':
+                    nota_extra = solicitud.detalles_json.get('nota', '')
+                    orden.notas_cocina = f"{orden.notas_cocina or ''} | MODIFICACIÓN: {nota_extra}"
+                    mensaje_whatsapp = "✅ ¡Anotado! La cocina confirmó que prepararán tu pedido con esa indicación especial."
+                
+                orden.save()
+            else:
+                solicitud.estado = 'rechazada'
+                mensaje_whatsapp = "❌ Lo siento mucho, consulté con la cocina pero tu pedido ya está en la parrilla 🥩 y no podemos modificarlo en este punto."
+
+            solicitud.save()
+
+        # Disparo a Evolution API
+        if orden.sede.whatsapp_instancia and orden.cliente_telefono:
+            url = f"{settings.EVO_API_URL}/message/sendText/{orden.sede.whatsapp_instancia}"
+            headers = {"apikey": settings.EVO_GLOBAL_KEY, "Content-Type": "application/json"}
+            payload = {
+                "number": orden.cliente_telefono,
+                "options": {"delay": 1200, "presence": "composing"},
+                "text": mensaje_whatsapp
+            }
+            try:
+                requests.post(url, json=payload, headers=headers, timeout=3)
+            except Exception as e:
+                logger.error(f"Error enviando mensaje Evo: {e}")
+
+        return Response({"status": "resuelto", "decision": decision})
 
 # ============================================================
 # DETALLE ORDEN
@@ -1557,3 +1665,37 @@ def health_check(request):
     """
     from django.http import JsonResponse
     return JsonResponse({"status": "ok", "message": "Backend operando correctamente"})
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def estado_orden_bot(request):
+    """
+    Endpoint consumido por n8n para que el bot consulte el estado 
+    del pedido actual de un cliente vía WhatsApp.
+    """
+    sede_id = request.query_params.get('sede_id')
+    telefono = request.query_params.get('telefono')
+
+    if not sede_id or not telefono:
+        return Response({"error": "Se requiere sede_id y telefono."}, status=400)
+
+    try:
+        orden = Orden.objects.prefetch_related(
+            'detalles__producto', 'detalles__opciones_seleccionadas'
+        ).filter(
+            sede_id=sede_id,
+            cliente_telefono=telefono
+        ).exclude(
+            estado__in=['cancelado', 'completado']
+        ).order_by('-creado_en').first() # 👈 Clave: Traer la más reciente
+
+        if not orden:
+            return Response({'orden': None})
+            
+        # Reutilizamos tu serializer existente para mantener el estándar
+        return Response({'orden': OrdenSerializer(orden).data})
+        
+    except Exception as e:
+        logger.error("Error en estado_orden_bot para sede %s telefono %s", sede_id, telefono, exc_info=True)
+        return Response({"error": "Ocurrió un error interno en el servidor."}, status=500)
+

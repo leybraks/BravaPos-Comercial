@@ -675,3 +675,17 @@ class PromocionBot(models.Model):
 
     def __str__(self):
         return f"{self.nombre} ({self.sede.nombre})"
+    
+class SolicitudCambio(models.Model):
+    ESTADOS = [('pendiente', 'Esperando Cocina'), ('aprobada', 'Aprobada'), ('rechazada', 'Rechazada')]
+    ACCIONES = [('cancelar', 'Cancelar Orden'), ('agregar', 'Agregar Producto'), ('nota', 'Cambiar Nota')]
+
+    orden = models.ForeignKey('Orden', on_delete=models.CASCADE, related_name='solicitudes_cambio')
+    tipo_accion = models.CharField(max_length=20, choices=ACCIONES)
+    detalles_json = models.JSONField(help_text="Datos del cambio: {'producto': id, 'cantidad': 1, 'notas': '...'}")
+    estado = models.CharField(max_length=20, choices=ESTADOS, default='pendiente')
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Solicitud {self.tipo_accion} - Orden #{self.orden.id} ({self.get_estado_display()})"
+    
