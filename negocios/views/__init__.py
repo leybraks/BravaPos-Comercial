@@ -62,6 +62,5 @@ from .publico_views import (
     health_check,
     menu_publico,
     orden_publica,
-    estado_orden_bot,
     verificar_sesion,
 )
