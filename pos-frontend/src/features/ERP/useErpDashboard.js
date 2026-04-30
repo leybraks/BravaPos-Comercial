@@ -20,7 +20,13 @@ export const useErpDashboard = () => {
   const [vistaActiva, setVistaActiva] = useState('dashboard');
   
   // ✨ CEREBROS DE MEMORIA AISLADA (Leen directamente de su propio localStorage)
-  const [sedeVentasId, setSedeVentasId] = useState(localStorage.getItem('memoria_sede_ventas') || '');
+  // 🔧 FIX: El dueño arranca siempre en 'Todas' (sin sede fija).
+  // Si tiene 'memoria_sede_ventas' guardada la usamos, pero solo si el rol NO es dueño.
+  const _rolInicial = localStorage.getItem('usuario_rol')?.toLowerCase() || '';
+  const _esDueñoInicial = _rolInicial === 'dueño';
+  const [sedeVentasId, setSedeVentasId] = useState(
+    _esDueñoInicial ? '' : (localStorage.getItem('memoria_sede_ventas') || '')
+  );
   const [sedePersonalId, setSedePersonalId] = useState(localStorage.getItem('memoria_sede_personal') || '');
   const [sedeMenuId, setSedeMenuId] = useState(localStorage.getItem('memoria_sede_menu') || '');
 
@@ -96,14 +102,27 @@ export const useErpDashboard = () => {
   // ✨ 2. EFECTOS MULTITAREA (Conectados a su propia memoria)
   // ==========================================
   
+  // 🔧 FIX: construye params correctos para el dashboard.
+  // Si el dueño seleccionó "Todas" (sedeVentasId vacío), manda negocio_id
+  // para que el interceptor NO inyecte la sede del localStorage.
+  const buildDashboardParams = (sedeId, extraParams = {}) => {
+    const negocioId = localStorage.getItem('negocio_id');
+    const rol = localStorage.getItem('usuario_rol')?.toLowerCase();
+    const esDueño = rol === 'dueño';
+    if (sedeId) return { sede_id: sedeId, ...extraParams };
+    if (esDueño) return { negocio_id: negocioId, ...extraParams };
+    return { ...extraParams };
+  };
+
   // Dashboard (Ventas)
   useEffect(() => {
     if (vistaActiva === 'dashboard') {
       const cargarDatos = async () => {
         try {
+          const params = buildDashboardParams(sedeVentasId, { modo: 'dashboard' });
           const [resMetricas, resOrdenes] = await Promise.all([
-            obtenerMetricasDashboard({ sede_id: sedeVentasId }),
-            getOrdenes({ sede_id: sedeVentasId, modo: 'dashboard' }) 
+            obtenerMetricasDashboard(params),
+            getOrdenes(params)
           ]);
           setMetricas(resMetricas.data);
           setOrdenesReales(resOrdenes.data);

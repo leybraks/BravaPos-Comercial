@@ -186,6 +186,7 @@ def registrar_movimiento_caja(request):
 @permission_classes([IsAuthenticated])
 def metricas_dashboard(request):
     sede_id_raw = request.query_params.get('sede_id')
+    negocio_id_raw = request.query_params.get('negocio_id')
     sede_id = None if es_valor_nulo(sede_id_raw) else sede_id_raw
 
     hoy = timezone.now().date()
@@ -194,7 +195,18 @@ def metricas_dashboard(request):
         estado_pago='pagado'
     ).exclude(estado='cancelado').order_by('-creado_en')
 
-    ordenes_hoy = ordenes_base.filter(sede_id=sede_id) if sede_id else ordenes_base
+    # 🔧 FIX: filtrar correctamente según el contexto
+    if sede_id:
+        # Sede específica (dueño eligió una sede o admin de local)
+        ordenes_hoy = ordenes_base.filter(sede_id=sede_id)
+    elif not es_valor_nulo(negocio_id_raw):
+        # Dueño eligió "Todas" → filtra por negocio
+        ordenes_hoy = ordenes_base.filter(sede__negocio_id=negocio_id_raw)
+    elif hasattr(request.user, 'negocio'):
+        # Fallback: dueño autenticado sin params → usa su negocio del JWT
+        ordenes_hoy = ordenes_base.filter(sede__negocio=request.user.negocio)
+    else:
+        ordenes_hoy = ordenes_base.none()
 
     total_ordenes   = ordenes_hoy.count()
     ventas_totales  = float(ordenes_hoy.aggregate(Sum('total'))['total__sum'] or 0.00)

@@ -73,12 +73,17 @@ api.interceptors.request.use(
     const tieneSedeEnParams = config.params?.sede_id || config.params?.sede;
     const esRutaGlobal      = config.url.includes('negocios');
 
+    // 🔧 FIX: Si la request ya trae negocio_id en params (caso dueño viendo "Todas"),
+    //    NO inyectamos sede_id para no pisar la intención del dueño de ver todo el negocio.
+    const tieneNegocioEnParams = config.params?.negocio_id;
+
     if (
       sedeIdSesion &&
       config.method === 'get' &&
       !tieneSedeEnUrl &&
       !tieneSedeEnParams &&
-      !esRutaGlobal
+      !esRutaGlobal &&
+      !tieneNegocioEnParams  // 🔧 NUEVA CONDICIÓN
     ) {
       const sep = config.url.includes('?') ? '&' : '?';
       config.url = `${config.url}${sep}sede_id=${sedeIdSesion}`;
@@ -246,6 +251,7 @@ export const getRoles           = (params)    => api.get('/roles/', { params });
 export const getSedes           = (params)    => api.get('/sedes/', { params });
 export const actualizarSede     = (id, data)  => api.patch(`/sedes/${id}/`, data);
 export const crearSede          = (data)      => api.post('/sedes/', data);
+
 // ============================================================
 // PRODUCTOS Y CATEGORÍAS
 // ============================================================
@@ -305,7 +311,6 @@ export const vincularInsumoASede = (data)   => api.post('/insumo-sede/', data);
 export const getMenuPublico   = (sedeId)           => apiPublica.get(`/menu-publico/${sedeId}/`);
 export const getOrdenPublica  = (sedeId, mesaId)   => apiPublica.get(`/orden-publica/${sedeId}/${mesaId}/`);
 
-// En pos-frontend\src\api\api.js
 export const crearModificador = (data) => api.post('/modificadores-rapidos/', data);
 export const actualizarModificador = (id, data) => api.put(`/modificadores-rapidos/${id}/`, data);
 export const eliminarModificador = (id) => api.delete(`/modificadores-rapidos/${id}/`);

@@ -54,10 +54,11 @@ export default function PosTerminal({ onIrAErp }) {
   // ── HOOKS DE DATOS Y WEBSOCKETS ─────────────────────────────────────────────
   const { 
     sedes, mesas, setMesas, ordenesLlevar, setOrdenesLlevar, 
-    todasLasOrdenesActivas, vistaLocal, setVistaLocal, modulos 
+    todasLasOrdenesActivas, vistaLocal, setVistaLocal, modulos,
+    sedeActualIdRef  // 🔧 ref para que el WS ignore eventos de sedes anteriores
   } = useTerminalData(sedeActualId, triggerRecarga, setConfiguracionGlobal);
 
-  useTerminalWS(sedeActualId, setMesas, setOrdenesLlevar,setSolicitudesBot);
+  useTerminalWS(sedeActualId, setMesas, setOrdenesLlevar, setSolicitudesBot, sedeActualIdRef);
 
 
   useEffect(() => {

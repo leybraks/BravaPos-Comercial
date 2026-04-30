@@ -136,7 +136,8 @@ export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
     setProcesando(true);
     try {
       const detallesNuevos = carrito.map(item => ({
-        producto: item.id, cantidad: item.cantidad, precio_unitario: item.precio_unitario_calculado || item.precio,
+        producto: item.id, cantidad: item.cantidad,
+        precio_unitario: item.precio_unitario_calculado ?? item.precio_con_modificadores ?? item.precio_base ?? item.precio ?? 0,
         notas_y_modificadores: item.notas_y_modificadores || "", notas_cocina: item.notas_cocina || "", opciones_seleccionadas: item.opciones_seleccionadas || [] 
       }));
 

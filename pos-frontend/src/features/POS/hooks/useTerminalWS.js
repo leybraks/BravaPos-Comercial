@@ -1,15 +1,14 @@
 import { useEffect, useRef } from 'react';
-import api from '../../../api/api'; // ajusta el path si es necesario
+import api from '../../../api/api';
 
-export const useTerminalWS = (sedeActualId, setMesas, setOrdenesLlevar, setSolicitudesBot) => {
+export const useTerminalWS = (sedeActualId, setMesas, setOrdenesLlevar, setSolicitudesBot, sedeActualIdRef) => {
   const wsRef = useRef(null);
 
-  // ✅ Callbacks en refs para no re-disparar el effect cuando el padre re-renderiza
   const setMesasRef          = useRef(setMesas);
   const setOrdenesLlevarRef  = useRef(setOrdenesLlevar);
   const setSolicitudesBotRef = useRef(setSolicitudesBot);
 
-  useEffect(() => { setMesasRef.current = setMesas; },          [setMesas]);
+  useEffect(() => { setMesasRef.current = setMesas; },                [setMesas]);
   useEffect(() => { setOrdenesLlevarRef.current = setOrdenesLlevar; }, [setOrdenesLlevar]);
   useEffect(() => { setSolicitudesBotRef.current = setSolicitudesBot; }, [setSolicitudesBot]);
 
@@ -27,7 +26,6 @@ export const useTerminalWS = (sedeActualId, setMesas, setOrdenesLlevar, setSolic
       const baseUrl = import.meta.env.VITE_WS_URL || apiUrl.replace('https://', 'wss://').replace('http://', 'ws://');
 
       try {
-        // Pedimos un token de corta duración exclusivo para el WS
         const res = await api.get('/verificar-sesion/');
         const wsToken = res.data.ws_token;
         const wsUrl = `${baseUrl}/ws/salon/${sedeActualId}/?token=${wsToken}`;
@@ -48,6 +46,12 @@ export const useTerminalWS = (sedeActualId, setMesas, setOrdenesLlevar, setSolic
             }
 
             if (data.type === 'mesa_actualizada') {
+              // 🔧 FIX: ignorar eventos de mesas si ya cambiamos de sede.
+              // El WS se reconecta async y pueden llegar eventos de la sede anterior
+              // justo cuando ya cargamos las mesas de la nueva sede.
+              const sedeActivaAhora = sedeActualIdRef?.current ?? sedeActualId;
+              if (String(sedeActivaAhora) !== String(sedeActualId)) return;
+
               setMesasRef.current(prev => prev.map(mesa =>
                 mesa.id === data.mesa_id
                   ? { ...mesa, estado: data.estado, totalConsumido: data.total ?? mesa.totalConsumido }
@@ -113,7 +117,7 @@ export const useTerminalWS = (sedeActualId, setMesas, setOrdenesLlevar, setSolic
       }
     };
 
-  }, [sedeActualId]); // ✅ Solo sedeActualId — las callbacks van por ref
+  }, [sedeActualId]);
 
   return wsRef;
 };

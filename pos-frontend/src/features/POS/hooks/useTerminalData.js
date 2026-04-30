@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { getMesas, getOrdenes, getSedes, getNegocio } from '../../../api/api';
 
 export const useTerminalData = (sedeActualId, triggerRecarga, setConfiguracionGlobal) => {
@@ -6,10 +6,15 @@ export const useTerminalData = (sedeActualId, triggerRecarga, setConfiguracionGl
   const [mesas, setMesas] = useState([]);
   const [ordenesLlevar, setOrdenesLlevar] = useState([]);
   const [todasLasOrdenesActivas, setTodasLasOrdenesActivas] = useState([]);
-  const [vistaLocal, setVistaLocal] = useState(null); // null = cargando
+  const [vistaLocal, setVistaLocal] = useState(null);
   const [modulos, setModulos] = useState({ salon: true, delivery: true, cocina: true });
 
-  // 1. Carga inicial de Configuración del Negocio
+  // 🔧 Ref que siempre apunta a la sede activa — el WS lo usa para ignorar
+  // eventos de mesas de otras sedes cuando se está reconectando.
+  const sedeActualIdRef = useRef(sedeActualId);
+  useEffect(() => { sedeActualIdRef.current = sedeActualId; }, [sedeActualId]);
+
+  // 1. Configuración del Negocio
   useEffect(() => {
     let isMounted = true;
     const initNegocio = async () => {
@@ -53,15 +58,16 @@ export const useTerminalData = (sedeActualId, triggerRecarga, setConfiguracionGl
     return () => { isMounted = false; };
   }, [setConfiguracionGlobal]);
 
-  // 2. Carga de datos del Salón (Sedes, Mesas, Órdenes)
+  // 2. Carga de Sedes
   useEffect(() => {
     let isMounted = true;
     const cargarSedes = async () => {
       try {
-        const resSedes = await getSedes();
-        if (isMounted) {
-          setSedes(resSedes.data);
-        }
+        // 🔧 FIX: negocio_id para que el interceptor NO inyecte sede_id
+        // y el dueño vea TODAS sus sedes, no solo la activa.
+        const negocioId = localStorage.getItem('negocio_id');
+        const resSedes = await getSedes({ negocio_id: negocioId });
+        if (isMounted) setSedes(resSedes.data);
       } catch (e) {
         console.error('Error cargando sedes:', e);
       }
@@ -70,25 +76,28 @@ export const useTerminalData = (sedeActualId, triggerRecarga, setConfiguracionGl
     return () => { isMounted = false; };
   }, []);
 
+  // 3. Carga de Mesas y Órdenes — reacciona al cambio de sede
   useEffect(() => {
-    // 🛑 Si no hay sede, frenamos aquí, pero las sedes ya se cargaron arriba
-    if (!sedeActualId) return; 
+    if (!sedeActualId) return;
     let isMounted = true;
+
+    // 🔧 FIX: Limpiamos las mesas ANTES de cargar las nuevas para que
+    // el UI no muestre las mesas de la sede anterior mientras carga.
+    setMesas([]);
 
     const cargarSalon = async () => {
       try {
-        // Solo pedimos mesas y órdenes
         const [resMesas, resOrdenes] = await Promise.all([
           getMesas({ sede_id: sedeActualId }),
           getOrdenes({ sede_id: sedeActualId }),
         ]);
-        
+
         if (!isMounted) return;
 
         const ordenesVivas = resOrdenes.data.filter(
           (o) => o.estado !== 'completado' && o.estado !== 'cancelado' && o.estado_pago !== 'pagado'
         );
-        
+
         setTodasLasOrdenesActivas(ordenesVivas);
         setOrdenesLlevar(
           resOrdenes.data
@@ -99,7 +108,9 @@ export const useTerminalData = (sedeActualId, triggerRecarga, setConfiguracionGl
 
         setMesas(
           resMesas.data.map((m) => {
-            const orden = ordenesVivas.find((o) => o.mesa !== null && (o.mesa === m.id || o.mesa === m.mesa_principal));
+            const orden = ordenesVivas.find(
+              (o) => o.mesa !== null && (o.mesa === m.id || o.mesa === m.mesa_principal)
+            );
             return {
               id: m.id,
               numero: m.numero_o_nombre || m.id,
@@ -121,5 +132,10 @@ export const useTerminalData = (sedeActualId, triggerRecarga, setConfiguracionGl
     return () => { isMounted = false; };
   }, [triggerRecarga, sedeActualId]);
 
-  return { sedes, mesas, setMesas, ordenesLlevar, setOrdenesLlevar, todasLasOrdenesActivas, vistaLocal, setVistaLocal, modulos };
+  // Exponemos el ref para que useTerminalWS pueda ignorar eventos de otras sedes
+  return {
+    sedes, mesas, setMesas, ordenesLlevar, setOrdenesLlevar,
+    todasLasOrdenesActivas, vistaLocal, setVistaLocal, modulos,
+    sedeActualIdRef,
+  };
 };

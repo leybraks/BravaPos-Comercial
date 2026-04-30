@@ -37,7 +37,7 @@ export default function TerminalHeader({
               style={{ color: colorPrimario }}
             >
               <option value="" disabled>Sede...</option>
-              {sedes?.map(sede => <option key={sede.id} value={sede.id}>{sede.nombre}</option>)}
+              {sedes?.map(sede => <option key={sede.id} value={String(sede.id)}>{sede.nombre}</option>)}
             </select>
           )}
         </div>
@@ -58,7 +58,7 @@ export default function TerminalHeader({
                 style={{ color: colorPrimario }}
               >
                 <option value="" disabled>Seleccionar...</option>
-                {sedes?.map(sede => <option key={sede.id} value={sede.id}>{sede.nombre}</option>)}
+                {sedes?.map(sede => <option key={sede.id} value={String(sede.id)}>{sede.nombre}</option>)}
               </select>
             </div>
           )}

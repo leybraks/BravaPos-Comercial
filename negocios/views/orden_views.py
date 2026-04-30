@@ -68,6 +68,7 @@ class OrdenViewSet(viewsets.ModelViewSet):
 
         empleado = get_empleado_desde_header(self.request)
         sede_id_filtrar = None
+        modo = self.request.query_params.get('modo')
 
         if empleado:
             sede_id_filtrar = empleado.sede_id
@@ -76,27 +77,45 @@ class OrdenViewSet(viewsets.ModelViewSet):
             if not es_valor_nulo(sede_id_raw):
                 sede_id_filtrar = sede_id_raw
 
-        if sede_id_filtrar:
-            hoy = timezone.now().date()
-            modo = self.request.query_params.get('modo')
+        # ============================================================
+        # 🔧 FIX: modo dashboard tiene su propia rama con filtro de fecha
+        # ============================================================
+        if modo == 'dashboard':
+            # Traemos los últimos 35 días para que el frontend pueda
+            # mostrar "Hoy", "Ayer", "Esta Semana" y "Este Mes" completo
+            hace_35_dias = timezone.now() - timezone.timedelta(days=35)
 
-            if modo == 'dashboard':
-                queryset = queryset.filter(
-                    sede_id=sede_id_filtrar,
-                    estado_pago='pagado'
-                ).exclude(estado='cancelado').order_by('-creado_en')
+            queryset = queryset.filter(
+                estado_pago='pagado',
+                creado_en__gte=hace_35_dias
+            ).exclude(estado='cancelado').order_by('-creado_en')
+
+            if sede_id_filtrar:
+                # Sede específica seleccionada (dueño o admin)
+                queryset = queryset.filter(sede_id=sede_id_filtrar)
+            elif hasattr(self.request.user, 'negocio'):
+                # Dueño eligió "General" → todas las sedes del negocio
+                queryset = queryset.filter(sede__negocio=self.request.user.negocio)
             else:
+                queryset = queryset.none()
+
+        # ============================================================
+        # Modo POS normal (sin cambios respecto al original)
+        # ============================================================
+        else:
+            if sede_id_filtrar:
+                hoy = timezone.now().date()
                 queryset = queryset.filter(
                     sede_id=sede_id_filtrar
                 ).exclude(estado='cancelado').filter(
                     models.Q(estado_pago='pendiente') | models.Q(creado_en__date=hoy)
                 ).order_by('-creado_en')
-        elif hasattr(self.request.user, 'negocio'):
-            queryset = queryset.filter(
-                sede__negocio=self.request.user.negocio
-            ).order_by('-creado_en')
-        else:
-            queryset = queryset.none()
+            elif hasattr(self.request.user, 'negocio'):
+                queryset = queryset.filter(
+                    sede__negocio=self.request.user.negocio
+                ).order_by('-creado_en')
+            else:
+                queryset = queryset.none()
 
         return queryset
 
@@ -201,19 +220,14 @@ class OrdenViewSet(viewsets.ModelViewSet):
                 producto = Producto.objects.get(id=detalle_data['producto'])
                 precio_seguro = producto.precio_base
                 
-                # --- INICIO DE LA CORRECCIÓN ---
                 notas = detalle_data.get('notas_y_modificadores', {})
                 if isinstance(notas, str):
                     try:
-                        # Si es un string válido lo parsea, si está vacío o solo tiene espacios, asigna {}
                         notas = json.loads(notas) if notas.strip() else {}
                     except Exception:
-                        # Si llega un string basura que no es JSON válido (ej. "hola"), lo vuelve un diccionario vacío
                         notas = {}
-                # --- FIN DE LA CORRECCIÓN ---
 
                 variaciones_dict = notas.get('variaciones', {})
-                # Usamos .get en vez de .pop por seguridad, o le pasamos un default a pop
                 opciones_ids_raw = detalle_data.get('opciones_seleccionadas', [])
                 opciones_a_guardar, subtotal_opciones = _procesar_opciones(opciones_ids_raw, variaciones_dict)
 
@@ -425,7 +439,6 @@ class OrdenViewSet(viewsets.ModelViewSet):
             return Response({"error": "Se requiere sede_id y telefono."}, status=400)
 
         try:
-            # Buscamos la última orden activa de ese número
             orden = Orden.objects.prefetch_related(
                 'detalles__producto', 'detalles__opciones_seleccionadas'
             ).filter(
@@ -433,12 +446,11 @@ class OrdenViewSet(viewsets.ModelViewSet):
                 cliente_telefono=telefono
             ).exclude(
                 estado__in=['cancelado', 'completado']
-            ).order_by('-creado_en').first() # 👈 Trae la más reciente
+            ).order_by('-creado_en').first()
 
             if not orden:
                 return Response({'orden': None})
                 
-            # ✅ Corregido: Usamos self.get_serializer para mantener compatibilidad con el ViewSet
             return Response({'orden': self.get_serializer(orden).data})
             
         except Exception as e:
@@ -450,7 +462,6 @@ class OrdenViewSet(viewsets.ModelViewSet):
         """
         Paso 1: El bot (n8n) llama a este endpoint cuando el cliente pide un cambio.
         """
-        # ✨ FIX: Búsqueda directa a la base de datos (Saltamos el get_queryset)
         try:
             orden = Orden.objects.get(id=pk)
         except Orden.DoesNotExist:
@@ -459,14 +470,12 @@ class OrdenViewSet(viewsets.ModelViewSet):
         accion = request.data.get('accion')
         datos = request.data.get('datos', {})
 
-        # 🛑 RECHAZO INMEDIATO: Si ya está listo o entregado
         if orden.estado in ['listo', 'completado']:
             return Response({
                 "status": "rechazado",
                 "mensaje": "¡Uf! Casi. Pero tu pedido ya salió de la cocina o fue entregado. Ya no puedo modificarlo. 🛵"
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # ✅ APROBACIÓN AUTOMÁTICA: Si aún está en 'pendiente' (no ha entrado a fuego)
         if orden.estado == 'pendiente':
             with transaction.atomic():
                 if accion == 'cancelar':
@@ -481,7 +490,6 @@ class OrdenViewSet(viewsets.ModelViewSet):
                     orden.save()
                     return Response({"status": "aprobado", "mensaje": "¡Anotado! Ya le pasé el dato a la cocina. 📝"})
 
-        # ⏳ REVISIÓN HUMANA: Si ya se está preparando en la cocina
         if orden.estado == 'preparando':
             solicitud = SolicitudCambio.objects.create(
                 orden=orden,
@@ -546,7 +554,6 @@ class OrdenViewSet(viewsets.ModelViewSet):
             solicitud.save()
 
         if orden.sede.whatsapp_instancia and orden.cliente_telefono:
-            # 🇵🇪 Formatear el número: Aseguramos que tenga el '51' al inicio
             numero_limpio = str(orden.cliente_telefono).strip()
             if not numero_limpio.startswith('51'):
                 numero_limpio = f"51{numero_limpio}"
@@ -555,7 +562,7 @@ class OrdenViewSet(viewsets.ModelViewSet):
             headers = {"apikey": settings.EVO_GLOBAL_KEY, "Content-Type": "application/json"}
             
             payload = {
-                "number": numero_limpio, # 👈 Ahora lleva el 51
+                "number": numero_limpio,
                 "options": {"delay": 1200, "presence": "composing"},
                 "text": mensaje_whatsapp
             }
