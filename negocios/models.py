@@ -177,7 +177,7 @@ class Producto(models.Model):
     tiene_variaciones = models.BooleanField(default=False)
     requiere_seleccion = models.BooleanField(default=False)
     activo = models.BooleanField(default=True)
-    
+    imagen = models.ImageField(upload_to='productos/fotos/', null=True, blank=True)
     # ✨ LOS NUEVOS CAMPOS PARA COMBOS Y MARKETING ✨
     es_combo = models.BooleanField(default=False, help_text="Indica si este producto está compuesto por otros productos")
     destacar_como_promocion = models.BooleanField(default=False, help_text="¿Aparece destacado en el Bot de WhatsApp o Carta QR?")

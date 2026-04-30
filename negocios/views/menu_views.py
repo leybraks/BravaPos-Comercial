@@ -1,10 +1,10 @@
 import logging
-
+import os
 from django.db import transaction
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
-
+from rest_framework.parsers import MultiPartParser, FormParser
 from .helpers import es_valor_nulo, get_empleado_desde_header
 from ..models import (
     Mesa, Producto, Categoria, GrupoVariacion, OpcionVariacion,
@@ -87,6 +87,35 @@ class ProductoViewSet(viewsets.ModelViewSet):
             "cantidad_necesaria": float(ing.cantidad_necesaria)
         } for ing in ingredientes]
         return Response(data)
+    
+    @action(
+        detail=True, 
+        methods=['post'], 
+        url_path='subir_imagen', 
+        parser_classes=[MultiPartParser, FormParser]
+    )
+    def subir_imagen(self, request, pk=None):
+        producto = self.get_object()
+        archivo = request.FILES.get('imagen')
+
+        if not archivo:
+            return Response({'error': 'No se recibió ninguna imagen'}, status=400)
+
+        # Validamos que sea una imagen web friendly
+        ext = os.path.splitext(archivo.name)[1].lower()
+        if ext not in ('.png', '.jpg', '.jpeg', '.webp'):
+            return Response({'error': 'Formato no permitido. Usa PNG, JPG o WEBP'}, status=400)
+
+        # Si el producto ya tenía una foto, la borramos para no llenar el disco de basura
+        if producto.imagen:
+            producto.imagen.delete(save=False)
+
+        producto.imagen = archivo
+        producto.save()
+
+        # Devolvemos la URL absoluta para que React la pinte al instante
+        url = request.build_absolute_uri(producto.imagen.url)
+        return Response({'ok': True, 'url': url})
 
 
 # ============================================================

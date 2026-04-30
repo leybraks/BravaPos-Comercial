@@ -5,7 +5,7 @@ import { useErpDashboard } from '../features/ERP/useErpDashboard';
 // 📦 IMPORTACIÓN DE COMPONENTES MODULARIZADOS
 // ==========================================
 import Erp_DashboardVentas from '../features/ERP/Erp_DashboardVentas';
-import Erp_DashboardCartaQR from '../features/ERP/Erp_DashboardCartaQR';
+import Erp_DashboardCartaQR from '../features/ERP/DashboardCartaQR';
 import Erp_EditorMenu from '../features/ERP/Erp_EditorMenu';
 import Erp_GestionSedes from '../features/ERP/Erp_GestionSedes'; 
 import Erp_Inventario from '../features/ERP/Erp_Inventario';
