@@ -2,13 +2,17 @@ import time
 from urllib import response
 import requests
 import logging
+import os                    # ✨ NUEVO
 
 from django.conf import settings
+from django.core.files.storage import default_storage   # ✨ NUEVO
+from django.core.files.base import ContentFile          # ✨ NUEVO
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.exceptions import ValidationError
+from rest_framework.parsers import MultiPartParser, FormParser  # ✨ NUEVO
 
 from ..models import Negocio, Sede
 from ..serializers import NegocioSerializer, SedeSerializer
@@ -29,6 +33,92 @@ class NegocioViewSet(viewsets.ModelViewSet):
         if hasattr(self.request.user, 'negocio'):
             return Negocio.objects.filter(propietario=self.request.user)
         return Negocio.objects.none()
+
+    # ==========================================
+    # ✨ FIX 3 — GUARDAR CONFIGURACIÓN DE CARTA
+    # ==========================================
+    # Ruta: PATCH /api/negocios/carta_config/
+    # Body: { carta_config: { ...todos los campos del editor... } }
+    @action(detail=False, methods=['get', 'patch'], url_path='carta_config', permission_classes=[IsAuthenticated])
+    def carta_config(self, request):
+        try:
+            negocio = request.user.negocio
+        except Negocio.DoesNotExist:
+            return Response({'error': 'Negocio no encontrado'}, status=404)
+
+        # GET — devuelve la config actual
+        if request.method == 'GET':
+            return Response({
+                'carta_config': negocio.carta_config or {}
+            })
+
+        # PATCH — guarda solo los campos que lleguen, sin tocar el resto del negocio
+        if request.method == 'PATCH':
+            nueva_config = request.data.get('carta_config', {})
+            if not isinstance(nueva_config, dict):
+                return Response({'error': 'carta_config debe ser un objeto JSON'}, status=400)
+
+            # Merge: conserva claves anteriores, pisa solo las nuevas
+            config_actual = negocio.carta_config or {}
+            config_actual.update(nueva_config)
+            negocio.carta_config = config_actual
+            negocio.save(update_fields=['carta_config'])
+
+            return Response({'ok': True, 'carta_config': negocio.carta_config})
+
+    # ==========================================
+    # ✨ SUBIDA DE IMÁGENES DE CARTA
+    # ==========================================
+    # Ruta: POST /api/negocios/subir_imagen_carta/
+    # Form fields: tipo ('logo' | 'fondo'), imagen (File)
+    @action(
+        detail=False,
+        methods=['post'],
+        url_path='subir_imagen_carta',
+        permission_classes=[IsAuthenticated],
+        parser_classes=[MultiPartParser, FormParser]
+    )
+    def subir_imagen_carta(self, request):
+        try:
+            negocio = request.user.negocio
+        except Negocio.DoesNotExist:
+            return Response({'error': 'Negocio no encontrado'}, status=404)
+
+        archivo = request.FILES.get('imagen')
+        tipo    = request.data.get('tipo', 'logo')   # 'logo' o 'fondo'
+
+        if not archivo:
+            return Response({'error': 'No se recibió ningún archivo'}, status=400)
+
+        if tipo not in ('logo', 'fondo'):
+            return Response({'error': 'tipo debe ser "logo" o "fondo"'}, status=400)
+
+        # Validar extensión
+        ext = os.path.splitext(archivo.name)[1].lower()
+        if ext not in ('.png', '.jpg', '.jpeg', '.webp', '.svg'):
+            return Response({'error': 'Formato no permitido. Usa PNG, JPG, WEBP o SVG'}, status=400)
+
+        # Guardar en MEDIA: negocios/carta/{negocio_id}/{tipo}{ext}
+        # Sobreescribe el archivo anterior del mismo tipo automáticamente
+        ruta = f'negocios/carta/{negocio.id}/{tipo}{ext}'
+        default_storage.delete(ruta)                             # borra el anterior si existe
+        ruta_guardada = default_storage.save(ruta, ContentFile(archivo.read()))
+
+        # Construir URL absoluta
+        url = request.build_absolute_uri(settings.MEDIA_URL + ruta_guardada)
+
+        # Guardar la URL dentro de carta_config
+        config_actual = negocio.carta_config or {}
+        config_actual[f'{tipo}Url'] = url       # logoUrl o fondoImagenUrl
+        negocio.carta_config = config_actual
+        negocio.save(update_fields=['carta_config'])
+
+        return Response({'ok': True, 'url': url})
+
+    # ============================================================
+    # El resto de los métodos no cambia
+    # ============================================================
+
     @action(detail=False, methods=['get'], url_path='consultar_ruc/(?P<ruc>[0-9]{11})', permission_classes=[IsAuthenticated])
     def consultar_ruc(self, request, ruc=None):
         token = getattr(settings, 'APIS_NET_PE_TOKEN', None)
@@ -36,10 +126,10 @@ class NegocioViewSet(viewsets.ModelViewSet):
             return Response({'error': 'Token no configurado.'}, status=500)
         try:
             response = requests.get(
-                'https://api.decolecta.com/v1/sunat/ruc',  # ← URL de decolecta
-                params={'numero': ruc},                     # ← parámetro correcto
+                'https://api.decolecta.com/v1/sunat/ruc',
+                params={'numero': ruc},
                 headers={
-                    'Authorization': f'Bearer {token}',    # ← header correcto
+                    'Authorization': f'Bearer {token}',
                     'Accept': 'application/json',
                 },
                 timeout=8
@@ -50,8 +140,8 @@ class NegocioViewSet(viewsets.ModelViewSet):
             data = response.json()
             print(f"DATA: {data}")
             return Response({
-                'ruc':          data.get('numero_documento', ruc),  # ← camelCase
-                'razon_social': data.get('razon_social', ''),       # ← camelCase
+                'ruc':          data.get('numero_documento', ruc),
+                'razon_social': data.get('razon_social', ''),
                 'estado':       data.get('estado', 'DESCONOCIDO'),
             })
         except requests.Timeout:
@@ -59,8 +149,10 @@ class NegocioViewSet(viewsets.ModelViewSet):
         except Exception as e:
             logger.error(f"Error SUNAT RUC {ruc}: {e}")
             return Response({'error': str(e)}, status=500)
+
+
 # ============================================================
-# SEDE
+# SEDE  (sin cambios)
 # ============================================================
 
 class SedeViewSet(viewsets.ModelViewSet):
@@ -72,58 +164,40 @@ class SedeViewSet(viewsets.ModelViewSet):
         if hasattr(self.request.user, 'negocio'):
             return Sede.objects.filter(negocio=self.request.user.negocio)
         return Sede.objects.none()
-    
 
     def perform_create(self, serializer):
         negocio = self.request.user.negocio
-
         cantidad_actual = Sede.objects.filter(negocio=negocio, activo=True).count()
         limite = negocio.plan.max_sedes if negocio.plan else 1
-
         if cantidad_actual >= limite:
             raise ValidationError({
                 "detail": f"¡Límite alcanzado! Tu plan actual permite un máximo de {limite} sedes. Contáctanos para subir de plan."
             })
-
         serializer.save(negocio=negocio)
 
-    # ==========================================
-    # ✨ ENDPOINT PARA N8N (público, sin auth)
-    # ==========================================
     @action(detail=False, methods=['get'], url_path='info_bot', permission_classes=[AllowAny])
     def info_bot(self, request):
         instancia = request.query_params.get('instancia')
-
         if not instancia:
             return Response({'error': 'Falta el parámetro instancia'}, status=400)
-
         sede = Sede.objects.filter(whatsapp_instancia=instancia).first()
-
         if not sede:
             return Response({'error': 'Instancia no registrada en ninguna Sede'}, status=404)
-
         return Response({
-            'sede_id': sede.id,
-            'negocio_id': sede.negocio.id,
-            'nombre_sede': sede.nombre,
+            'sede_id':       sede.id,
+            'negocio_id':    sede.negocio.id,
+            'nombre_sede':   sede.nombre,
             'nombre_negocio': sede.negocio.nombre
         })
-
-    # ==========================================
-    # 🤖 CONTROLES DE EVOLUTION API
-    # ==========================================
 
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
     def crear_instancia_whatsapp(self, request, pk=None):
         sede = self.get_object()
         nombre_instancia = f"brava_{sede.negocio.id}_sede_{sede.id}"
-
         headers = {
             "apikey": settings.EVO_GLOBAL_KEY,
             "Content-Type": "application/json"
         }
-
-        # 💀 PASO 0: MATAR AL ZOMBIE
         url_logout = f"{settings.EVO_API_URL}/instance/logout/{nombre_instancia}"
         url_borrar = f"{settings.EVO_API_URL}/instance/delete/{nombre_instancia}"
         try:
@@ -134,7 +208,6 @@ class SedeViewSet(viewsets.ModelViewSet):
         except Exception:
             pass
 
-        # --- PASO 1: CREAR LA INSTANCIA LIMPIA ---
         url_crear = f"{settings.EVO_API_URL}/instance/create"
         payload_crear = {
             "instanceName": nombre_instancia,
@@ -143,15 +216,12 @@ class SedeViewSet(viewsets.ModelViewSet):
             "syncFullHistory": False,
             "readMessages": True
         }
-
         try:
             res_crear = requests.post(url_crear, json=payload_crear, headers=headers)
-
             if res_crear.status_code in [200, 201]:
                 data = res_crear.json()
                 qr_base64 = data.get('qrcode', {}).get('base64')
 
-                # --- PASO 2: CONFIGURAR EL WEBHOOK INMEDIATAMENTE ---
                 url_webhook_n8n = f"https://silvadata.me/n8n/webhook/9b66058c-df85-41ce-aeac-1e6a15414914?instancia={nombre_instancia}"
                 url_set_webhook = f"{settings.EVO_API_URL}/webhook/set/{nombre_instancia}"
                 payload_webhook = {
@@ -163,11 +233,9 @@ class SedeViewSet(viewsets.ModelViewSet):
                         "events": ["MESSAGES_UPSERT"]
                     }
                 }
-
                 time.sleep(1)
                 requests.post(url_set_webhook, json=payload_webhook, headers=headers)
 
-                # --- PASO 3: ASEGURAR EL QR ---
                 if not qr_base64:
                     time.sleep(2)
                     url_qr = f"{settings.EVO_API_URL}/instance/connect/{nombre_instancia}"
@@ -177,15 +245,12 @@ class SedeViewSet(viewsets.ModelViewSet):
 
                 sede.whatsapp_instancia = nombre_instancia
                 sede.save()
-
                 return Response({
                     "mensaje": "Instancia creada y Webhook armado",
                     "instancia": nombre_instancia,
                     "qr_base64": qr_base64
                 })
-
             return Response({"error": res_crear.json()}, status=res_crear.status_code)
-
         except Exception as e:
             return Response({"error": str(e)}, status=500)
 
@@ -194,10 +259,8 @@ class SedeViewSet(viewsets.ModelViewSet):
         sede = self.get_object()
         if not sede.whatsapp_instancia:
             return Response({"error": "La sede no tiene instancia vinculada"}, status=400)
-
         url = f"{settings.EVO_API_URL}/instance/connect/{sede.whatsapp_instancia}"
         headers = {"apikey": settings.EVO_GLOBAL_KEY}
-
         try:
             response = requests.get(url, headers=headers)
             if response.status_code == 200:
@@ -210,23 +273,18 @@ class SedeViewSet(viewsets.ModelViewSet):
     def eliminar_instancia(self, request, pk=None):
         sede = self.get_object()
         instancia_nombre = sede.whatsapp_instancia
-
         if not instancia_nombre:
             return Response({"mensaje": "No hay instancia activa en la base de datos"}, status=200)
-
         url = f"{settings.EVO_API_URL}/instance/delete/{instancia_nombre}"
         headers = {"apikey": settings.EVO_GLOBAL_KEY}
-
         try:
             response = requests.delete(url, headers=headers)
             print(f"DEBUG Evolution Delete: {response.status_code} - {response.text}")
         except Exception as e:
             print(f"Error de conexión con Evolution API: {e}")
-
         sede.whatsapp_instancia = None
         sede.whatsapp_numero = None
         sede.save()
-
         return Response({
             "mensaje": "Conexión desconectada localmente",
             "info_api": "Instancia removida del servidor o ya no existía"
@@ -237,21 +295,16 @@ class SedeViewSet(viewsets.ModelViewSet):
         sede = self.get_object()
         if not sede.whatsapp_instancia:
             return Response({"estado": "desconectado"})
-
         url = f"{settings.EVO_API_URL}/instance/connectionState/{sede.whatsapp_instancia}"
         headers = {"apikey": settings.EVO_GLOBAL_KEY}
-
         try:
             response = requests.get(url, headers=headers)
-
             if response.status_code == 200:
                 data = response.json()
                 estado_evo = data.get("instance", {}).get("state", "")
-
                 if estado_evo == "open":
                     return Response({"estado": "conectado"})
                 return Response({"estado": "esperando"})
-
             return Response({"estado": "desconectado"})
         except Exception as e:
             return Response({"error": str(e)}, status=500)

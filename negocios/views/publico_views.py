@@ -37,6 +37,7 @@ def menu_publico(request, sede_id):
         categorias = Categoria.objects.filter(id__in=categorias_ids)
         return Response({
             'negocio_nombre': sede.negocio.nombre,
+            'carta_config': sede.negocio.carta_config or {},  # ← LÍNEA AGREGADA AQUÍ
             'productos': ProductoSerializer(productos, many=True).data,
             'categorias': CategoriaSerializer(categorias, many=True).data,
         })

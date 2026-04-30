@@ -83,6 +83,11 @@ class Negocio(models.Model):
     color_primario = models.CharField(max_length=7, default='#ff5a1f') # Naranja Brava por defecto
     tema_fondo = models.CharField(max_length=10, default='dark') # 'dark' o 'light'
     
+    carta_config = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Configuración visual de la carta digital (fuentes, fondos, colores, estilos)"
+    )
     def __str__(self):
         return self.nombre
 

@@ -8,17 +8,16 @@ export default function ModalModificadores({
   onGuardar, 
   tema, 
   colorPrimario,
-  onRecargar // ✅ NUEVO: callback para recargar después de guardar
+  onRecargar 
 }) {
   const isDark = tema === 'dark';
   const [editando, setEditando] = useState(null);
   const [formData, setFormData] = useState({ 
     nombre: '', 
-    precio: '', // ✅ CAMBIADO: vacío por defecto en vez de '0.00'
+    precio: '', 
     categorias_aplicables: [] 
   });
 
-  // ✅ Resetear formulario cuando se cierra el modal
   useEffect(() => {
     if (!isOpen) {
       setEditando(null);
@@ -42,20 +41,28 @@ export default function ModalModificadores({
     setFormData({
       id: mod.id,
       nombre: mod.nombre,
-      precio: mod.precio || '', // ✅ Mostrar precio existente o vacío
+      precio: mod.precio || '', 
       categorias_aplicables: Array.isArray(mod.categorias_aplicables) 
         ? mod.categorias_aplicables 
         : []
     });
+    
+    // Opcional: Hacer scroll suave hacia el formulario en versión móvil
+    if (window.innerWidth < 768) {
+      document.getElementById('form-modificadores')?.scrollIntoView({ behavior: 'smooth' });
+    }
   };
 
   const manejarNuevo = () => {
     setEditando(null);
     setFormData({ nombre: '', precio: '', categorias_aplicables: [] });
+    
+    if (window.innerWidth < 768) {
+      document.getElementById('form-modificadores')?.scrollIntoView({ behavior: 'smooth' });
+    }
   };
 
   const validarYGuardar = async () => {
-    // ✅ Validaciones
     if (!formData.nombre.trim()) {
       alert('⚠️ El nombre del modificador es obligatorio');
       return;
@@ -66,7 +73,6 @@ export default function ModalModificadores({
       return;
     }
 
-    // ✅ Si el precio está vacío, usar 0.00 por defecto
     const precioParaEnviar = formData.precio.trim() === '' ? '0.00' : formData.precio;
     const precioNum = parseFloat(precioParaEnviar);
     
@@ -75,46 +81,50 @@ export default function ModalModificadores({
       return;
     }
 
-    // ✅ Guardar y esperar a que termine
     await onGuardar({
       ...formData,
       precio: precioNum.toFixed(2)
     });
 
-    // ✅ Resetear formulario después de guardar exitosamente
     setEditando(null);
     setFormData({ nombre: '', precio: '', categorias_aplicables: [] });
 
-    // ✅ NUEVO: Llamar al callback para recargar la lista
     if (onRecargar) {
       onRecargar();
+    }
+    
+    // Regresar arriba en móvil tras guardar
+    if (window.innerWidth < 768) {
+      document.getElementById('contenedor-scroll')?.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[110] p-4 animate-fadeIn">
-      <div className={`w-full max-w-4xl h-[85vh] rounded-[2.5rem] shadow-2xl border overflow-hidden flex flex-col ${
+    // ✅ MODIFICACIÓN: p-0 en móvil para que ocupe todo, p-4 en pantallas más grandes
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[110] p-0 sm:p-4 animate-fadeIn">
+      {/* ✅ MODIFICACIÓN: h-full y rounded-none en móvil. 85vh y rounded-[2.5rem] en md */}
+      <div className={`w-full max-w-4xl h-full sm:h-[85vh] rounded-none sm:rounded-[2.5rem] shadow-2xl border overflow-hidden flex flex-col ${
         isDark ? 'bg-[#0d0d0d] border-[#222]' : 'bg-white border-gray-200'
       }`}>
         
         {/* CABECERA */}
-        <div className={`p-8 border-b flex justify-between items-center ${isDark ? 'border-[#222] bg-[#111]' : 'border-gray-100 bg-gray-50'}`}>
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg" style={{ backgroundColor: `${colorPrimario}15`, color: colorPrimario }}>
-              <i className="fi fi-rr-settings-sliders text-2xl mt-1"></i>
+        <div className={`p-5 md:p-8 border-b flex justify-between items-center shrink-0 ${isDark ? 'border-[#222] bg-[#111]' : 'border-gray-100 bg-gray-50'}`}>
+          <div className="flex items-center gap-3 md:gap-4">
+            <div className="w-10 h-10 md:w-12 md:h-12 rounded-2xl flex items-center justify-center shadow-lg shrink-0" style={{ backgroundColor: `${colorPrimario}15`, color: colorPrimario }}>
+              <i className="fi fi-rr-settings-sliders text-xl md:text-2xl mt-1"></i>
             </div>
             <div>
-              <h2 className={`text-2xl font-black tracking-tighter ${isDark ? 'text-white' : 'text-gray-900'}`}>
+              <h2 className={`text-lg md:text-2xl font-black tracking-tighter ${isDark ? 'text-white' : 'text-gray-900'}`}>
                 Modificadores Rápidos
               </h2>
-              <p className="text-[10px] font-black uppercase tracking-[0.2em] mt-1 text-neutral-500">
-                Extras y especificaciones por categoría
+              <p className="text-[9px] md:text-[10px] font-black uppercase tracking-[0.2em] mt-0.5 md:mt-1 text-neutral-500 line-clamp-1">
+                Extras por categoría
               </p>
             </div>
           </div>
           <button 
             onClick={onClose} 
-            className={`w-10 h-10 rounded-xl flex items-center justify-center border transition-all ${
+            className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center border transition-all shrink-0 ${
               isDark ? 'border-[#333] text-neutral-500 hover:text-white hover:bg-[#1a1a1a]' : 'border-gray-200 text-gray-500 hover:text-gray-900 hover:bg-gray-50'
             }`}
           >
@@ -122,12 +132,15 @@ export default function ModalModificadores({
           </button>
         </div>
 
-        <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+        {/* ✅ MODIFICACIÓN: En móvil el scroll es general (overflow-y-auto en el padre), en md el scroll se divide */}
+        <div id="contenedor-scroll" className="flex-1 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden">
+          
           {/* LISTADO IZQUIERDA */}
-          <div className={`w-full md:w-1/2 p-6 overflow-y-auto border-r ${isDark ? 'border-[#222]' : 'border-gray-100'}`}>
-            <div className="flex justify-between items-center mb-4 px-2">
+          {/* ✅ MODIFICACIÓN: border-b en móvil, border-r en md. Sin height fijo. */}
+          <div className={`w-full md:w-1/2 p-5 md:p-6 border-b md:border-b-0 md:border-r md:overflow-y-auto shrink-0 md:shrink ${isDark ? 'border-[#222]' : 'border-gray-100'}`}>
+            <div className="flex justify-between items-center mb-4 px-1 md:px-2">
               <h4 className="text-[10px] font-black uppercase tracking-widest text-neutral-500">
-                Modificadores Existentes ({modificadores.length})
+                Existentes ({modificadores.length})
               </h4>
               <button 
                 onClick={manejarNuevo}
@@ -139,7 +152,7 @@ export default function ModalModificadores({
             </div>
 
             {modificadores.length === 0 ? (
-              <div className={`p-8 text-center rounded-2xl border ${isDark ? 'bg-[#141414] border-[#222]' : 'bg-gray-50 border-gray-100'}`}>
+              <div className={`p-6 md:p-8 text-center rounded-2xl border ${isDark ? 'bg-[#141414] border-[#222]' : 'bg-gray-50 border-gray-100'}`}>
                 <div className="text-4xl mb-3">🔧</div>
                 <p className={`text-sm font-bold ${isDark ? 'text-neutral-400' : 'text-gray-500'}`}>
                   Aún no hay modificadores
@@ -164,15 +177,15 @@ export default function ModalModificadores({
                       backgroundColor: `${colorPrimario}05` 
                     } : {}}
                   >
-                    <div>
-                      <p className={`font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                    <div className="pr-3">
+                      <p className={`font-bold text-sm md:text-base ${isDark ? 'text-white' : 'text-gray-900'}`}>
                         {mod.nombre}
                       </p>
-                      <p className="text-[10px] font-medium text-neutral-500 uppercase mt-0.5">
+                      <p className="text-[9px] md:text-[10px] font-medium text-neutral-500 uppercase mt-0.5">
                         {Array.isArray(mod.categorias_aplicables) ? mod.categorias_aplicables.length : 0} Categorías
                       </p>
                     </div>
-                    <span className="font-mono font-black" style={{ color: colorPrimario }}>
+                    <span className="font-mono font-black shrink-0 text-sm md:text-base" style={{ color: colorPrimario }}>
                       +S/ {parseFloat(mod.precio || 0).toFixed(2)}
                     </span>
                   </button>
@@ -182,21 +195,22 @@ export default function ModalModificadores({
           </div>
 
           {/* FORMULARIO DERECHA */}
-          <div className={`flex-1 p-6 overflow-y-auto ${isDark ? 'bg-black/10' : 'bg-gray-50/50'}`}>
-            <h4 className="text-[10px] font-black uppercase tracking-widest text-neutral-500 mb-6 px-2">
+          {/* ✅ MODIFICACIÓN: flex-1 para que se adapte. ID agregado para el scroll en móvil */}
+          <div id="form-modificadores" className={`w-full md:flex-1 p-5 md:p-6 md:overflow-y-auto shrink-0 md:shrink ${isDark ? 'bg-black/10' : 'bg-gray-50/50'}`}>
+            <h4 className="text-[10px] font-black uppercase tracking-widest text-neutral-500 mb-5 md:mb-6 px-1 md:px-2">
               {editando ? `Editando: ${editando.nombre}` : 'Nuevo Modificador'}
             </h4>
             
-            <div className="space-y-6">
+            <div className="space-y-5 md:space-y-6">
               <div>
-                <label className="text-[10px] font-black uppercase tracking-widest text-neutral-500 mb-2 block px-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-neutral-500 mb-2 block px-1 md:px-2">
                   Nombre del Extra *
                 </label>
                 <input 
                   type="text"
                   value={formData.nombre}
                   onChange={e => setFormData({...formData, nombre: e.target.value})}
-                  className={`w-full rounded-2xl py-4 px-5 font-bold outline-none border-2 transition-all ${
+                  className={`w-full rounded-2xl py-3.5 md:py-4 px-4 md:px-5 font-bold outline-none border-2 transition-all ${
                     isDark 
                       ? 'bg-[#161616] border-[#222] text-white focus:border-[#444]' 
                       : 'bg-white border-gray-100 text-gray-900 focus:border-gray-300'
@@ -206,7 +220,7 @@ export default function ModalModificadores({
               </div>
 
               <div>
-                <label className="text-[10px] font-black uppercase tracking-widest text-neutral-500 mb-2 block px-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-neutral-500 mb-2 block px-1 md:px-2">
                   Precio Adicional (S/)
                 </label>
                 <input 
@@ -215,16 +229,16 @@ export default function ModalModificadores({
                   min="0"
                   value={formData.precio}
                   onChange={e => setFormData({...formData, precio: e.target.value})}
-                  placeholder="0.00" // ✅ AHORA ES PLACEHOLDER
-                  className="w-full rounded-2xl py-4 px-5 font-black font-mono text-2xl outline-none border-2 bg-emerald-500/5 border-emerald-500/20 text-emerald-500 focus:border-emerald-500/40 transition-all placeholder:text-emerald-500/30"
+                  placeholder="0.00" 
+                  className="w-full rounded-2xl py-3.5 md:py-4 px-4 md:px-5 font-black font-mono text-xl md:text-2xl outline-none border-2 bg-emerald-500/5 border-emerald-500/20 text-emerald-500 focus:border-emerald-500/40 transition-all placeholder:text-emerald-500/30"
                 />
-                <p className="text-[9px] text-neutral-500 mt-2 px-2">
+                <p className="text-[9px] text-neutral-500 mt-2 px-1 md:px-2 leading-relaxed">
                   💡 Si dejas vacío, se guardará como S/ 0.00 (sin costo adicional)
                 </p>
               </div>
 
               <div>
-                <label className="text-[10px] font-black uppercase tracking-widest text-neutral-500 mb-3 block px-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-neutral-500 mb-3 block px-1 md:px-2">
                   ¿A qué categorías aplica? *
                 </label>
                 {categorias.length === 0 ? (
@@ -234,7 +248,8 @@ export default function ModalModificadores({
                     </p>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-2 gap-2">
+                  // ✅ MODIFICACIÓN: grid-cols-1 en pantallas muy pequeñas, sm:grid-cols-2
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {categorias.map(cat => (
                       <button
                         key={cat.id}
@@ -242,7 +257,7 @@ export default function ModalModificadores({
                         onClick={() => manejarSeleccionCategoria(cat.id)}
                         className={`p-3 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all ${
                           formData.categorias_aplicables.includes(cat.id)
-                            ? 'bg-blue-500 border-blue-500 text-white shadow-lg scale-105'
+                            ? 'bg-blue-500 border-blue-500 text-white shadow-lg sm:scale-105'
                             : isDark 
                               ? 'bg-[#1a1a1a] border-[#333] text-neutral-500 hover:border-[#444]' 
                               : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
@@ -255,26 +270,28 @@ export default function ModalModificadores({
                 )}
               </div>
 
-              <button 
-                onClick={validarYGuardar}
-                style={{ backgroundColor: colorPrimario }}
-                className="w-full py-5 rounded-2xl text-white font-black uppercase tracking-widest shadow-xl hover:scale-105 active:scale-95 transition-all mt-4"
-              >
-                {editando ? '💾 Actualizar Cambios' : '✨ Guardar Modificador'}
-              </button>
-
-              {editando && (
+              <div className="pt-2 pb-6 md:pb-0">
                 <button 
-                  onClick={manejarNuevo}
-                  className={`w-full py-4 rounded-2xl font-bold uppercase tracking-wider border transition-all ${
-                    isDark 
-                      ? 'bg-[#1a1a1a] border-[#333] text-neutral-400 hover:bg-[#222]' 
-                      : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
-                  }`}
+                  onClick={validarYGuardar}
+                  style={{ backgroundColor: colorPrimario }}
+                  className="w-full py-4 md:py-5 rounded-xl md:rounded-2xl text-white text-sm md:text-base font-black uppercase tracking-widest shadow-xl hover:scale-[1.02] active:scale-95 transition-all"
                 >
-                  ✖ Cancelar Edición
+                  {editando ? '💾 Actualizar' : '✨ Guardar'}
                 </button>
-              )}
+
+                {editando && (
+                  <button 
+                    onClick={manejarNuevo}
+                    className={`w-full py-3.5 md:py-4 mt-3 rounded-xl md:rounded-2xl text-xs md:text-sm font-bold uppercase tracking-wider border transition-all ${
+                      isDark 
+                        ? 'bg-[#1a1a1a] border-[#333] text-neutral-400 hover:bg-[#222]' 
+                        : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    ✖ Cancelar
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>

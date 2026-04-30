@@ -38,9 +38,16 @@ export default function TabInfo({ c, colorPrimario, formSede, setFormSede, guard
   const isDark = tema === 'dark';
   const [localizando, setLocalizando] = useState(false);
 
-  // ✨ Función para forzar ubicación de alta precisión
+  // ✨ Función mejorada para manejar errores de ubicación
   const obtenerUbicacionPrecisa = () => {
     setLocalizando(true);
+
+    if (!navigator.geolocation) {
+      setLocalizando(false);
+      alert("Tu navegador no soporta la geolocalización.");
+      return;
+    }
+
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setFormSede(prev => ({
@@ -51,9 +58,23 @@ export default function TabInfo({ c, colorPrimario, formSede, setFormSede, guard
         setLocalizando(false);
       },
       (error) => {
-        console.error("Error de GPS:", error);
         setLocalizando(false);
-        alert("No pudimos obtener tu ubicación exacta. Por favor, fíjala manualmente en el mapa.");
+        let mensajeError = "No pudimos obtener tu ubicación exacta. Fíjala manualmente en el mapa.";
+        
+        switch(error.code) {
+          case 1: // PERMISSION_DENIED
+            mensajeError = "⚠️ Permiso denegado. Debes permitir el acceso a la ubicación en tu navegador.";
+            break;
+          case 2: // POSITION_UNAVAILABLE
+            mensajeError = "📍 Ubicación no disponible. Verifica que tu dispositivo tenga el GPS encendido o conexión a red.";
+            break;
+          case 3: // TIMEOUT
+            mensajeError = "⏳ Se agotó el tiempo de espera al intentar ubicarte. Inténtalo de nuevo.";
+            break;
+        }
+        
+        console.warn("Geolocalización falló (Código " + error.code + "):", error.message);
+        alert(mensajeError);
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
