@@ -3,11 +3,18 @@ import usePosStore from '../../store/usePosStore';
 import { getInsumosSede, getCatalogoGlobal, getSedes, registrarIngresoMasivo } from '../../api/api';
 import ModalIngresoMercaderia from '../../components/modals/ModalIngresoMercaderia';
 import ModalNuevoInsumoBase from '../../components/modals/ModalNuevoInsumoBase';
+import { 
+  Building2, BookOpen, Search, PackageX, Plus, Truck, 
+  Hand, ArrowLeft, ArrowDownToLine, ShoppingCart, 
+  AlertTriangle, Database, CheckCircle2, ChevronRight
+} from 'lucide-react';
 
 export default function InventarioView() {
   const { configuracionGlobal } = usePosStore();
+  const colorPrimario = configuracionGlobal?.colorPrimario || '#ff5a1f';
+  const temaFondo = configuracionGlobal?.temaFondo || 'dark';
+  const isDark = temaFondo === 'dark';
   const config = configuracionGlobal || { temaFondo: 'dark', colorPrimario: '#ff5a1f' };
-  
   // ==========================================
   // 🛡️ SEGURIDAD DE ROLES
   // ==========================================
@@ -37,7 +44,6 @@ export default function InventarioView() {
       setSedes(resSedes.data);
       setCatalogo(resCatalogo.data);
 
-      // ✨ MAGIA DE ROLES: Si es Admin, lo encerramos en su sede instantáneamente
       if (!esDueño) {
         const miSede = resSedes.data.find(s => String(s.id) === String(sedeAdminId));
         if (miSede) setSedeActiva(miSede);
@@ -117,71 +123,91 @@ export default function InventarioView() {
   return (
     <div className="animate-fadeIn space-y-8 max-w-7xl mx-auto p-4 md:p-8 pb-24">
       
-      {/* 🚀 HEADER ADAPTATIVO */}
-      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-end gap-6 bg-gradient-to-br from-[#111] to-[#0a0a0a] p-8 rounded-[2rem] border border-[#222] shadow-2xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-[#ff5a1f] opacity-5 blur-[100px] rounded-full pointer-events-none"></div>
+      {/* ========== 🏗️ 1. CABECERA INTEGRADA ========== */}
+      <div className="flex flex-col xl:flex-row justify-between xl:items-center gap-6 pt-2 pb-6 border-b" style={{ borderColor: isDark ? '#222' : '#e5e7eb' }}>
+        
+        {/* ✨ Título e Ícono */}
+        <div className="flex items-center gap-5">
+          <div 
+            className="w-16 h-16 rounded-2xl flex items-center justify-center shrink-0"
+            style={{ backgroundColor: colorPrimario + '15', color: colorPrimario }}
+          >
+            {/* Usamos Lucide, pero con tu contenedor de color translúcido */}
+            <Database size={32} strokeWidth={1.5} />
+          </div>
+          <div>
+            <h2 className={`text-2xl font-black tracking-tight ${isDark ? 'text-white' : 'text-gray-900'}`}>
+              {esDueño ? (
+                <>Almacén <span style={{ color: colorPrimario }}>Central</span></>
+              ) : (
+                <>Inventario <span style={{ color: colorPrimario }}>Local</span></>
+              )}
+            </h2>
+            <p className={`text-sm mt-1 ${isDark ? 'text-neutral-400' : 'text-gray-500'}`}>
+              {esDueño ? 'Visión global de tus locales y catálogo de ingredientes.' : 'Audita y solicita el stock necesario para tu sede.'}
+            </p>
+          </div>
+        </div>
 
-        <div className="z-10">
-          <h2 className="text-4xl font-black text-white tracking-tighter mb-1">
-            {esDueño ? (
-              <>Almacén <span style={{ color: config.colorPrimario }}>Central</span></>
-            ) : (
-              <>Inventario <span style={{ color: config.colorPrimario }}>Local</span></>
-            )}
-          </h2>
-          <p className="text-neutral-400 font-medium mb-6">
-            {esDueño ? 'Visión global de tus locales y catálogo de ingredientes.' : 'Audita y solicita el stock necesario para tu sede.'}
-          </p>
+        {/* ✨ CONTROLES DE DUEÑO (TABS Y BOTONES) */}
+        <div className="flex flex-col sm:flex-row gap-3 shrink-0">
           
-          {/* ✨ SOLO EL DUEÑO PUEDE ALTERNAR ENTRE LOCALES Y CATÁLOGO */}
+          {/* TABS DE NAVEGACIÓN */}
           {esDueño && (
-            <div className="flex bg-[#1a1a1a] p-1.5 rounded-2xl border border-[#333] w-fit">
+            <div className={`flex p-1.5 rounded-xl border ${isDark ? 'bg-[#111] border-[#222]' : 'bg-gray-100 border-gray-200'}`}>
               <button 
                 onClick={() => { setTab('locales'); setSedeActiva(null); setBusqueda(''); }}
-                className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${tab === 'locales' ? 'bg-[#333] text-white shadow-md' : 'text-neutral-500 hover:text-white'}`}
+                className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-widest transition-all flex items-center gap-2 ${
+                  tab === 'locales' 
+                    ? (isDark ? 'bg-[#222] text-white shadow-md' : 'bg-white text-gray-900 shadow-sm border border-gray-200') 
+                    : (isDark ? 'text-neutral-500 hover:text-white' : 'text-gray-500 hover:text-gray-900')
+                }`}
               >
-                🏢 Locales (Sedes)
+                <Building2 size={16} /> Locales
               </button>
               <button 
                 onClick={() => { setTab('catalogo'); setSedeActiva(null); setBusqueda(''); }}
-                className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${tab === 'catalogo' ? 'bg-[#333] text-white shadow-md' : 'text-neutral-500 hover:text-white'}`}
+                className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-widest transition-all flex items-center gap-2 ${
+                  tab === 'catalogo' 
+                    ? (isDark ? 'bg-[#222] text-white shadow-md' : 'bg-white text-gray-900 shadow-sm border border-gray-200') 
+                    : (isDark ? 'text-neutral-500 hover:text-white' : 'text-gray-500 hover:text-gray-900')
+                }`}
               >
-                📖 Catálogo Maestro
+                <BookOpen size={16} /> Catálogo
               </button>
             </div>
           )}
-        </div>
 
-        {/* BOTONES CONTEXTUALES */}
-        <div className="flex flex-col sm:flex-row gap-3 w-full xl:w-auto z-10">
+          {/* BOTONES DE ACCIÓN PRINCIPAL */}
           {tab === 'catalogo' && esDueño && (
             <button 
               onClick={() => setModalBaseOpen(true)}
-              className="flex-1 sm:flex-none border border-[#333] bg-[#161616] text-white px-6 py-4 rounded-2xl font-bold hover:bg-[#222] transition-all flex items-center justify-center gap-2 shadow-lg"
+              className={`px-6 py-3 rounded-xl font-bold text-xs uppercase tracking-widest transition-all border flex items-center justify-center gap-2 ${
+                isDark ? 'bg-[#1a1a1a] hover:bg-[#222] text-neutral-300 border-[#333]' : 'bg-gray-50 hover:bg-gray-100 text-gray-700 border-gray-200'
+              }`}
             >
-              <span className="text-xl">+</span> Definir Insumo Base
+              <Plus size={16} /> Insumo Base
             </button>
           )}
           
           {tab === 'locales' && esDueño && (
             <button 
               onClick={() => setModalCompraOpen(true)}
-              style={{ backgroundColor: config.colorPrimario }}
-              className="flex-1 sm:flex-none text-white px-8 py-4 rounded-2xl font-bold shadow-xl hover:brightness-110 active:scale-95 transition-all flex items-center justify-center gap-2"
+              style={{ backgroundColor: colorPrimario }}
+              className="px-6 py-3 rounded-xl text-white font-black text-xs uppercase tracking-widest shadow-lg transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-2"
             >
-              🚚 Distribución Masiva
+              <Truck size={16} /> Distribución
             </button>
           )}
 
-          {/* ✨ BOTÓN DEL ADMINISTRADOR (Placeholder por ahora) */}
           {!esDueño && (
-             <button 
-             onClick={() => alert("Módulo de 'Solicitudes a Matriz' en construcción 🚧")}
-             style={{ backgroundColor: config.colorPrimario }}
-             className="flex-1 sm:flex-none text-white px-8 py-4 rounded-2xl font-bold shadow-xl hover:brightness-110 active:scale-95 transition-all flex items-center justify-center gap-2"
-           >
-             🙋‍♂️ Solicitar Insumos
-           </button>
+            <button 
+              onClick={() => alert("Módulo de 'Solicitudes a Matriz' en construcción 🚧")}
+              style={{ backgroundColor: colorPrimario }}
+              className="px-6 py-3 rounded-xl text-white font-black text-xs uppercase tracking-widest shadow-lg transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-2"
+            >
+              <Hand size={16} /> Pedir Insumos
+            </button>
           )}
         </div>
       </div>
@@ -189,18 +215,27 @@ export default function InventarioView() {
       {/* 🏙️ VISTA 1: LA CIUDAD (SOLO DUEÑO) */}
       {tab === 'locales' && !sedeActiva && esDueño && (
         <div className="animate-fadeIn">
-          <h3 className="text-xl font-black text-white mb-6 tracking-tight">Selecciona un Local para auditar:</h3>
+          <h3 className="text-xl font-black text-white mb-6 tracking-tight flex items-center gap-2">
+            <Building2 size={24} className="text-neutral-500" />
+            Selecciona un Local para auditar:
+          </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {sedes.map(sede => (
               <div 
                 key={sede.id} 
                 onClick={() => setSedeActiva(sede)}
-                className="cursor-pointer bg-[#161616] border border-[#2a2a2a] p-8 rounded-[2rem] hover:border-[#ff5a1f] hover:-translate-y-2 transition-all duration-300 group relative overflow-hidden"
+                className="cursor-pointer bg-[#161616] border border-[#2a2a2a] p-8 rounded-[2rem] hover:border-[#ff5a1f] hover:-translate-y-2 transition-all duration-300 group relative overflow-hidden flex flex-col items-center text-center"
               >
-                <div className="absolute -right-4 -bottom-4 text-8xl opacity-5 group-hover:opacity-10 transition-opacity">🏢</div>
-                <div className="w-16 h-16 rounded-2xl bg-[#111] border border-[#222] flex items-center justify-center text-3xl mb-6 shadow-inner">🏢</div>
-                <h3 className="text-3xl font-black text-white group-hover:text-[#ff5a1f] transition-colors">{sede.nombre}</h3>
-                <p className="text-neutral-500 font-medium mt-2">Auditar y asignar inventario →</p>
+                <div className="absolute -right-8 -bottom-8 text-neutral-800 opacity-20 group-hover:opacity-40 transition-opacity">
+                  <Building2 size={180} />
+                </div>
+                <div className="w-20 h-20 rounded-2xl bg-[#111] border border-[#222] flex items-center justify-center mb-6 shadow-inner relative z-10 group-hover:scale-110 transition-transform duration-300">
+                  <Building2 size={36} className="text-neutral-400 group-hover:text-[#ff5a1f] transition-colors" />
+                </div>
+                <h3 className="text-2xl font-black text-white group-hover:text-[#ff5a1f] transition-colors relative z-10">{sede.nombre}</h3>
+                <p className="text-neutral-500 font-medium mt-3 flex items-center gap-1 relative z-10">
+                  Auditar inventario <ChevronRight size={16} />
+                </p>
               </div>
             ))}
           </div>
@@ -213,39 +248,44 @@ export default function InventarioView() {
           
           {sedeActiva && (
             <div className="flex items-center gap-4 border-b border-[#222] pb-6">
-              {/* ✨ SOLO EL DUEÑO PUEDE RETROCEDER, EL ADMIN ESTÁ ATRAPADO AQUÍ */}
               {esDueño && (
                 <button 
                   onClick={() => { setSedeActiva(null); setBusqueda(''); }}
                   className="w-12 h-12 rounded-full bg-[#161616] border border-[#333] flex items-center justify-center text-white hover:bg-[#ff5a1f] hover:border-[#ff5a1f] transition-all shrink-0"
-                >←</button>
+                >
+                  <ArrowLeft size={20} />
+                </button>
               )}
               <div>
-                <p className="text-xs font-black text-[#ff5a1f] uppercase tracking-widest">Inventario Local</p>
-                <h3 className="text-2xl font-black text-white">Sede: {sedeActiva.nombre}</h3>
+                <p className="text-xs font-black text-[#ff5a1f] uppercase tracking-widest flex items-center gap-1">
+                  <Building2 size={12} /> Inventario Local
+                </p>
+                <h3 className="text-2xl font-black text-white">{sedeActiva.nombre}</h3>
               </div>
             </div>
           )}
 
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-neutral-500">🔍</div>
+          <div className="relative group">
+            <div className="absolute inset-y-0 left-0 pl-5 flex items-center pointer-events-none text-neutral-500 group-focus-within:text-[#ff5a1f] transition-colors">
+              <Search size={20} />
+            </div>
             <input 
               type="text" 
               placeholder={`Buscar en ${tab === 'catalogo' ? 'la Matriz' : sedeActiva?.nombre}...`} 
               value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
-              className="w-full bg-[#111] border border-[#333] text-white pl-12 pr-4 py-4 rounded-2xl focus:outline-none focus:border-[#ff5a1f] transition-colors font-medium shadow-inner"
+              className="w-full bg-[#111] border border-[#2a2a2a] text-white pl-14 pr-4 py-4 rounded-2xl focus:outline-none focus:border-[#ff5a1f] transition-colors font-medium shadow-inner placeholder-neutral-600"
             />
           </div>
 
           {cargando ? (
             <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-4 gap-6 animate-pulse">
-              {[1, 2, 3, 4].map(i => <div key={i} className="h-56 bg-[#111] rounded-[2rem] border border-[#222]" />)}
+              {[1, 2, 3, 4, 5, 6].map(i => <div key={i} className="h-64 bg-[#111] rounded-[2rem] border border-[#222]" />)}
             </div>
           ) : itemsFiltrados.length === 0 ? (
-            <div className="bg-[#111] border border-[#222] rounded-[2rem] p-16 text-center">
-              <div className="text-6xl mb-4">🕵️‍♂️</div>
+            <div className="bg-[#111] border border-[#222] rounded-[2rem] p-16 text-center flex flex-col items-center">
+              <PackageX size={64} className="text-neutral-700 mb-6" />
               <h3 className="text-xl font-black text-white mb-2">Sin resultados</h3>
-              <p className="text-neutral-500">No se encontraron insumos.</p>
+              <p className="text-neutral-500">No se encontraron insumos con esa descripción.</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -256,7 +296,7 @@ export default function InventarioView() {
                   isStock={!!sedeActiva} 
                   config={config} 
                   onTransferir={sedeActiva ? handleTransferirDeMatriz : handleIngresarAMatriz}
-                  esDueño={esDueño} // ✨ Pasamos el rol a la tarjeta
+                  esDueño={esDueño} 
                 />
               ))}
             </div>
@@ -264,7 +304,6 @@ export default function InventarioView() {
         </div>
       )}
 
-      {/* MODALES */}
       <ModalIngresoMercaderia isOpen={modalCompraOpen} onClose={() => setModalCompraOpen(false)} sedes={sedes} onSuccess={refrescarDatos} config={config}/>
       <ModalNuevoInsumoBase isOpen={modalBaseOpen} onClose={() => setModalBaseOpen(false)} onSuccess={refrescarDatos} config={config}/>
     </div>
@@ -294,53 +333,64 @@ function InsumoCard({ item, isStock, config, onTransferir, esDueño }) {
   };
 
   return (
-    <div className="bg-[#161616] border border-[#2a2a2a] p-6 rounded-[2rem] hover:border-[#444] hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between">
+    <div className={`bg-[#161616] border p-6 rounded-[2rem] flex flex-col justify-between transition-all duration-300 relative overflow-hidden ${esCritico ? 'border-red-500/30 hover:border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.05)]' : 'border-[#2a2a2a] hover:border-[#444] hover:-translate-y-1'}`}>
       
-      <div>
+      {/* Fondo sutil si es crítico */}
+      {esCritico && (
+        <div className="absolute top-0 left-0 w-full h-full bg-red-500/5 pointer-events-none"></div>
+      )}
+
+      <div className="relative z-10">
         <div className="flex justify-between items-start mb-4">
-          <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full ${isStock ? (esCritico ? 'bg-red-500/10 text-red-500' : 'bg-green-500/10 text-green-500') : 'bg-[#ff5a1f]/10 text-[#ff5a1f]'}`}>
-            {isStock ? (esCritico ? 'Alerta Stock' : 'Stock Local') : 'Stock en Matriz'}
+          <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full flex items-center gap-1.5 ${isStock ? (esCritico ? 'bg-red-500/10 text-red-500 border border-red-500/20' : 'bg-green-500/10 text-green-500 border border-green-500/20') : 'bg-[#ff5a1f]/10 text-[#ff5a1f] border border-[#ff5a1f]/20'}`}>
+            {isStock ? (
+              esCritico ? <><AlertTriangle size={12}/> Alerta Stock</> : <><CheckCircle2 size={12}/> Stock Local</>
+            ) : (
+              <><Database size={12}/> Stock en Matriz</>
+            )}
           </span>
         </div>
         
-        <h4 className="text-xl font-black text-white leading-tight truncate">{nombre}</h4>
+        <h4 className="text-xl font-black text-white leading-tight line-clamp-2" title={nombre}>{nombre}</h4>
         
         <div className="mt-4">
-          <p className="text-4xl font-mono font-black text-white tracking-tighter">
+          <p className="text-5xl font-mono font-black text-white tracking-tighter">
             {stockMostrar}
-            <span className="text-sm font-sans text-neutral-500 font-bold ml-1">{unidad}</span>
+            <span className="text-sm font-sans text-neutral-500 font-bold ml-2 uppercase tracking-wider">{unidad}</span>
           </p>
         </div>
       </div>
 
       {isStock ? (
-        <div className="mt-6 space-y-4">
+        <div className="mt-6 space-y-5 relative z-10">
           <div className="space-y-2">
-            <div className="flex justify-between text-[10px] font-bold text-neutral-500 uppercase">
+            <div className="flex justify-between text-[11px] font-bold text-neutral-500 uppercase">
               <span>Mín: {min}</span>
               <span>Nivel</span>
             </div>
-            <div className="w-full h-1.5 bg-[#0a0a0a] rounded-full overflow-hidden border border-[#222]">
-              <div className={`h-full rounded-full transition-all duration-1000 ${esCritico ? 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.8)]' : 'bg-green-500'}`} style={{ width: `${porcentaje}%` }}></div>
+            <div className="w-full h-2 bg-[#0a0a0a] rounded-full overflow-hidden border border-[#222]">
+              <div 
+                className={`h-full rounded-full transition-all duration-1000 ${esCritico ? 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.8)]' : 'bg-green-500'}`} 
+                style={{ width: `${porcentaje}%` }}
+              ></div>
             </div>
           </div>
 
-          {/* ✨ SOLO DUEÑO PUEDE ROBAR STOCK A LA MATRIZ DIRECTAMENTE */}
           {esDueño ? (
-            <div className="pt-4 border-t border-[#2a2a2a]">
-              <p className="text-[10px] text-neutral-500 font-bold uppercase mb-2">
-                Disponible en Matriz: <strong className="text-white">{stockMatrizDisp}</strong> {unidad}
+            <div className="pt-5 border-t border-[#2a2a2a]">
+              <p className="text-[11px] text-neutral-400 font-bold uppercase mb-3 flex items-center gap-1.5">
+                <Database size={12} /> Disp. en Matriz: <strong className="text-white text-sm font-mono">{stockMatrizDisp}</strong> {unidad}
               </p>
               <div className="flex gap-2">
                 <input 
                   type="number" min="0" placeholder="0.0" value={cantidadTransferir} onChange={(e) => setCantidadTransferir(e.target.value)}
-                  className="w-full bg-[#0a0a0a] border border-[#333] px-3 py-2 rounded-xl text-white font-mono text-sm outline-none focus:border-[#ff5a1f]"
+                  className="w-full bg-[#0a0a0a] border border-[#333] px-4 py-2 rounded-xl text-white font-mono text-sm outline-none focus:border-[#ff5a1f] transition-colors"
                 />
                 <button 
                   onClick={handleBajarStock}
-                  className="bg-[#222] hover:bg-[#ff5a1f] hover:text-white text-neutral-400 font-bold px-4 py-2 rounded-xl text-xs transition-colors shrink-0"
+                  className="bg-[#222] hover:bg-[#ff5a1f] hover:text-white text-neutral-300 font-bold px-4 py-2 rounded-xl text-sm transition-colors shrink-0 flex items-center gap-1.5"
                 >
-                  Bajar 📥
+                  <ArrowDownToLine size={16} /> Bajar
                 </button>
               </div>
             </div>
@@ -348,23 +398,23 @@ function InsumoCard({ item, isStock, config, onTransferir, esDueño }) {
              <div className="pt-4 border-t border-[#2a2a2a]">
                 <button 
                   onClick={() => alert("Módulo de 'Solicitudes a Matriz' en construcción 🚧")}
-                  className="w-full bg-[#222] hover:bg-white hover:text-black text-neutral-400 font-bold px-4 py-3 rounded-xl text-xs transition-colors"
+                  className="w-full bg-[#222] hover:bg-white hover:text-black text-neutral-300 font-bold px-4 py-3.5 rounded-xl text-sm transition-colors flex justify-center items-center gap-2"
                 >
-                  Solicitar 🙋‍♂️
+                  <Hand size={18} /> Solicitar Abastecimiento
                 </button>
              </div>
           )}
         </div>
       ) : (
         // VISTA DE MATRIZ (Catálogo)
-        <div className="mt-6 pt-4 border-t border-[#2a2a2a]">
-          <p className="text-[10px] text-neutral-500 font-bold uppercase mb-2">
-            Añadir directo a Matriz:
+        <div className="mt-6 pt-5 border-t border-[#2a2a2a] relative z-10">
+          <p className="text-[11px] text-neutral-400 font-bold uppercase mb-3">
+            Ingreso directo a Matriz:
           </p>
           <div className="flex gap-2">
             <input 
               type="number" min="0" placeholder="0.0" value={cantidadTransferir} onChange={(e) => setCantidadTransferir(e.target.value)}
-              className="w-full bg-[#0a0a0a] border border-[#333] px-3 py-2 rounded-xl text-white font-mono text-sm outline-none focus:border-[#ff5a1f]"
+              className="w-full bg-[#0a0a0a] border border-[#333] px-4 py-2 rounded-xl text-white font-mono text-sm outline-none focus:border-[#ff5a1f] transition-colors"
             />
             <button 
               onClick={() => {
@@ -374,9 +424,9 @@ function InsumoCard({ item, isStock, config, onTransferir, esDueño }) {
                   setCantidadTransferir('');
                 }
               }}
-              className="bg-[#222] hover:bg-green-600 hover:text-white text-neutral-400 font-bold px-4 py-2 rounded-xl text-xs transition-colors"
+              className="bg-[#222] hover:bg-green-600 hover:text-white text-neutral-300 font-bold px-4 py-2 rounded-xl text-sm transition-colors flex items-center gap-1.5"
             >
-              Añadir 🛒
+              <ShoppingCart size={16} /> Añadir
             </button>
           </div>
         </div>

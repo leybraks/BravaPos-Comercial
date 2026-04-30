@@ -1,4 +1,8 @@
 import React from 'react';
+import { 
+  Users, MapPin, Plus, Edit2, UserX, UserCheck, 
+  Trophy, Star, Shield, Banknote, Utensils, Briefcase 
+} from 'lucide-react';
 
 export default function Erp_Personal({
   config,
@@ -18,6 +22,9 @@ export default function Erp_Personal({
   const esDueño = rolUsuario === 'dueño'; 
   const sedeActualId = localStorage.getItem('sede_id');
 
+  const isDark = config?.temaFondo === 'dark';
+  const colorPrimario = config?.colorPrimario || '#ff5a1f';
+
   // ==========================================
   // 🧠 MOTOR DE FILTRADO INTELIGENTE
   // ==========================================
@@ -31,62 +38,80 @@ export default function Erp_Personal({
     }
   });
 
+  // Helper para asignar un ícono profesional según el rol
+  const getRoleIcon = (rolName) => {
+    const name = (rolName || '').toLowerCase();
+    if (name.includes('admin')) return <Shield size={22} />;
+    if (name.includes('cajer')) return <Banknote size={22} />;
+    if (name.includes('cocin')) return <Utensils size={22} />;
+    return <Briefcase size={22} />;
+  };
+
   return (
     <div className="animate-fadeIn space-y-6 pb-20">
       
-      {/* ========== CABECERA ========== */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h3 className={`text-2xl font-black ${config.temaFondo === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-            Equipo de Trabajo
-          </h3>
-          <p className={`text-sm mt-1 ${config.temaFondo === 'dark' ? 'text-neutral-500' : 'text-gray-500'}`}>
-            {esDueño ? 'Gestiona accesos, edita perfiles y mide el rendimiento global.' : 'Consulta el equipo asignado a tu sede.'}
-          </p>
+      {/* ========== 🏗️ 1. CABECERA INTEGRADA ========== */}
+      <div className="flex flex-col xl:flex-row justify-between xl:items-center gap-6 pt-2 pb-6 border-b" style={{ borderColor: isDark ? '#222' : '#e5e7eb' }}>
+        
+        {/* ✨ Título e Ícono */}
+        <div className="flex items-center gap-5">
+          <div 
+            className="w-16 h-16 rounded-2xl flex items-center justify-center shrink-0"
+            style={{ backgroundColor: colorPrimario + '15', color: colorPrimario }}
+          >
+            <Users size={32} strokeWidth={1.5} />
+          </div>
+          <div>
+            <h2 className={`text-2xl font-black tracking-tight ${isDark ? 'text-white' : 'text-gray-900'}`}>
+              Equipo de <span style={{ color: colorPrimario }}>Trabajo</span>
+            </h2>
+            <p className={`text-sm mt-1 ${isDark ? 'text-neutral-400' : 'text-gray-500'}`}>
+              {esDueño ? 'Gestiona accesos, edita perfiles y mide el rendimiento global.' : 'Consulta el equipo asignado a tu sede.'}
+            </p>
+          </div>
         </div>
         
-        <div className="flex items-center gap-3 w-full md:w-auto">
-          {/* ✨ SELECTOR DE SEDE (Solo Dueño) o ETIQUETA FIJA (Administrador) */}
+        {/* ✨ CONTROLES DE DUEÑO */}
+        <div className="flex flex-col sm:flex-row items-center gap-3 shrink-0 w-full xl:w-auto">
           {esDueño ? (
             sedesReales.length > 1 && (
-              <div className={`flex items-center gap-2 px-3 py-3 rounded-xl border flex-1 md:flex-none ${
-                config.temaFondo === 'dark' ? 'bg-[#1a1a1a] border-[#333]' : 'bg-gray-50 border-gray-200'
+              <div className={`flex items-center gap-2 px-4 py-3 rounded-xl border w-full sm:w-auto transition-colors ${
+                isDark ? 'bg-[#111] border-[#333] hover:border-[#444]' : 'bg-gray-50 border-gray-200 hover:border-gray-300'
               }`}>
-                <span className="text-xl">📍</span>
+                <MapPin size={18} className={isDark ? 'text-neutral-400' : 'text-gray-400'} />
                 <select 
                   value={sedeFiltroId || ''}
                   onChange={(e) => onCambiarSedeFiltro(e.target.value)}
-                  className={`bg-transparent outline-none font-bold text-sm w-full cursor-pointer ${
-                    config.temaFondo === 'dark' ? 'text-white' : 'text-gray-800'
+                  className={`bg-transparent outline-none font-bold text-sm w-full cursor-pointer appearance-none pr-4 ${
+                    isDark ? 'text-white' : 'text-gray-800'
                   }`}
                 >
-                  <option value="" className={config.temaFondo === 'dark' ? 'bg-[#111]' : ''}>Todas las Sedes</option>
-                  {sedesReales.map(s => <option key={s.id} value={s.id} className={config.temaFondo === 'dark' ? 'bg-[#111]' : ''}>{s.nombre}</option>)}
+                  <option value="" className={isDark ? 'bg-[#111]' : ''}>Todas las Sedes</option>
+                  {sedesReales.map(s => <option key={s.id} value={s.id} className={isDark ? 'bg-[#111]' : ''}>{s.nombre}</option>)}
                 </select>
               </div>
             )
           ) : (
-            <div className={`flex items-center px-6 py-3 rounded-2xl shrink-0 ${
-              config.temaFondo === 'dark' ? 'bg-[#1a1a1a] border border-[#333]' : 'bg-gray-50 border border-gray-200'
+            <div className={`flex items-center px-5 py-3 rounded-xl border shrink-0 ${
+              isDark ? 'bg-[#111] border-[#333]' : 'bg-gray-50 border-gray-200'
             }`}>
-              <span className="text-xl mr-2">📍</span>
-              <span className={`text-sm font-bold uppercase tracking-wider ${config.temaFondo === 'dark' ? 'text-neutral-400' : 'text-gray-500'}`}>
+              <MapPin size={18} className={`mr-2 ${isDark ? 'text-neutral-400' : 'text-gray-400'}`} />
+              <span className={`text-xs font-bold uppercase tracking-widest ${isDark ? 'text-neutral-400' : 'text-gray-500'}`}>
                 Sede Activa: 
-                <span className={`ml-2 font-black ${config.temaFondo === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                <span className={`ml-2 font-black ${isDark ? 'text-white' : 'text-gray-900'}`}>
                   {localStorage.getItem('sede_nombre') || 'Local Principal'}
                 </span>
               </span>
             </div>
           )}
 
-          {/* ✨ BOTÓN NUEVO EMPLEADO (Solo Dueño) */}
           {esDueño && (
             <button 
               onClick={onNuevoEmpleado}
-              style={{ backgroundColor: config.colorPrimario, boxShadow: `0 4px 15px ${config.colorPrimario}40` }}
-              className="text-white px-6 py-3 rounded-xl font-black transition-all hover:brightness-110 active:scale-95 flex items-center justify-center gap-2 whitespace-nowrap"
+              style={{ backgroundColor: colorPrimario }}
+              className="w-full sm:w-auto px-6 py-3 rounded-xl text-white font-black text-xs uppercase tracking-widest shadow-lg transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-2"
             >
-              <span className="text-xl">+</span> EMPLEADO
+              <Plus size={16} strokeWidth={3} /> Nuevo Empleado
             </button>
           )}
         </div>
@@ -95,83 +120,87 @@ export default function Erp_Personal({
       {/* ========== LISTADO DE EMPLEADOS ========== */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {empleadosFiltrados.length === 0 && (
-          <div className={`col-span-full py-10 text-center font-bold border-2 border-dashed rounded-3xl ${config.temaFondo === 'dark' ? 'text-neutral-600 border-[#222]' : 'text-gray-400 border-gray-200'}`}>
-            Aún no hay empleados registrados en esta sede.
+          <div className={`col-span-full py-16 text-center border-2 border-dashed rounded-3xl flex flex-col items-center justify-center ${
+            isDark ? 'border-[#222] bg-[#111]' : 'border-gray-200 bg-gray-50'
+          }`}>
+            <Users size={48} className={`mb-4 ${isDark ? 'text-neutral-700' : 'text-gray-300'}`} />
+            <h3 className={`text-xl font-black mb-2 ${isDark ? 'text-white' : 'text-gray-800'}`}>Sin personal</h3>
+            <p className={isDark ? 'text-neutral-500' : 'text-gray-500'}>
+              Aún no hay empleados registrados en esta sede.
+            </p>
           </div>
         )}
         
-        {/* ✨ USAMOS empleadosFiltrados */}
         {empleadosFiltrados.map(emp => (
           <div 
             key={emp.id} 
-            className={`p-5 rounded-3xl flex items-center justify-between group transition-all ${
-              config.temaFondo === 'dark'
-                ? 'bg-[#121212] border border-[#222] hover:border-[#444]'
-                : 'bg-white border border-gray-200 shadow-sm hover:border-gray-300'
-            } ${!emp.activo ? 'opacity-60 grayscale' : ''}`}
+            className={`p-5 rounded-[2rem] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 transition-all duration-300 ${
+              isDark
+                ? 'bg-[#161616] border border-[#2a2a2a] hover:border-[#444]'
+                : 'bg-white border border-gray-200 shadow-sm hover:border-gray-300 hover:shadow-md'
+            } ${!emp.activo ? 'opacity-50 grayscale hover:grayscale-0' : ''}`}
           >
             <div className="flex items-center gap-4">
-              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl border shadow-sm ${
-                config.temaFondo === 'dark' ? 'bg-[#1a1a1a] border-[#333]' : 'bg-gray-50 border-gray-200'
+              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border shadow-inner shrink-0 ${
+                isDark ? 'bg-[#111] border-[#222] text-neutral-300' : 'bg-gray-50 border-gray-200 text-gray-600'
               }`}>
-                {emp.rol_nombre?.includes('Admin') ? '👑' : 
-                 emp.rol_nombre?.includes('Cajer') ? '💰' : 
-                 emp.rol_nombre?.includes('Mesero') ? '🏃' : '👨‍🍳'}
+                {getRoleIcon(emp.rol_nombre)}
               </div>
+              
               <div>
-                <h4 className={`font-bold text-lg leading-tight ${config.temaFondo === 'dark' ? 'text-white' : 'text-gray-900'} ${!emp.activo ? 'line-through' : ''}`}>
+                <h4 className={`font-black text-lg leading-tight mb-1.5 ${isDark ? 'text-white' : 'text-gray-900'} ${!emp.activo ? 'line-through' : ''}`}>
                   {emp.nombre}
                 </h4>
-                <div className="flex flex-wrap gap-2 mt-1.5">
-                  <span className={`text-[10px] font-black px-2 py-0.5 rounded border uppercase ${
-                    config.temaFondo === 'dark' ? 'bg-[#1a1a1a] text-neutral-300 border-[#333]' : 'bg-gray-100 text-gray-600 border-gray-200'
+                <div className="flex flex-wrap gap-2">
+                  <span className={`text-[10px] font-black px-2.5 py-1 rounded-md border uppercase tracking-widest ${
+                    isDark ? 'bg-[#111] text-neutral-300 border-[#333]' : 'bg-gray-100 text-gray-600 border-gray-200'
                   }`}>
                     {emp.rol_nombre || 'Sin Rol'}
                   </span>
                   
-                  <span className={`text-[10px] font-black px-2 py-0.5 rounded border uppercase ${
+                  <span className={`text-[10px] font-black px-2.5 py-1 rounded-md border uppercase tracking-widest ${
                     emp.activo 
-                      ? (config.temaFondo === 'dark' ? 'text-green-500 border-green-500/20 bg-green-500/10' : 'text-green-600 border-green-200 bg-green-50')
-                      : (config.temaFondo === 'dark' ? 'text-red-500 border-red-500/20 bg-red-500/10' : 'text-red-600 border-red-200 bg-red-50')
+                      ? (isDark ? 'text-green-400 border-green-500/20 bg-green-500/10' : 'text-green-600 border-green-200 bg-green-50')
+                      : (isDark ? 'text-red-400 border-red-500/20 bg-red-500/10' : 'text-red-600 border-red-200 bg-red-50')
                   }`}>
                     {emp.activo ? 'ACTIVO' : 'INACTIVO'}
                   </span>
 
                   {sedesReales.length > 1 && (
-                    <span className={`text-[10px] font-black px-2 py-0.5 rounded border uppercase flex items-center gap-1 ${
-                      config.temaFondo === 'dark' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 'bg-blue-50 text-blue-600 border-blue-200'
+                    <span className={`text-[10px] font-black px-2.5 py-1 rounded-md border uppercase tracking-widest flex items-center gap-1 ${
+                      isDark ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 'bg-blue-50 text-blue-600 border-blue-200'
                     }`}>
-                      📍 {sedesReales.find(s => String(s.id) === String(emp.sede))?.nombre || 'Todas (Matriz)'}
+                      <MapPin size={10} /> {sedesReales.find(s => String(s.id) === String(emp.sede))?.nombre || 'Matriz'}
                     </span>
                   )}
                 </div>
               </div>
             </div>
 
-            <div className="text-right flex flex-col items-end">
-              <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${config.temaFondo === 'dark' ? 'text-neutral-500' : 'text-gray-500'}`}>
-                PIN de Acceso
-              </p>
-              {/* ✨ SOLO DUEÑO VE EL PIN */}
-              <p className={`font-mono font-bold tracking-[4px] mb-2 ${config.temaFondo === 'dark' ? 'text-white' : 'text-gray-800'}`}>
-                {esDueño ? (emp.activo ? '****' : '----') : '****'}
-              </p>
+            <div className="w-full sm:w-auto flex sm:flex-col justify-between sm:items-end mt-4 sm:mt-0 pt-4 sm:pt-0 border-t sm:border-t-0 border-[#2a2a2a] sm:border-transparent">
               
-              {/* ✨ ACCIONES (Solo Dueño) */}
               {esDueño && (
-                <div className="flex gap-3">
+                <div className="flex gap-2">
                   <button 
                     onClick={() => onEditarEmpleado(emp)}
-                    className="text-xs font-bold transition-colors hover:scale-105"
-                    style={{ color: config.colorPrimario }}
+                    className={`p-2 rounded-lg border transition-all ${
+                      isDark ? 'bg-[#111] border-[#333] hover:bg-[#222]' : 'bg-white border-gray-200 hover:bg-gray-50'
+                    }`}
+                    style={{ color: colorPrimario }}
+                    title="Editar Perfil"
                   >
-                    Editar
+                    <Edit2 size={16} />
                   </button>
                   <button 
                     onClick={() => onToggleActivo(emp)}
-                    className={`text-xs font-bold transition-colors hover:scale-105 ${emp.activo ? 'text-red-500 hover:text-red-400' : 'text-green-500 hover:text-green-400'}`}
+                    className={`p-2 rounded-lg border transition-all ${
+                      emp.activo 
+                        ? (isDark ? 'bg-red-500/10 border-red-500/20 text-red-500 hover:bg-red-500/20' : 'bg-red-50 border-red-200 text-red-600 hover:bg-red-100')
+                        : (isDark ? 'bg-green-500/10 border-green-500/20 text-green-500 hover:bg-green-500/20' : 'bg-green-50 border-green-200 text-green-600 hover:bg-green-100')
+                    }`}
+                    title={emp.activo ? 'Desactivar Usuario' : 'Reactivar Usuario'}
                   >
-                    {emp.activo ? 'Desactivar' : 'Reactivar'}
+                    {emp.activo ? <UserX size={16} /> : <UserCheck size={16} />}
                   </button>
                 </div>
               )}
@@ -181,46 +210,53 @@ export default function Erp_Personal({
       </div>
 
       {/* ========== TABLA DE RENDIMIENTO ========== */}
-      <div className={`rounded-3xl p-6 mt-8 border transition-all ${
-        config.temaFondo === 'dark' ? 'bg-[#111] border-[#222]' : 'bg-white border-gray-200 shadow-sm'
+      <div className={`rounded-[2rem] p-6 lg:p-8 border transition-all mt-8 ${
+        isDark ? 'bg-[#161616] border-[#2a2a2a]' : 'bg-white border-gray-200 shadow-sm'
       }`}>
-        <div className="flex justify-between items-center mb-6">
-          <h4 className={`font-black flex items-center gap-2 text-lg ${config.temaFondo === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-            <span className="text-2xl">🏆</span> Rendimiento del Equipo (Este Mes)
+        <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-8">
+          <h4 className={`text-xl font-black flex items-center gap-3 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+            <Trophy size={24} style={{ color: colorPrimario }} /> 
+            Rendimiento del Equipo
           </h4>
-          <span className={`text-xs font-bold px-3 py-1 rounded-full ${config.temaFondo === 'dark' ? 'bg-[#222] text-neutral-400' : 'bg-gray-100 text-gray-500'}`}>
-            Datos Simulados
+          <span className={`text-[10px] font-black px-3 py-1.5 rounded-md uppercase tracking-widest border ${
+            isDark ? 'bg-[#111] text-neutral-400 border-[#333]' : 'bg-gray-100 text-gray-500 border-gray-200'
+          }`}>
+            Mes Actual (Simulado)
           </span>
         </div>
         
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
+          <table className="w-full text-left">
             <thead>
-              <tr className={`border-b ${config.temaFondo === 'dark' ? 'text-neutral-500 border-[#222]' : 'text-gray-500 border-gray-200'}`}>
-                <th className="pb-4 font-black uppercase tracking-widest text-[10px]">Empleado</th>
-                <th className="pb-4 font-black uppercase tracking-widest text-[10px] text-center">Rol</th>
-                <th className="pb-4 font-black uppercase tracking-widest text-[10px] text-center">Órdenes Atendidas</th>
-                <th className="pb-4 font-black uppercase tracking-widest text-[10px] text-right">Total Vendido</th>
+              <tr className={`border-b ${isDark ? 'border-[#2a2a2a]' : 'border-gray-200'}`}>
+                <th className={`pb-4 font-black uppercase tracking-widest text-[10px] ${isDark ? 'text-neutral-500' : 'text-gray-400'}`}>Empleado</th>
+                <th className={`pb-4 font-black uppercase tracking-widest text-[10px] text-center ${isDark ? 'text-neutral-500' : 'text-gray-400'}`}>Rol</th>
+                <th className={`pb-4 font-black uppercase tracking-widest text-[10px] text-center ${isDark ? 'text-neutral-500' : 'text-gray-400'}`}>Órdenes</th>
+                <th className={`pb-4 font-black uppercase tracking-widest text-[10px] text-right ${isDark ? 'text-neutral-500' : 'text-gray-400'}`}>Ingresos Generados</th>
               </tr>
             </thead>
-            <tbody className={config.temaFondo === 'dark' ? 'text-neutral-300' : 'text-gray-700'}>
+            <tbody className={`text-sm font-medium ${isDark ? 'text-neutral-300' : 'text-gray-700'}`}>
               {[
                 { nom: 'Carlos M.', rol: 'Mesero', ord: 142, total: 'S/ 3,450.00' },
                 { nom: 'Ana V.', rol: 'Cajera', ord: 320, total: 'S/ 8,200.00' },
                 { nom: 'Luis R.', rol: 'Cocinero', ord: 280, total: '-' },
               ].map((row, i) => (
-                <tr key={i} className={`border-b hover:bg-black/5 transition-colors ${config.temaFondo === 'dark' ? 'border-[#1a1a1a] hover:bg-white/5' : 'border-gray-100 hover:bg-gray-50'}`}>
+                <tr key={i} className={`border-b transition-colors ${
+                  isDark ? 'border-[#222] hover:bg-[#111]' : 'border-gray-100 hover:bg-gray-50'
+                }`}>
                   <td className="py-4 font-bold flex items-center gap-2">
-                    {i === 0 && <span className="text-yellow-500 text-xs">⭐</span>}
+                    {i === 0 ? <Star size={14} className="text-yellow-500 fill-yellow-500" /> : <div className="w-3.5" />}
                     {row.nom}
                   </td>
                   <td className="py-4 text-center">
-                    <span className={`text-[10px] px-2 py-1 rounded uppercase font-bold ${config.temaFondo === 'dark' ? 'bg-[#222] text-neutral-400' : 'bg-gray-100 text-gray-500'}`}>
+                    <span className={`text-[10px] px-2.5 py-1 rounded-md uppercase font-black tracking-widest ${
+                      isDark ? 'bg-[#1a1a1a] text-neutral-400 border border-[#333]' : 'bg-gray-100 text-gray-500 border border-gray-200'
+                    }`}>
                       {row.rol}
                     </span>
                   </td>
-                  <td className="py-4 text-center font-mono">{row.ord}</td>
-                  <td className="py-4 text-right font-bold text-green-500">{row.total}</td>
+                  <td className="py-4 text-center font-mono font-bold text-neutral-400">{row.ord}</td>
+                  <td className="py-4 text-right font-bold text-green-500 tracking-wide">{row.total}</td>
                 </tr>
               ))}
             </tbody>

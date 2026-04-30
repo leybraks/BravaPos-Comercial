@@ -19,21 +19,23 @@ import { useMesasWS } from './hooks/useMesasWS';
 
 export default function MesasView({ onSeleccionarMesa, onIrAErp, mesaActivaId }) {
   const decodificarToken = (token) => {
-  try {
-    if (!token) return null;
-    const base64Url = token.split('.')[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
-        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-    }).join(''));
-    return JSON.parse(jsonPayload);
-  } catch (error) {
-    return null;
-  }
-};
+    try {
+      if (!token) return null;
+      const base64Url = token.split('.')[1];
+      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+      const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+          return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+      }).join(''));
+      return JSON.parse(jsonPayload);
+    } catch (error) {
+      return null;
+    }
+  };
+
   const { estadoCaja, configuracionGlobal, setConfiguracionGlobal } = usePosStore();
   const tema = configuracionGlobal?.temaFondo || 'dark';
   const colorPrimario = configuracionGlobal?.colorPrimario || '#ff5a1f';
+  const isDark = tema === 'dark'; // ✨ Helper para el nuevo diseño
 
   // ── ESTADOS LOCALES ──────────────────────────────────────────────────────────
   const [sedeActualId, setSedeActualId] = useState(localStorage.getItem('sede_id') || '');
@@ -75,6 +77,7 @@ export default function MesasView({ onSeleccionarMesa, onIrAErp, mesaActivaId })
       }));
     }
   };
+
   // ── HELPERS ─────────────────────────────────────────────────────────────────
   const manejarCambioSede = (nuevaSedeId) => {
     if (!nuevaSedeId) return;
@@ -135,13 +138,18 @@ export default function MesasView({ onSeleccionarMesa, onIrAErp, mesaActivaId })
     } catch { alert("❌ PIN incorrecto o empleado inactivo."); }
   };
 
-  // ── RENDER DE ESTADOS ESPECIALES ────────────────────────────────────────────
+  // ── RENDER DE ESTADOS ESPECIALES (Diseño ERP) ──────────────────────────────
   if (vistaLocal === null) {
     return (
-      <div className={`min-h-screen flex items-center justify-center transition-colors duration-500 ${tema === 'dark' ? 'bg-[#0a0a0a]' : 'bg-[#f4f4f5]'}`}>
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 border-4 border-t-transparent rounded-full animate-spin" style={{ borderColor: colorPrimario || '#ff5a1f', borderTopColor: 'transparent' }}></div>
-          <p className={`font-black tracking-widest uppercase text-xs ${tema === 'dark' ? 'text-neutral-500' : 'text-gray-400'}`}>Conectando con la base de datos...</p>
+      <div className={`min-h-screen flex items-center justify-center transition-colors duration-500 ${isDark ? 'bg-[#0a0a0a]' : 'bg-[#f0f0f0]'}`}>
+        <div className="flex flex-col items-center gap-5">
+          <div className="w-20 h-20 rounded-3xl flex items-center justify-center text-4xl shadow-lg" style={{ backgroundColor: colorPrimario + '15', color: colorPrimario }}>
+            <i className="fi fi-rr-restaurant mt-1 animate-pulse"></i>
+          </div>
+          <div className="flex flex-col items-center gap-2 mt-2">
+            <div className="w-8 h-8 border-4 border-t-transparent rounded-full animate-spin" style={{ borderColor: colorPrimario, borderTopColor: 'transparent' }}></div>
+            <p className={`font-black tracking-widest uppercase text-xs mt-2 ${isDark ? 'text-neutral-500' : 'text-gray-400'}`}>Conectando Sistema...</p>
+          </div>
         </div>
       </div>
     );
@@ -149,18 +157,28 @@ export default function MesasView({ onSeleccionarMesa, onIrAErp, mesaActivaId })
 
   if (modulos.salon === false && modulos.delivery === false) {
     return (
-      <div className={`min-h-screen flex flex-col items-center justify-center text-center p-6 ${tema === 'dark' ? 'bg-[#0a0a0a] text-white' : 'bg-[#f0f0f0] text-gray-900'}`}>
-        <span className="text-6xl mb-4">🍔</span>
-        <h1 className="text-3xl font-black mb-2 uppercase">Modo Fast Food Activo</h1>
-        <p className="text-neutral-500 mb-8 max-w-md">El salón principal y delivery están desactivados. Usa la Venta Rápida.</p>
-        <button onClick={() => setDrawerVentaRapidaAbierto(true)} style={{ backgroundColor: colorPrimario }} className="px-8 py-4 rounded-2xl text-white font-black text-xl shadow-lg active:scale-95">⚡ INICIAR VENTA RÁPIDA</button>
+      <div className={`min-h-screen flex flex-col items-center justify-center text-center p-6 transition-colors duration-500 ${isDark ? 'bg-[#0a0a0a]' : 'bg-[#f0f0f0]'}`}>
+        <div className={`max-w-lg w-full p-10 rounded-3xl border shadow-xl flex flex-col items-center ${isDark ? 'bg-[#141414] border-[#222]' : 'bg-white border-gray-200'}`}>
+          <div className="w-24 h-24 rounded-full flex items-center justify-center text-5xl mb-6 shadow-inner" style={{ backgroundColor: colorPrimario + '15' }}>
+            🍔
+          </div>
+          <h1 className={`text-2xl font-black mb-2 uppercase tracking-tight ${isDark ? 'text-white' : 'text-gray-900'}`}>Modo Fast Food</h1>
+          <p className={`mb-8 text-sm ${isDark ? 'text-neutral-400' : 'text-gray-500'}`}>El salón principal y delivery están desactivados. Usa la Venta Rápida para despachar pedidos al instante.</p>
+          <button 
+            onClick={() => setDrawerVentaRapidaAbierto(true)} 
+            style={{ backgroundColor: colorPrimario }} 
+            className="w-full py-4 rounded-2xl text-white font-black text-sm uppercase tracking-widest shadow-lg transition-transform active:scale-95 hover:-translate-y-1"
+          >
+            ⚡ INICIAR VENTA RÁPIDA
+          </button>
+        </div>
       </div>
     );
   }
 
   // ── RENDER PRINCIPAL ────────────────────────────────────────────────────────
   return (
-    <div className={`min-h-full flex flex-col font-sans transition-colors duration-500 pb-10 ${tema === 'dark' ? 'bg-[#0a0a0a] text-neutral-100' : 'bg-[#f4f4f5] text-gray-900'}`}>
+    <div className={`min-h-full flex flex-col font-sans transition-colors duration-500 pb-10 ${isDark ? 'bg-[#0a0a0a] text-neutral-100' : 'bg-[#f0f0f0] text-gray-900'}`}>
       
       <MesasHeader 
         colorPrimario={colorPrimario} vistaLocal={vistaLocal} esDueño={esDueño} 
@@ -172,41 +190,79 @@ export default function MesasView({ onSeleccionarMesa, onIrAErp, mesaActivaId })
         manejarCierreCajaSeguro={manejarCierreCajaSeguro} 
       />
 
-      {vistaLocal === 'salon' && modulos.salon && (
-        <MesasGrid 
-          mesas={mesas} modoUnir={modoUnir} mesaPrincipal={mesaPrincipal} mesaActivaId={mesaActivaId} 
-          manejarClickMesa={manejarClickMesa} mostrarPuertaMovil={mostrarPuertaMovil} 
-          setMostrarPuertaMovil={setMostrarPuertaMovil} tema={tema} colorPrimario={colorPrimario} 
-          sedeActualId={sedeActualId} sedes={sedes} 
-        />
-      )}
+      {/* Contenedor principal estilo ERP (con padding global y fondo claro/oscuro) */}
+      <div className="flex-1 px-4 md:px-8 pt-4 pb-12 w-full max-w-[1600px] mx-auto">
+        {vistaLocal === 'salon' && modulos.salon && (
+          <MesasGrid 
+            mesas={mesas} modoUnir={modoUnir} mesaPrincipal={mesaPrincipal} mesaActivaId={mesaActivaId} 
+            manejarClickMesa={manejarClickMesa} mostrarPuertaMovil={mostrarPuertaMovil} 
+            setMostrarPuertaMovil={setMostrarPuertaMovil} tema={tema} colorPrimario={colorPrimario} 
+            sedeActualId={sedeActualId} sedes={sedes} 
+          />
+        )}
 
-      {vistaLocal === 'llevar' && modulos.delivery && (
-        <MesasLlevar 
-          ordenesLlevar={ordenesLlevar} tema={tema} colorPrimario={colorPrimario} 
-          setModalClienteAbierto={setModalClienteAbierto} manejarCancelacion={manejarCancelacion} 
-          setOrdenACobrar={setOrdenACobrar} entregarOrdenLlevar={entregarOrdenLlevar} 
-        />
-      )}
+        {vistaLocal === 'llevar' && modulos.delivery && (
+          <MesasLlevar 
+            ordenesLlevar={ordenesLlevar} tema={tema} colorPrimario={colorPrimario} 
+            setModalClienteAbierto={setModalClienteAbierto} manejarCancelacion={manejarCancelacion} 
+            setOrdenACobrar={setOrdenACobrar} entregarOrdenLlevar={entregarOrdenLlevar} 
+          />
+        )}
+      </div>
 
-      {/* ══════════════════ MODALES GLOBALES ══════════════════ */}
+      {/* ══════════════════ MODALES GLOBALES (Diseño ERP) ══════════════════ */}
       {modalClienteAbierto && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end md:items-center justify-center p-4 animate-fadeIn">
-          <div className="bg-[#1a1a1a] border border-[#333] rounded-3xl w-full max-w-md overflow-hidden shadow-2xl">
-            <div className="p-6 border-b border-[#2a2a2a] flex justify-between items-center">
-              <div><h2 className="text-xl font-black text-white">Datos del Cliente</h2><p className="text-neutral-500 text-sm mt-1">Identifica el pedido para llevar</p></div>
-              <button onClick={() => setModalClienteAbierto(false)} className="w-8 h-8 bg-[#222] rounded-full flex items-center justify-center text-neutral-400 hover:text-white font-bold">✕</button>
+          <div className={`border rounded-3xl w-full max-w-md overflow-hidden shadow-2xl transition-colors ${isDark ? 'bg-[#141414] border-[#222]' : 'bg-white border-gray-200'}`}>
+            <div className={`p-6 border-b flex justify-between items-center ${isDark ? 'border-[#222]' : 'border-gray-100'}`}>
+              <div>
+                <h2 className={`text-xl font-black tracking-tight ${isDark ? 'text-white' : 'text-gray-900'}`}>Datos del Cliente</h2>
+                <p className={`text-xs mt-1 ${isDark ? 'text-neutral-500' : 'text-gray-500'}`}>Identifica el pedido para llevar</p>
+              </div>
+              <button 
+                onClick={() => setModalClienteAbierto(false)} 
+                className={`w-9 h-9 rounded-xl flex items-center justify-center transition-colors ${isDark ? 'bg-[#1a1a1a] text-neutral-400 hover:bg-[#222] hover:text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-900'}`}
+              >
+                <i className="fi fi-rr-cross-small text-xl mt-1"></i>
+              </button>
             </div>
+            
             <div className="p-6 space-y-5">
               <div>
-                <label className="text-neutral-400 text-xs font-bold uppercase tracking-wider mb-2 flex items-center gap-2"><span>👤</span> Nombre (Obligatorio)</label>
-                <input type="text" value={nombreCliente} onChange={(e) => setNombreCliente(e.target.value)} placeholder="Ej. Carlos Gutiérrez" className="w-full bg-[#121212] border border-[#333] rounded-xl px-4 py-4 text-white focus:outline-none focus:border-[#ff5a1f]" />
+                <label className={`text-[10px] font-black uppercase tracking-widest mb-2 flex items-center gap-2 ${isDark ? 'text-neutral-400' : 'text-gray-500'}`}>
+                  <i className="fi fi-rr-user"></i> Nombre (Obligatorio)
+                </label>
+                <input 
+                  type="text" 
+                  value={nombreCliente} 
+                  onChange={(e) => setNombreCliente(e.target.value)} 
+                  placeholder="Ej. Carlos Gutiérrez" 
+                  className={`w-full border rounded-xl px-4 py-4 focus:outline-none transition-colors text-sm font-bold ${
+                    isDark ? 'bg-[#0a0a0a] border-[#333] text-white focus:border-neutral-500' : 'bg-gray-50 border-gray-200 text-gray-900 focus:border-gray-400'
+                  }`} 
+                />
               </div>
               <div>
-                <label className="text-neutral-400 text-xs font-bold uppercase tracking-wider mb-2 flex items-center gap-2"><span>📱</span> WhatsApp (Opcional)</label>
-                <input type="tel" value={telefonoCliente} onChange={(e) => setTelefonoCliente(e.target.value)} placeholder="Ej. 999 999 999" className="w-full bg-[#121212] border border-[#333] rounded-xl px-4 py-4 text-white focus:outline-none focus:border-[#ff5a1f]" />
+                <label className={`text-[10px] font-black uppercase tracking-widest mb-2 flex items-center gap-2 ${isDark ? 'text-neutral-400' : 'text-gray-500'}`}>
+                  <i className="fi fi-brands-whatsapp"></i> WhatsApp (Opcional)
+                </label>
+                <input 
+                  type="tel" 
+                  value={telefonoCliente} 
+                  onChange={(e) => setTelefonoCliente(e.target.value)} 
+                  placeholder="Ej. 999 999 999" 
+                  className={`w-full border rounded-xl px-4 py-4 focus:outline-none transition-colors text-sm font-bold ${
+                    isDark ? 'bg-[#0a0a0a] border-[#333] text-white focus:border-neutral-500' : 'bg-gray-50 border-gray-200 text-gray-900 focus:border-gray-400'
+                  }`} 
+                />
               </div>
-              <button onClick={iniciarOrdenDelivery} className="w-full bg-[#ff5a1f] hover:bg-[#e04a15] text-white font-black py-4 rounded-xl active:scale-95 transition-all shadow-[0_4px_15px_rgba(255,90,31,0.3)]">IR AL MENÚ ➔</button>
+              <button 
+                onClick={iniciarOrdenDelivery} 
+                style={{ backgroundColor: colorPrimario }}
+                className="w-full text-white font-black py-4 rounded-xl active:scale-95 hover:-translate-y-1 transition-all shadow-lg text-sm tracking-wide flex items-center justify-center gap-2 mt-2"
+              >
+                IR AL MENÚ <i className="fi fi-rr-arrow-right mt-1"></i>
+              </button>
             </div>
           </div>
         </div>

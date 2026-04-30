@@ -4,6 +4,7 @@ from django.http import JsonResponse
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework_simplejwt.tokens import AccessToken
 
 from ..models import Sede, Producto, Categoria, Orden
 from ..serializers import ProductoSerializer, CategoriaSerializer, OrdenSerializer
@@ -73,11 +74,12 @@ def orden_publica(request, sede_id, mesa_id):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def verificar_sesion(request):
-    """
-    Si el usuario llega aquí, su cookie JWT es válida.
-    Devolvemos info básica para reconstruir el estado en React.
-    """
+    user = request.user
+    ws_token = AccessToken.for_user(user)
+    
     return Response({
+        'autenticado': True,
+        'ws_token': str(ws_token), 
         "autenticado": True,
         "user": {
             "username": request.user.username,

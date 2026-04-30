@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react'; // ✅ AGREGADO useState
 import { useErpDashboard } from '../features/ERP/useErpDashboard'; 
 
 // ==========================================
@@ -22,7 +22,8 @@ import Erp_ModalPlato from '../features/ERP/Erp_ModalPlato';
 import Erp_ModalReceta from '../features/ERP/Erp_ModalReceta';
 import Erp_ModalVariaciones from '../features/ERP/Erp_ModalVariaciones';
 import Erp_Sidebar from '../features/ERP/Erp_Sidebar';
-
+import ModalModificadores from '../features/ERP/Erp_ModalModificadores';
+import { crearModificador, actualizarModificador, getModificadores } from '../api/api';
 
 // ==========================================
 // 🌟 COMPONENTE HEADER INTEGRADOR (TOPBAR)
@@ -46,7 +47,7 @@ const Topbar = ({ vistaActiva, setMenuAbierto, tema, colorPrimario }) => {
   const formatearFecha = (fecha) => {
     return fecha.toLocaleDateString('es-PE', { weekday: 'long', day: 'numeric', month: 'long' });
   };
-
+  
   return (
     <header className={`px-6 py-4 md:px-8 md:py-5 flex justify-between items-center sticky top-0 z-30 border-b transition-colors duration-300 ${
       isDark ? 'bg-[#111] border-[#222]' : 'bg-white border-gray-200 shadow-sm'
@@ -132,7 +133,7 @@ export default function ErpDashboard({ onVolverAlPos }) {
   const {
     tema, colorPrimario, config, setConfig, vistaActiva, 
     sedeFiltro, cambiarSedeFiltro, sedeFiltroId, setSedeFiltroId, 
-    menuAbierto, setMenuAbierto,isCollapsed, setIsCollapsed, modalEmpleado, setModalEmpleado, 
+    menuAbierto, setMenuAbierto, isCollapsed, setIsCollapsed, modalEmpleado, setModalEmpleado, 
     modalVariacionesOpen, setModalVariacionesOpen, productoParaVariaciones, setProductoParaVariaciones, 
     categorias, guardandoConfig, productosReales, 
     modalPlato, setModalPlato, pasoModal, setPasoModal, formPlato, setFormPlato,
@@ -144,8 +145,26 @@ export default function ErpDashboard({ onVolverAlPos }) {
     manejarCambioVista, descartarCambios, guardarYCambiarVista,
     cancelarCambioVista, manejarGuardarConfig, abrirModalEdicion, toggleActivo,
     manejarGuardarEmpleado, manejarGuardarPlato, manejarCrearCategoria,
-    eliminarCategoriaLocal, toggleDisponibilidad, abrirModalEditar, cerrarModalPlato
+    eliminarCategoriaLocal, toggleDisponibilidad, abrirModalEditar, cerrarModalPlato, modificadoresReales, setModificadoresReales
   } = useErpDashboard();
+  
+  // ✅ Estado local para controlar el modal
+  const [modalModificadoresAbierto, setModalModificadoresAbierto] = useState(false);
+
+  const handleOpenModificadores = () => {
+    setModalModificadoresAbierto(true);
+  };
+
+  // ✅ Función para recargar modificadores después de guardar
+  const recargarModificadores = async () => {
+    try {
+      const negocioId = localStorage.getItem('negocio_id');
+      const resModificadores = await getModificadores({ negocio_id: negocioId });
+      setModificadoresReales(resModificadores.data || []);
+    } catch (error) {
+      console.error("Error recargando modificadores:", error);
+    }
+  };
 
   return (
     <div className={`min-h-screen font-sans flex transition-colors duration-500 ${tema === 'dark' ? 'bg-[#0a0a0a] text-neutral-100' : 'bg-[#f0f0f0] text-neutral-900'}`}>
@@ -189,7 +208,17 @@ export default function ErpDashboard({ onVolverAlPos }) {
           )}
 
           {vistaActiva === 'menu' && (
-            <Erp_EditorMenu categorias={categorias} productosReales={productosReales} onOpenCategorias={() => setModalCategorias(true)} onOpenPlatoNuevo={() => { cerrarModalPlato(); setModalPlato(true); }} onEditPlato={abrirModalEditar} onToggleDisponibilidad={toggleDisponibilidad} onOpenReceta={(plato) => { setProductoParaReceta(plato); setModalRecetaOpen(true); }} onOpenVariaciones={(plato) => { setProductoParaVariaciones(plato); setModalVariacionesOpen(true); }} />
+            <Erp_EditorMenu 
+              categorias={categorias} 
+              productosReales={productosReales} 
+              onOpenCategorias={() => setModalCategorias(true)} 
+              onOpenPlatoNuevo={() => { cerrarModalPlato(); setModalPlato(true); }} 
+              onEditPlato={abrirModalEditar} 
+              onToggleDisponibilidad={toggleDisponibilidad} 
+              onOpenReceta={(plato) => { setProductoParaReceta(plato); setModalRecetaOpen(true); }} 
+              onOpenVariaciones={(plato) => { setProductoParaVariaciones(plato); setModalVariacionesOpen(true); }} 
+              onOpenModificadores={handleOpenModificadores} 
+            />
           )}
 
           {vistaActiva === 'personal' && (
@@ -240,6 +269,44 @@ export default function ErpDashboard({ onVolverAlPos }) {
       <Erp_ModalCambios isOpen={modalCambiosPendientes} config={config} onGuardar={guardarYCambiarVista} onDescartar={descartarCambios} onCancelar={cancelarCambioVista} />
       <Erp_ModalReceta isOpen={modalRecetaOpen} onClose={() => setModalRecetaOpen(false)} producto={productoParaReceta} config={config} />
       <Erp_ModalVariaciones isOpen={modalVariacionesOpen} onClose={() => setModalVariacionesOpen(false)} producto={productoParaVariaciones} config={config} />
+      
+      {/* ✅ MODAL DE MODIFICADORES */}
+      <ModalModificadores 
+        isOpen={modalModificadoresAbierto}
+        onClose={() => setModalModificadoresAbierto(false)}
+        categorias={categorias}
+        modificadores={modificadoresReales || []} 
+        tema={tema}
+        colorPrimario={colorPrimario}
+        onRecargar={recargarModificadores}
+        onGuardar={async (formData) => {
+          try {
+            const negocioId = localStorage.getItem('negocio_id');
+            
+            if (formData.id) {
+              // EDITAR EXISTENTE
+              const dataParaActualizar = { 
+                ...formData, 
+                negocio: negocioId 
+              };
+              await actualizarModificador(formData.id, dataParaActualizar);
+            } else {
+              // CREAR NUEVO
+              const dataParaEnviar = { 
+                ...formData, 
+                negocio: negocioId 
+              };
+              await crearModificador(dataParaEnviar);
+            }
+            
+            alert("✅ Modificador guardado correctamente");
+          } catch (error) {
+            console.error("Error al procesar modificador:", error);
+            alert("❌ Hubo un error al guardar. Revisa la consola.");
+            throw error; // Re-lanzar para que el modal no se cierre si hay error
+          }
+        }}
+      />
 
     </div>
   );

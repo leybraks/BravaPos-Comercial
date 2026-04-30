@@ -97,6 +97,31 @@ export default function PosTerminal({ onIrAErp }) {
     }
   };
 
+  // ✨ NUEVO: Lógica para desarmar un grupo de mesas
+  const manejarSepararMesa = async (mesaPadre) => {
+    const confirmar = window.confirm(`¿Estás seguro de que quieres desarmar el grupo de la Mesa ${mesaPadre.numero}?`);
+    if (!confirmar) return;
+
+    try {
+      // 1. Buscamos todas las mesas que están unidas a este padre usando el estado local
+      const mesasHijas = mesas.filter((m) => m.unida_a === mesaPadre.id);
+
+      // 2. Liberamos cada mesa hija en la base de datos de forma simultánea
+      await Promise.all(
+        mesasHijas.map((hija) => 
+          actualizarMesa(hija.id, { mesa_principal: null }) 
+        )
+      );
+
+      // 3. Forzamos la recarga para actualizar la vista local (y el WebSocket hará el resto)
+      setTriggerRecarga((p) => !p);
+      
+    } catch (error) {
+      console.error('Error al separar mesas:', error);
+      alert('Hubo un problema al intentar separar las mesas. Intenta de nuevo.');
+    }
+  };
+
   const iniciarOrdenDelivery = () => {
     if (!nombreCliente.trim()) { alert('Por favor, ingresa el nombre del cliente.'); return; }
     setModalClienteAbierto(false);
@@ -198,10 +223,17 @@ export default function PosTerminal({ onIrAErp }) {
         >
           {vistaLocal === 'salon' && modulos.salon && (
             <TerminalMesasGrid 
-              mesas={mesas} modoUnir={modoUnir} mesaPrincipal={mesaPrincipal} 
-              mesaSeleccionada={mesaSeleccionada} manejarClickMesa={manejarClickMesa} 
-              mostrarPuertaMovil={mostrarPuertaMovil} setMostrarPuertaMovil={setMostrarPuertaMovil} 
-              tema={tema} colorPrimario={colorPrimario} sedeActual={sedes.find(s => String(s.id) === String(sedeActualId))} 
+              mesas={mesas} 
+              modoUnir={modoUnir} 
+              mesaPrincipal={mesaPrincipal} 
+              mesaSeleccionada={mesaSeleccionada} 
+              manejarClickMesa={manejarClickMesa} 
+              mostrarPuertaMovil={mostrarPuertaMovil} 
+              setMostrarPuertaMovil={setMostrarPuertaMovil} 
+              tema={tema} 
+              colorPrimario={colorPrimario} 
+              sedeActual={sedes.find(s => String(s.id) === String(sedeActualId))}
+              manejarSepararMesa={manejarSepararMesa} /* 👈 ¡AÑADE ESTA LÍNEA AQUÍ! */
             />
           )}
 

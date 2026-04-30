@@ -28,7 +28,7 @@ export default function ModalMovimientoCaja({ isOpen, onClose, onGuardar }) {
       return;
     }
     if (!concepto.trim()) {
-      alert("⚠️ Debes justificar el movimiento (Ej. Compra de carbón).");
+      alert("⚠️ Debes justificar el movimiento.");
       return;
     }
     setProcesando(true);
@@ -47,125 +47,140 @@ export default function ModalMovimientoCaja({ isOpen, onClose, onGuardar }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className={`w-full max-w-md rounded-3xl shadow-2xl border overflow-hidden flex flex-col ${
-        tema === 'dark' ? 'bg-[#121212] border-[#2a2a2a]' : 'bg-white border-gray-200'
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[100] p-4 animate-fadeIn">
+      <div className={`w-full max-w-md rounded-[2.5rem] shadow-2xl border overflow-hidden flex flex-col transition-all duration-300 ${
+        tema === 'dark' ? 'bg-[#0d0d0d] border-[#222]' : 'bg-white border-gray-200'
       }`}>
         
-        {/* Cabecera */}
-        <div className={`p-6 border-b flex justify-between items-center ${
-          tema === 'dark' ? 'border-[#2a2a2a] bg-[#0a0a0a]' : 'border-gray-200 bg-gray-50'
+        {/* Cabecera Premium */}
+        <div className={`p-8 border-b flex justify-between items-center ${
+          tema === 'dark' ? 'border-[#222] bg-[#111]' : 'border-gray-100 bg-gray-50'
         }`}>
-          <div>
-            <h2 className={`text-2xl font-black tracking-tighter ${
-              tema === 'dark' ? 'text-white' : 'text-gray-900'
-            }`}>💸 Caja Chica</h2>
-            <p className={`text-xs font-bold uppercase tracking-widest mt-1 ${
-              tema === 'dark' ? 'text-neutral-500' : 'text-gray-500'
-            }`}>Registrar Movimiento</p>
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg" style={{ backgroundColor: `${colorPrimario}15`, color: colorPrimario }}>
+              <i className="fi fi-rr-money-bill-wave text-2xl mt-1"></i>
+            </div>
+            <div>
+              <h2 className={`text-2xl font-black tracking-tighter leading-none ${
+                tema === 'dark' ? 'text-white' : 'text-gray-900'
+              }`}>Caja Chica</h2>
+              <p className={`text-[10px] font-black uppercase tracking-[0.2em] mt-1.5 ${
+                tema === 'dark' ? 'text-neutral-500' : 'text-gray-400'
+              }`}>Movimiento de efectivo</p>
+            </div>
           </div>
           <button 
             onClick={onClose} 
-            className={`w-10 h-10 rounded-full flex items-center justify-center font-bold transition-all border ${
+            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all active:scale-90 border ${
               tema === 'dark' 
-                ? 'bg-[#222] hover:bg-red-500/20 border-[#333]' 
-                : 'bg-gray-100 hover:bg-red-100 border-gray-200'
+                ? 'bg-[#1a1a1a] hover:bg-red-500/10 border-[#333] text-neutral-500 hover:text-red-500' 
+                : 'bg-gray-100 hover:bg-red-50 border-gray-200 text-gray-400 hover:text-red-500'
             }`}
-            style={{ color: colorPrimario }}
           >
-            X
+            <i className="fi fi-rr-cross-small text-xl"></i>
           </button>
         </div>
 
         {/* Formulario */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+        <form onSubmit={handleSubmit} className="p-8 space-y-8">
           
-          {/* Switch de Tipo */}
-          <div className={`flex p-1 rounded-2xl border ${
-            tema === 'dark' ? 'bg-[#1a1a1a] border-[#333]' : 'bg-gray-100 border-gray-200'
+          {/* Selector de Tipo Estilo Apple/ERP */}
+          <div className={`flex p-1.5 rounded-2xl border ${
+            tema === 'dark' ? 'bg-[#161616] border-[#222]' : 'bg-gray-100 border-gray-200'
           }`}>
             <button
               type="button"
               onClick={() => setTipo('egreso')}
-              className={`flex-1 py-3 rounded-xl font-black text-sm uppercase tracking-wider transition-all ${
+              className={`flex-1 py-3 rounded-xl font-black text-[11px] uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${
                 tipo === 'egreso' 
-                  ? 'bg-red-500 text-white shadow-[0_0_15px_rgba(239,68,68,0.3)]' 
-                  : (tema === 'dark' ? 'text-neutral-500 hover:text-white' : 'text-gray-500 hover:text-gray-800')
+                  ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/20' 
+                  : (tema === 'dark' ? 'text-neutral-500 hover:text-neutral-300' : 'text-gray-400 hover:text-gray-600')
               }`}
             >
-              📉 Retiro (Gasto)
+              <i className="fi fi-rr-arrow-trend-down"></i> Gasto
             </button>
             <button
               type="button"
               onClick={() => setTipo('ingreso')}
-              className={`flex-1 py-3 rounded-xl font-black text-sm uppercase tracking-wider transition-all ${
+              className={`flex-1 py-3 rounded-xl font-black text-[11px] uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${
                 tipo === 'ingreso' 
-                  ? 'bg-green-500 text-white shadow-[0_0_15px_rgba(34,197,94,0.3)]' 
-                  : (tema === 'dark' ? 'text-neutral-500 hover:text-white' : 'text-gray-500 hover:text-gray-800')
+                  ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' 
+                  : (tema === 'dark' ? 'text-neutral-500 hover:text-neutral-300' : 'text-gray-400 hover:text-gray-600')
               }`}
             >
-              📈 Ingreso
+              <i className="fi fi-rr-arrow-trend-up"></i> Ingreso
             </button>
           </div>
 
-          {/* Input Monto */}
-          <div>
-            <label className={`text-[10px] font-black uppercase tracking-widest mb-2 block ${
-              tema === 'dark' ? 'text-neutral-500' : 'text-gray-500'
-            }`}>Monto (S/)</label>
-            <div className="relative">
-              <span className={`absolute left-4 top-1/2 -translate-y-1/2 text-2xl font-mono ${
+          <div className="space-y-6">
+            {/* Input Monto */}
+            <div>
+              <label className={`text-[10px] font-black uppercase tracking-[0.2em] mb-3 block ${
                 tema === 'dark' ? 'text-neutral-500' : 'text-gray-400'
-              }`}>S/</span>
-              <input 
-                type="number" 
-                step="0.01"
-                min="0.01"
-                value={monto}
-                onChange={(e) => setMonto(e.target.value)}
-                placeholder="0.00"
-                className={`w-full rounded-2xl py-4 pl-12 pr-4 text-3xl font-black font-mono outline-none transition-colors ${
-                  tema === 'dark' 
-                    ? 'bg-[#1a1a1a] border border-[#333] text-white focus:border-[#ff5a1f]' 
-                    : 'bg-gray-50 border border-gray-200 text-gray-900 focus:border-gray-400'
-                }`}
-                style={{ focusBorderColor: colorPrimario }}
-                onFocus={(e) => e.target.style.borderColor = colorPrimario}
-                onBlur={(e) => e.target.style.borderColor = tema === 'dark' ? '#333' : '#e5e7eb'}
-                autoFocus
-              />
+              }`}>Monto del movimiento</label>
+              <div className="relative group">
+                <span className={`absolute left-5 top-1/2 -translate-y-1/2 text-2xl font-black ${
+                  tema === 'dark' ? 'text-neutral-600 group-focus-within:text-white' : 'text-gray-300 group-focus-within:text-gray-900'
+                } transition-colors`}>S/</span>
+                <input 
+                  type="number" 
+                  step="0.01"
+                  value={monto}
+                  onChange={(e) => setMonto(e.target.value)}
+                  placeholder="0.00"
+                  className={`w-full rounded-3xl py-6 pl-14 pr-6 text-4xl font-black font-mono outline-none border-2 transition-all ${
+                    tema === 'dark' 
+                      ? 'bg-[#161616] border-[#222] text-white focus:bg-[#1a1a1a]' 
+                      : 'bg-gray-50 border-gray-100 text-gray-900 focus:bg-white'
+                  }`}
+                  style={{ focusBorderColor: colorPrimario }}
+                  onFocus={(e) => e.target.style.borderColor = colorPrimario}
+                  onBlur={(e) => e.target.style.borderColor = tema === 'dark' ? '#222' : '#f3f4f6'}
+                  autoFocus
+                />
+              </div>
+            </div>
+
+            {/* Input Concepto */}
+            <div>
+              <label className={`text-[10px] font-black uppercase tracking-[0.2em] mb-3 block ${
+                tema === 'dark' ? 'text-neutral-500' : 'text-gray-400'
+              }`}>Motivo o Justificación</label>
+              <div className="relative">
+                <i className={`fi fi-rr-receipt absolute left-5 top-1/2 -translate-y-1/2 ${tema === 'dark' ? 'text-neutral-600' : 'text-gray-300'}`}></i>
+                <input 
+                  type="text" 
+                  value={concepto}
+                  onChange={(e) => setConcepto(e.target.value)}
+                  placeholder={tipo === 'egreso' ? "Ej. Compra de insumos" : "Ej. Ingreso de sencillo"}
+                  className={`w-full rounded-2xl py-4 pl-12 pr-5 font-bold text-sm outline-none border-2 transition-all ${
+                    tema === 'dark' 
+                      ? 'bg-[#161616] border-[#222] text-white focus:bg-[#1a1a1a]' 
+                      : 'bg-gray-50 border-gray-100 text-gray-900 focus:bg-white'
+                  }`}
+                  onFocus={(e) => e.target.style.borderColor = colorPrimario}
+                  onBlur={(e) => e.target.style.borderColor = tema === 'dark' ? '#222' : '#f3f4f6'}
+                />
+              </div>
             </div>
           </div>
 
-          {/* Input Concepto */}
-          <div>
-            <label className={`text-[10px] font-black uppercase tracking-widest mb-2 block ${
-              tema === 'dark' ? 'text-neutral-500' : 'text-gray-500'
-            }`}>Motivo / Concepto</label>
-            <input 
-              type="text" 
-              value={concepto}
-              onChange={(e) => setConcepto(e.target.value)}
-              placeholder={tipo === 'egreso' ? "Ej. Compra de 1L de aceite" : "Ej. Sencillo para dar vuelto"}
-              className={`w-full rounded-xl py-3 px-4 font-bold outline-none transition-colors ${
-                tema === 'dark' 
-                  ? 'bg-[#1a1a1a] border border-[#333] text-white focus:border-[#ff5a1f]' 
-                  : 'bg-gray-50 border border-gray-200 text-gray-900 focus:border-gray-400'
-              }`}
-              onFocus={(e) => e.target.style.borderColor = colorPrimario}
-              onBlur={(e) => e.target.style.borderColor = tema === 'dark' ? '#333' : '#e5e7eb'}
-            />
-          </div>
-
-          {/* Botón Acción */}
+          {/* Botón Acción Final */}
           <button 
             type="submit" 
             disabled={procesando}
-            className={`w-full py-4 rounded-2xl font-black text-lg tracking-wider uppercase transition-all flex justify-center items-center gap-2 
-              ${tipo === 'egreso' ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'}
-              text-white ${procesando ? 'opacity-50 cursor-not-allowed' : 'active:scale-95 shadow-lg'}`}
+            className={`w-full py-5 rounded-[1.5rem] font-black text-sm tracking-[0.2em] uppercase transition-all flex justify-center items-center gap-3 text-white shadow-xl
+              ${tipo === 'egreso' ? 'bg-rose-500 hover:bg-rose-600 shadow-rose-500/20' : 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/20'}
+              ${procesando ? 'opacity-50 cursor-not-allowed' : 'active:scale-95'}`}
           >
-            {procesando ? 'Guardando...' : `Registrar ${tipo === 'egreso' ? 'Gasto' : 'Ingreso'}`}
+            {procesando ? (
+              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+            ) : (
+              <>
+                <i className={`fi ${tipo === 'egreso' ? 'fi-rr-log-out' : 'fi-rr-log-in'} mt-1`}></i>
+                Registrar {tipo === 'egreso' ? 'Salida' : 'Entrada'}
+              </>
+            )}
           </button>
         </form>
       </div>

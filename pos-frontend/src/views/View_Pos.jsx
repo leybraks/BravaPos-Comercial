@@ -49,32 +49,42 @@ export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
 
     let ws = null;
     let unmounted = false;
+    let reconnectTimeout = null;
 
-    const conectar = () => {
+    const conectar = async () => {
       if (unmounted) return;
 
       const baseUrl = import.meta.env.VITE_WS_URL || import.meta.env.VITE_API_URL.replace('http', 'ws');
-      
-      // ✨ INYECTAMOS EL TOKEN
-      const wsUrl = `${baseUrl}/ws/salon/${sedeActualId}/`;
-      
-      ws = new WebSocket(wsUrl);
-      wsRef.current = ws;
-      ws.onopen = () => {
-        setWsListo(true); 
-      };
-      ws.onclose = () => { 
-        setWsListo(false);
-        if (!unmounted) setTimeout(conectar, 3000); 
-      };
-      ws.onerror = () => ws.close();
+
+      try {
+        // Pedimos token temporal para WS
+        const res = await api.get('/verificar-sesion/');
+        const wsToken = res.data.ws_token;
+        const wsUrl = `${baseUrl}/ws/salon/${sedeActualId}/?token=${wsToken}`;
+
+        ws = new WebSocket(wsUrl);
+        wsRef.current = ws;
+
+        ws.onopen = () => {
+          setWsListo(true);
+        };
+        ws.onclose = () => {
+          setWsListo(false);
+          if (!unmounted) reconnectTimeout = setTimeout(conectar, 3000);
+        };
+        ws.onerror = () => ws.close();
+      } catch (err) {
+        console.warn('⚠️ No se pudo obtener token WS, reintentando...', err);
+        if (!unmounted) reconnectTimeout = setTimeout(conectar, 3000);
+      }
     };
 
     conectar();
 
     return () => {
       unmounted = true;
-      // Al salir → restaurar el estado que tenía la mesa usando la ref aislada
+      clearTimeout(reconnectTimeout);
+      // Restaurar estado de mesa al salir
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'mesa_estado', mesa_id: mesaId, estado: estadoMesaRef.current, total: 0 }));
       }

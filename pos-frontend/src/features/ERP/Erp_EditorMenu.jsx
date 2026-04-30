@@ -9,7 +9,8 @@ export default function EditorMenu({
   onEditPlato, 
   onToggleDisponibilidad,
   onOpenReceta,
-  onOpenVariaciones
+  onOpenVariaciones,
+  onOpenModificadores
 }) {
   const { configuracionGlobal } = usePosStore();
   const colorPrimario = configuracionGlobal?.colorPrimario || '#ff5a1f';
@@ -24,7 +25,7 @@ export default function EditorMenu({
 
   // Estado local para el filtro
   const [categoriaSeleccionada, setCategoriaSeleccionada] = useState('Todos');
-
+  
   return (
     <div className="animate-fadeIn space-y-8 max-w-7xl mx-auto min-w-0 pb-24 h-full flex flex-col">
       
@@ -51,6 +52,16 @@ export default function EditorMenu({
         {/* ✨ CONTROLES DE DUEÑO */}
         {esDueño && (
           <div className="flex flex-col sm:flex-row gap-3 shrink-0">
+            {/* ✨ NUEVO BOTÓN DE MODIFICADORES */}
+            <button 
+              onClick={onOpenModificadores} // Asegúrate de pasar esta prop
+              className={`px-5 py-3 rounded-xl font-bold text-xs uppercase tracking-widest transition-all border flex items-center justify-center gap-2 ${
+                isDark ? 'bg-[#1a1a1a] hover:bg-[#222] text-neutral-300 border-[#333]' : 'bg-gray-50 hover:bg-gray-100 text-gray-700 border-gray-200'
+              }`}
+            >
+              <i className="fi fi-rr-settings-sliders text-sm"></i> Modificadores
+            </button>
+
             <button 
               onClick={onOpenCategorias}
               className={`px-5 py-3 rounded-xl font-bold text-xs uppercase tracking-widest transition-all border flex items-center justify-center gap-2 ${

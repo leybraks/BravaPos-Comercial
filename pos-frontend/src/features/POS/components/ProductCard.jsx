@@ -16,10 +16,14 @@ export default function ProductCard({
   notificarEstadoMesa,
   formatearSoles
 }) {
+  const isDark = tema === 'dark';
   const totalCantidadProd = carrito.filter(item => item.id === prod.id).reduce((acc, curr) => acc + curr.cantidad, 0);
   const tieneVariantes = carrito.some(item => item.id === prod.id && item.cart_id !== `base_${prod.id}`);
   const nombreCategoriaMuestra = categoriasReales.find(c => String(c.id) === String(prod.categoria))?.nombre || 'Sin categoría';
 
+  // ==========================================
+  // CASO 1: PRODUCTO REQUIERE SELECCIÓN OBLIGATORIA
+  // ==========================================
   if (prod.requiere_seleccion) {
     return (
       <button 
@@ -30,16 +34,22 @@ export default function ProductCard({
             }
         }} 
         disabled={!prod.disponible}
-        className={`relative p-3 sm:p-4 rounded-3xl shadow-lg transition-all flex flex-col justify-between h-36 sm:h-44 text-left group ${
+        className={`relative p-3 sm:p-4 rounded-3xl transition-all flex flex-col justify-between h-36 sm:h-44 text-left group border ${
           prod.disponible 
-            ? (tema === 'dark' ? 'bg-[#111] border border-[#222] hover:border-[#444] active:scale-95 cursor-pointer' : 'bg-white border border-gray-200 hover:shadow-xl active:scale-95 cursor-pointer') 
-            : (tema === 'dark' ? 'bg-[#0a0a0a] border border-[#1a1a1a] opacity-50 cursor-not-allowed' : 'bg-gray-50 border border-gray-200 opacity-50 cursor-not-allowed')
+            ? (isDark ? 'bg-[#141414] border-[#222] hover:border-[#444] active:scale-95 cursor-pointer hover:-translate-y-1' : 'bg-white border-gray-200 hover:border-gray-300 hover:-translate-y-1 active:scale-95 cursor-pointer') 
+            : (isDark ? 'bg-[#0a0a0a] border-[#1a1a1a] opacity-50 cursor-not-allowed' : 'bg-gray-50 border-gray-200 opacity-50 cursor-not-allowed')
         }`}
       >
-        {!prod.disponible && <div className="absolute top-3 right-3 bg-red-600 text-white text-[9px] font-black px-2 py-1 rounded uppercase tracking-widest z-10 shadow-lg">Agotado</div>}
+        {!prod.disponible && (
+          <div className="absolute top-3 right-3 bg-red-500/10 border border-red-500/20 text-red-500 text-[9px] font-black px-2 py-1 rounded uppercase tracking-widest z-10">
+            Agotado
+          </div>
+        )}
         
         <div className="flex-1 pointer-events-none flex flex-col">
-          <span className={`font-bold leading-tight text-[14px] sm:text-[16px] line-clamp-2 ${tema === 'dark' ? 'text-neutral-200 group-hover:text-white' : 'text-gray-800 group-hover:text-black'}`}>{prod.nombre}</span>
+          <span className={`font-bold leading-tight text-[14px] sm:text-[16px] line-clamp-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+            {prod.nombre}
+          </span>
           
           {prod._coincidenciaVariacion && (
             <span className="text-[10px] font-black uppercase mt-0.5 animate-pulse" style={{ color: colorPrimario }}>
@@ -47,20 +57,30 @@ export default function ProductCard({
             </span>
           )}
 
-          <p className={`text-[9px] sm:text-[10px] mt-0.5 uppercase font-black tracking-widest truncate ${tema === 'dark' ? 'text-neutral-600' : 'text-gray-400'}`}>{nombreCategoriaMuestra}</p>
+          <p className={`text-[9px] sm:text-[10px] mt-0.5 uppercase font-black tracking-widest truncate ${isDark ? 'text-neutral-500' : 'text-gray-500'}`}>
+            {nombreCategoriaMuestra}
+          </p>
         </div>
         
         <div className="flex justify-between items-end w-full mt-1 shrink-0">
-            <span className={`text-[9px] sm:text-[10px] uppercase font-black tracking-widest px-2.5 py-1.5 rounded-lg border ${tema === 'dark' ? 'text-neutral-400 bg-[#1a1a1a] border-[#2a2a2a]' : 'text-gray-500 bg-gray-100 border-gray-200'}`}>Opciones</span>
+            <span className={`text-[9px] sm:text-[10px] uppercase font-black tracking-widest px-2.5 py-1.5 rounded-lg border flex items-center gap-1.5 ${isDark ? 'text-neutral-400 bg-[#1a1a1a] border-[#333]' : 'text-gray-500 bg-gray-100 border-gray-200'}`}>
+              <i className="fi fi-rr-list text-[10px] mt-0.5"></i> Opciones
+            </span>
             {totalCantidadProd > 0 && (
-                <div className='text-white w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center font-black text-sm sm:text-base shadow-lg' style={{ backgroundColor: colorPrimario }}>{totalCantidadProd}</div>
+                <div className="text-white w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center font-black text-sm sm:text-base" style={{ backgroundColor: colorPrimario }}>
+                  {totalCantidadProd}
+                </div>
             )}
         </div>
       </button>
     );
   }
 
+  // ==========================================
+  // CASO 2: PRODUCTO ESTÁNDAR (Con o sin variantes opcionales)
+  // ==========================================
   const precioAMostrar = parseFloat(prod.precio_base || prod.precio);
+  
   return (
     <div 
       onClick={() => { 
@@ -70,16 +90,22 @@ export default function ProductCard({
           aprenderSeleccion(prod.id, busqueda); 
         } 
       }}
-      className={`relative p-2.5 sm:p-4 rounded-3xl shadow-lg transition-all flex flex-col text-left justify-between overflow-hidden h-36 sm:h-44 ${
+      className={`relative p-3 sm:p-4 rounded-3xl transition-all flex flex-col text-left justify-between overflow-hidden h-36 sm:h-44 border ${
         prod.disponible 
-          ? (tema === 'dark' ? 'bg-[#111] border border-[#222] hover:bg-[#151515] cursor-pointer' : 'bg-white border border-gray-200 hover:shadow-xl cursor-pointer hover:bg-gray-50') 
-          : (tema === 'dark' ? 'bg-[#0a0a0a] border border-[#1a1a1a] opacity-50 cursor-not-allowed' : 'bg-gray-50 border border-gray-200 opacity-50 cursor-not-allowed')
+          ? (isDark ? 'bg-[#141414] border-[#222] hover:border-[#333] hover:-translate-y-1 cursor-pointer' : 'bg-white border-gray-200 hover:border-gray-300 hover:-translate-y-1 cursor-pointer') 
+          : (isDark ? 'bg-[#0a0a0a] border-[#1a1a1a] opacity-50 cursor-not-allowed' : 'bg-gray-50 border-gray-200 opacity-50 cursor-not-allowed')
       }`}
     >
-      {!prod.disponible && <div className="absolute top-3 right-3 bg-red-600 text-white text-[9px] font-black px-2 py-1 rounded uppercase tracking-widest z-10 shadow-lg">Agotado</div>}
+      {!prod.disponible && (
+        <div className="absolute top-3 right-3 bg-red-500/10 border border-red-500/20 text-red-500 text-[9px] font-black px-2 py-1 rounded uppercase tracking-widest z-10">
+          Agotado
+        </div>
+      )}
       
-      <div className='flex-1 mb-1 pointer-events-none flex flex-col'>
-        <span className={`font-bold leading-tight text-[14px] sm:text-[16px] line-clamp-2 ${tema === 'dark' ? 'text-neutral-200' : 'text-gray-800'}`}>{prod.nombre}</span>
+      <div className="flex-1 mb-1 pointer-events-none flex flex-col">
+        <span className={`font-bold leading-tight text-[14px] sm:text-[16px] line-clamp-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+          {prod.nombre}
+        </span>
         
         {prod._coincidenciaVariacion && (
           <span className="text-[10px] font-black uppercase mt-0.5 animate-pulse" style={{ color: colorPrimario }}>
@@ -87,42 +113,90 @@ export default function ProductCard({
           </span>
         )}
 
-        <p className={`text-[9px] mt-0.5 uppercase font-black tracking-widest truncate ${tema === 'dark' ? 'text-neutral-600' : 'text-gray-400'}`}>{nombreCategoriaMuestra}</p>
-        <p className="font-mono text-xs sm:text-sm font-bold mt-auto pb-1" style={{ color: colorPrimario }}>{formatearSoles(precioAMostrar)}</p>
+        <p className={`text-[9px] mt-0.5 uppercase font-black tracking-widest truncate ${isDark ? 'text-neutral-500' : 'text-gray-500'}`}>
+          {nombreCategoriaMuestra}
+        </p>
+        
+        <p className="font-black text-xs sm:text-sm mt-auto pb-1" style={{ color: colorPrimario }}>
+          <span className="text-[10px] mr-0.5 opacity-80">S/</span>{formatearSoles(precioAMostrar).replace('S/ ', '')}
+        </p>
       </div>
       
-      <div className={`flex flex-row items-center justify-between gap-1.5 pt-1.5 border-t shrink-0 ${!prod.disponible ? 'pointer-events-none' : ''} ${tema === 'dark' ? 'border-[#1a1a1a]' : 'border-gray-100'}`}>
+      <div className={`flex flex-row items-center justify-between gap-1.5 pt-2 border-t shrink-0 ${!prod.disponible ? 'pointer-events-none' : ''} ${isDark ? 'border-[#222]' : 'border-gray-100'}`}>
           
           {totalCantidadProd > 0 && (
-            <div className='flex-1 flex items-center justify-between gap-1'>
-              <button onClick={(e) => { e.stopPropagation(); restarDesdeGrid(prod.id); }} disabled={!prod.disponible} className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center font-black text-lg transition-all border bg-red-500/10 text-red-500 border-red-500/20 hover:bg-red-500 hover:text-white disabled:opacity-50">-</button>
-              <span className={`flex-1 h-8 sm:h-10 rounded-lg font-black text-sm sm:text-base flex items-center justify-center border transition-all ${tema === 'dark' ? 'bg-[#1a1a1a] text-white border-[#333]' : 'bg-gray-100 text-gray-900 border-gray-300'}`}>
+            <div className="flex-1 flex items-center justify-between gap-1.5">
+              {/* Botón Restar */}
+              <button 
+                onClick={(e) => { e.stopPropagation(); restarDesdeGrid(prod.id); }} 
+                disabled={!prod.disponible} 
+                className={`w-8 h-8 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center font-black text-lg transition-all border disabled:opacity-50 ${isDark ? 'bg-[#1a1a1a] text-red-400 border-[#333] hover:bg-red-500/10 hover:border-red-500/30' : 'bg-gray-50 text-red-500 border-gray-200 hover:bg-red-50 hover:border-red-200'}`}
+              >
+                -
+              </button>
+              
+              {/* Contador Central */}
+              <span className={`flex-1 h-8 sm:h-10 rounded-xl font-black text-sm sm:text-base flex items-center justify-center border transition-all relative ${isDark ? 'bg-[#1a1a1a] text-white border-[#333]' : 'bg-gray-50 text-gray-900 border-gray-200'}`}>
                   {totalCantidadProd}
-                  {tieneVariantes && <span className="absolute top-0.5 right-1 text-[8px]" style={{ color: colorPrimario }}>⚙️</span>}
+                  {tieneVariantes && (
+                    <span className="absolute top-1 right-1">
+                      <i className="fi fi-rr-settings text-[8px]" style={{ color: colorPrimario }}></i>
+                    </span>
+                  )}
               </span>
-              <button onClick={(e) => { e.stopPropagation(); agregarProducto(prod); }} disabled={!prod.disponible} className='w-8 h-8 sm:w-10 sm:h-10 bg-green-500/10 text-green-500 border border-green-500/20 hover:bg-green-500 hover:text-white rounded-lg flex items-center justify-center font-black text-lg transition-all disabled:opacity-50'>+</button>
+              
+              {/* Botón Sumar */}
+              <button 
+                onClick={(e) => { e.stopPropagation(); agregarProducto(prod); }} 
+                disabled={!prod.disponible} 
+                className={`w-8 h-8 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center font-black text-lg transition-all border disabled:opacity-50`}
+                style={{ backgroundColor: `${colorPrimario}15`, borderColor: `${colorPrimario}30`, color: colorPrimario }}
+              >
+                +
+              </button>
             </div>
           )}
           
+          {/* BOTONES DE CONFIGURACIÓN (Variaciones / Notas) */}
           {prod.tiene_variaciones ? (
             totalCantidadProd > 0 ? (
-              <button onClick={(e) => { e.stopPropagation(); abrirModalParaNuevo(prod); }} disabled={!prod.disponible} className="shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-lg border transition-colors flex items-center justify-center hover:brightness-110" style={{ color: colorPrimario, backgroundColor: colorPrimario + '1A', borderColor: colorPrimario + '4D' }}>
-                ⚙️
+              <button 
+                onClick={(e) => { e.stopPropagation(); abrirModalParaNuevo(prod); }} 
+                disabled={!prod.disponible} 
+                className={`shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-xl border transition-colors flex items-center justify-center hover:brightness-110 disabled:opacity-50`} 
+                style={{ color: colorPrimario, backgroundColor: colorPrimario + '15', borderColor: colorPrimario + '30' }}
+                title="Configurar Variaciones"
+              >
+                <i className="fi fi-rr-settings text-sm mt-0.5"></i>
               </button>
             ) : (
-              <button onClick={(e) => { e.stopPropagation(); abrirModalParaNuevo(prod); }} disabled={!prod.disponible} className="w-full text-[10px] sm:text-[11px] font-black uppercase tracking-widest py-2 sm:py-2.5 rounded-lg border transition-colors hover:brightness-110" style={{ color: colorPrimario, backgroundColor: colorPrimario + '1A', borderColor: colorPrimario + '4D' }}>
-                ⚙️ Variantes / Opc.
+              <button 
+                onClick={(e) => { e.stopPropagation(); abrirModalParaNuevo(prod); }} 
+                disabled={!prod.disponible} 
+                className={`w-full text-[9px] sm:text-[10px] font-black uppercase tracking-widest py-2.5 sm:py-3 rounded-xl border transition-colors hover:brightness-110 flex items-center justify-center gap-1.5`} 
+                style={{ color: colorPrimario, backgroundColor: colorPrimario + '15', borderColor: colorPrimario + '30' }}
+              >
+                <i className="fi fi-rr-settings text-xs mt-0.5"></i> Variantes
               </button>
             )
           ) : (
             totalCantidadProd > 0 ? (
-              <button onClick={(e) => { e.stopPropagation(); abrirModalParaNuevo(prod); }} disabled={!prod.disponible} className={`shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-lg border transition-colors flex items-center justify-center disabled:opacity-50 ${tema === 'dark' ? 'bg-[#1a1a1a] border-[#2a2a2a] hover:border-[#444]' : 'bg-gray-100 border-gray-200 hover:border-gray-300'}`} title="Agregar Nota">
-                📝
+              <button 
+                onClick={(e) => { e.stopPropagation(); abrirModalParaNuevo(prod); }} 
+                disabled={!prod.disponible} 
+                className={`shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-xl border transition-colors flex items-center justify-center disabled:opacity-50 ${isDark ? 'bg-[#1a1a1a] border-[#333] text-neutral-400 hover:text-white hover:border-[#444]' : 'bg-gray-50 border-gray-200 text-gray-500 hover:text-gray-900'}`} 
+                title="Agregar Nota"
+              >
+                <i className="fi fi-rr-comment-alt text-sm mt-0.5"></i>
               </button>
             ) : (
               <div className="w-full flex justify-end">
-                <button onClick={(e) => { e.stopPropagation(); abrirModalParaNuevo(prod); }} disabled={!prod.disponible} className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg border transition-colors flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest disabled:opacity-50 ${tema === 'dark' ? 'text-neutral-500 bg-[#1a1a1a] border-[#2a2a2a] hover:text-white' : 'text-gray-500 bg-gray-100 border-gray-200 hover:text-gray-800'}`}>
-                  📝 <span className="hidden sm:inline">Nota</span>
+                <button 
+                  onClick={(e) => { e.stopPropagation(); abrirModalParaNuevo(prod); }} 
+                  disabled={!prod.disponible} 
+                  className={`px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl border transition-colors flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest disabled:opacity-50 ${isDark ? 'text-neutral-500 bg-[#1a1a1a] border-[#333] hover:text-white hover:border-[#444]' : 'text-gray-500 bg-gray-50 border-gray-200 hover:text-gray-900'}`}
+                >
+                  <i className="fi fi-rr-comment-alt text-xs mt-0.5"></i> <span className="hidden sm:inline">Nota</span>
                 </button>
               </div>
             )

@@ -1,4 +1,5 @@
 import time
+from urllib import response
 import requests
 import logging
 
@@ -28,8 +29,36 @@ class NegocioViewSet(viewsets.ModelViewSet):
         if hasattr(self.request.user, 'negocio'):
             return Negocio.objects.filter(propietario=self.request.user)
         return Negocio.objects.none()
+    @action(detail=False, methods=['get'], url_path='consultar_ruc/(?P<ruc>[0-9]{11})', permission_classes=[IsAuthenticated])
+    def consultar_ruc(self, request, ruc=None):
+        token = getattr(settings, 'APIS_NET_PE_TOKEN', None)
+        if not token:
+            return Response({'error': 'Token no configurado.'}, status=500)
+        try:
+            response = requests.get(
+                'https://api.decolecta.com/v1/sunat/ruc',  # ← URL de decolecta
+                params={'numero': ruc},                     # ← parámetro correcto
+                headers={
+                    'Authorization': f'Bearer {token}',    # ← header correcto
+                    'Accept': 'application/json',
+                },
+                timeout=8
+            )
+            if response.status_code != 200:
+                return Response({'error': 'RUC no encontrado en SUNAT.'}, status=404)
 
-
+            data = response.json()
+            print(f"DATA: {data}")
+            return Response({
+                'ruc':          data.get('numero_documento', ruc),  # ← camelCase
+                'razon_social': data.get('razon_social', ''),       # ← camelCase
+                'estado':       data.get('estado', 'DESCONOCIDO'),
+            })
+        except requests.Timeout:
+            return Response({'error': 'Timeout.'}, status=504)
+        except Exception as e:
+            logger.error(f"Error SUNAT RUC {ruc}: {e}")
+            return Response({'error': str(e)}, status=500)
 # ============================================================
 # SEDE
 # ============================================================
@@ -43,6 +72,7 @@ class SedeViewSet(viewsets.ModelViewSet):
         if hasattr(self.request.user, 'negocio'):
             return Sede.objects.filter(negocio=self.request.user.negocio)
         return Sede.objects.none()
+    
 
     def perform_create(self, serializer):
         negocio = self.request.user.negocio

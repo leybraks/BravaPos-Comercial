@@ -200,10 +200,21 @@ class OrdenViewSet(viewsets.ModelViewSet):
             for detalle_data in detalles_data:
                 producto = Producto.objects.get(id=detalle_data['producto'])
                 precio_seguro = producto.precio_base
+                
+                # --- INICIO DE LA CORRECCIÓN ---
                 notas = detalle_data.get('notas_y_modificadores', {})
+                if isinstance(notas, str):
+                    try:
+                        # Si es un string válido lo parsea, si está vacío o solo tiene espacios, asigna {}
+                        notas = json.loads(notas) if notas.strip() else {}
+                    except Exception:
+                        # Si llega un string basura que no es JSON válido (ej. "hola"), lo vuelve un diccionario vacío
+                        notas = {}
+                # --- FIN DE LA CORRECCIÓN ---
 
                 variaciones_dict = notas.get('variaciones', {})
-                opciones_ids_raw = detalle_data.pop('opciones_seleccionadas', [])
+                # Usamos .get en vez de .pop por seguridad, o le pasamos un default a pop
+                opciones_ids_raw = detalle_data.get('opciones_seleccionadas', [])
                 opciones_a_guardar, subtotal_opciones = _procesar_opciones(opciones_ids_raw, variaciones_dict)
 
                 precio_final_unitario = precio_seguro + subtotal_opciones

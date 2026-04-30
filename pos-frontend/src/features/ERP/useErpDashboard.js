@@ -3,6 +3,7 @@ import {
   obtenerMetricasDashboard, getEmpleados, getRoles, getOrdenes,
   crearEmpleado, getProductos, crearProducto, actualizarProducto, parchearProducto,
   getCategorias, crearCategoria, actualizarNegocio, actualizarEmpleado, parchearCategoria,
+  getModificadores,
 } from '../../api/api';
 import api from '../../api/api';
 import usePosStore from '../../store/usePosStore';
@@ -30,12 +31,22 @@ export const useErpDashboard = () => {
   const [productoParaVariaciones, setProductoParaVariaciones] = useState(null);
   const [categorias, setCategorias] = useState([]);
   const [config, setConfig] = useState({
-    numeroYape: '', modSalon: true, modCocina: false, modDelivery: false,
-    modInventario: false, modClientes: false, modFacturacion: false,
-    colorPrimario: '#ff5a1f', temaFondo: 'dark', qrPreview: null, qrFile: null, permisosPlan: {}
+    // Identidad
+    ruc: '', razon_social: '', logoPreview: null, logoFile: null, logo: null,
+    // Billeteras
+    yape_numero: '', yape_qrPreview: null, yape_qrFile: null, yape_qr: null,
+    plin_numero: '', plin_qrPreview: null, plin_qrFile: null, plin_qr: null,
+    // Culqi
+    usa_culqi: false, culqi_public_key: '', culqi_private_key: '',
+    // Módulos
+    modSalon: true, modCocina: false, modDelivery: false, modInventario: false, 
+    modClientes: false, modFacturacion: false, modCartaQr: false, modBotWsp: false, modMl: false,
+    // UI
+    colorPrimario: '#ff5a1f', temaFondo: 'dark', permisosPlan: {}
   });
   const [guardandoConfig, setGuardandoConfig] = useState(false);
   const [productosReales, setProductosReales] = useState([]);
+  const [modificadoresReales, setModificadoresReales] = useState([]);
   const [modalPlato, setModalPlato] = useState(false);
   const [pasoModal, setPasoModal] = useState(1);
   const [formPlato, setFormPlato] = useState({ 
@@ -129,12 +140,19 @@ export const useErpDashboard = () => {
     if (vistaActiva === 'menu') {
       const cargarMenu = async () => {
         try {
-          const [resProductos, resCategorias] = await Promise.all([
-            getProductos({ sede_id: sedeMenuId }), getCategorias()
+          const negocioId = localStorage.getItem('negocio_id');
+          const [resProductos, resCategorias, resModificadores] = await Promise.all([
+            getProductos({ sede_id: sedeMenuId }), 
+            getCategorias(),
+            getModificadores({ negocio_id: negocioId })
           ]);
           setProductosReales(resProductos.data);
           setCategorias(resCategorias.data);
-        } catch (error) { console.error("Error menú:", error); }
+          setModificadoresReales(resModificadores.data || []);
+        } catch (error) { 
+          console.error("Error menú:", error); 
+          setModificadoresReales([]);
+        }
       };
       cargarMenu();
     }
@@ -147,18 +165,36 @@ export const useErpDashboard = () => {
         const response = await api.get(`/negocios/${negocioId}/`);
         const datosBD = response.data;
         const configData = {
-          numeroYape: datosBD.numero_yape || '', modSalon: datosBD.mod_salon_activo ?? true,
+          // Identidad
+          ruc: datosBD.ruc || '',
+          razon_social: datosBD.razon_social || '',
+          logo: datosBD.logo || null,
+          // Billeteras
+          yape_numero: datosBD.yape_numero || '',
+          yape_qr: datosBD.yape_qr || null,
+          plin_numero: datosBD.plin_numero || '',
+          plin_qr: datosBD.plin_qr || null,
+          // Culqi
+          usa_culqi: datosBD.usa_culqi || false,
+          culqi_public_key: datosBD.culqi_public_key || '',
+          culqi_private_key: datosBD.culqi_private_key || '',
+          // Módulos
+          modSalon: datosBD.mod_salon_activo ?? true,
           modCocina: datosBD.mod_cocina_activo ?? false, modInventario: datosBD.mod_inventario_activo ?? false,
           modDelivery: datosBD.mod_delivery_activo ?? false, modClientes: datosBD.mod_clientes_activo ?? false,
           modFacturacion: datosBD.mod_facturacion_activo ?? false, modCartaQr: datosBD.mod_carta_qr_activo ?? false,
           modBotWsp: datosBD.mod_bot_wsp_activo ?? false, modMl: datosBD.mod_ml_activo ?? false,
+          // UI
           colorPrimario: datosBD.color_primario || '#ff5a1f', temaFondo: datosBD.tema_fondo || 'dark',
-          permisosPlan: datosBD.plan_detalles || {}, qrPreview: null, qrFile: null
+          permisosPlan: datosBD.plan_detalles || {}
         };
         setConfig(configData);
         setConfigOriginal(JSON.parse(JSON.stringify(configData)));
         setConfiguracionGlobal({
-          colorPrimario: configData.colorPrimario, temaFondo: configData.temaFondo, numeroYape: configData.numeroYape,
+          colorPrimario: configData.colorPrimario, temaFondo: configData.temaFondo,
+          yape_numero: configData.yape_numero, yape_qr: configData.yape_qr,
+          plin_numero: configData.plin_numero, plin_qr: configData.plin_qr,
+          usa_culqi: configData.usa_culqi, culqi_public_key: configData.culqi_public_key,
           modulos: { salon: configData.modSalon, cocina: configData.modCocina, delivery: configData.modDelivery, inventario: configData.modInventario, clientes: configData.modClientes, facturacion: configData.modFacturacion, cartaQr: configData.modCartaQr, botWsp: configData.modBotWsp, machineLearning: configData.modMl }
         });
       } catch (error) { console.error("Error config:", error); }
@@ -248,24 +284,64 @@ export const useErpDashboard = () => {
   const manejarGuardarConfig = async () => {
     setGuardandoConfig(true);
     try {
-      const payload = {
-        numero_yape: config.numeroYape, mod_salon_activo: config.modSalon, mod_cocina_activo: config.modCocina,
-        mod_inventario_activo: config.modInventario, mod_delivery_activo: config.modDelivery, mod_clientes_activo: config.modClientes,
-        mod_facturacion_activo: config.modFacturacion, mod_carta_qr_activo: config.modCartaQr, mod_bot_wsp_activo: config.modBotWsp,
-        mod_ml_activo: config.modMl, color_primario: config.colorPrimario, tema_fondo: config.temaFondo
-      };
       const negocioId = localStorage.getItem('negocio_id'); 
       if (!negocioId) return alert("⚠️ No se encontró ID negocio.");
-      await actualizarNegocio(negocioId, payload);
+
+      const formData = new FormData();
+
+      // Textos (Enviamos strings vacíos si el usuario los borra)
+      formData.append('ruc', config.ruc || '');
+      formData.append('razon_social', config.razon_social || ''); // 👈 CORREGIDO
+      formData.append('yape_numero', config.yape_numero || ''); // 👈 CORREGIDO
+      formData.append('plin_numero', config.plin_numero || '');
+      formData.append('culqi_public_key', config.culqi_public_key || '');
+      formData.append('culqi_private_key', config.culqi_private_key || '');
+
+      // Booleans de Culqi
+      formData.append('usa_culqi', config.usa_culqi ? 'True' : 'False');
+
+      // Archivos (Solo se envían si hay un File nuevo)
+      if (config.logoFile) formData.append('logo', config.logoFile);
+      if (config.yape_qrFile) formData.append('yape_qr', config.yape_qrFile);
+      if (config.plin_qrFile) formData.append('plin_qr', config.plin_qrFile);
+
+      // Feature Flags (Módulos)
+      formData.append('mod_salon_activo', config.modSalon ? 'True' : 'False');
+      formData.append('mod_cocina_activo', config.modCocina ? 'True' : 'False');
+      formData.append('mod_inventario_activo', config.modInventario ? 'True' : 'False');
+      formData.append('mod_delivery_activo', config.modDelivery ? 'True' : 'False');
+      formData.append('mod_clientes_activo', config.modClientes ? 'True' : 'False');
+      formData.append('mod_facturacion_activo', config.modFacturacion ? 'True' : 'False');
+      formData.append('mod_carta_qr_activo', config.modCartaQr ? 'True' : 'False');
+      formData.append('mod_bot_wsp_activo', config.modBotWsp ? 'True' : 'False');
+      formData.append('mod_ml_activo', config.modMl ? 'True' : 'False');
+      
+      if (config.colorPrimario) formData.append('color_primario', config.colorPrimario);
+      if (config.temaFondo) formData.append('tema_fondo', config.temaFondo);
+
+      await api.patch(`/negocios/${negocioId}/`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+
       setConfiguracionGlobal({
-        colorPrimario: config.colorPrimario, temaFondo: config.temaFondo, numeroYape: config.numeroYape,
+        colorPrimario: config.colorPrimario, temaFondo: config.temaFondo,
+        yape_numero: config.yape_numero, yape_qr: config.yape_qrPreview || config.yape_qr, // 👈 Pasa el preview si recién lo subió
+        plin_numero: config.plin_numero, plin_qr: config.plin_qrPreview || config.plin_qr,
+        usa_culqi: config.usa_culqi, culqi_public_key: config.culqi_public_key,
         modulos: { salon: config.modSalon, cocina: config.modCocina, delivery: config.modDelivery, inventario: config.modInventario, clientes: config.modClientes, facturacion: config.modFacturacion, cartaQr: config.modCartaQr, botWsp: config.modBotWsp, machineLearning: config.modMl }
       });
-      const { qrFile: _q, qrPreview: _p, ...configSegura } = config;
+
+      // Limpieza del estado original sin crashear por los Files
+      const { logoFile: _l, yape_qrFile: _y, plin_qrFile: _p, logoPreview: _lp, yape_qrPreview: _yqp, plin_qrPreview: _pqp, ...configSegura } = config;
       setConfigOriginal(JSON.parse(JSON.stringify(configSegura)));
-      alert("✅ ¡Configuración guardada!");
-    } catch (error) { alert("❌ Error al guardar."); } 
-    finally { setGuardandoConfig(false); }
+      
+      alert("✅ ¡Configuración e imágenes guardadas!");
+    } catch (error) { 
+      console.error(error);
+      alert("❌ Error al guardar. Verifica la consola."); 
+    } finally { 
+      setGuardandoConfig(false); 
+    }
   };
 
   const abrirModalEdicion = (emp) => {
@@ -366,6 +442,7 @@ export const useErpDashboard = () => {
     formEmpleado, setFormEmpleado, metricas, setMetricas, modalCategorias, setModalCategorias,
     nombreNuevaCat, setNombreNuevaCat, modalRecetaOpen, setModalRecetaOpen,
     productoParaReceta, setProductoParaReceta, modalCambiosPendientes, rolesFiltrados,ordenesReales,
+    modificadoresReales, setModificadoresReales,
     
     cambiarSedeFiltro, manejarCambioVista, descartarCambios, guardarYCambiarVista,
     cancelarCambioVista, manejarGuardarConfig, abrirModalEdicion, toggleActivo,

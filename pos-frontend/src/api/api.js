@@ -305,4 +305,9 @@ export const vincularInsumoASede = (data)   => api.post('/insumo-sede/', data);
 export const getMenuPublico   = (sedeId)           => apiPublica.get(`/menu-publico/${sedeId}/`);
 export const getOrdenPublica  = (sedeId, mesaId)   => apiPublica.get(`/orden-publica/${sedeId}/${mesaId}/`);
 
+// En pos-frontend\src\api\api.js
+export const crearModificador = (data) => api.post('/modificadores-rapidos/', data);
+export const actualizarModificador = (id, data) => api.put(`/modificadores-rapidos/${id}/`, data);
+export const eliminarModificador = (id) => api.delete(`/modificadores-rapidos/${id}/`);
+
 export default api;

@@ -25,18 +25,48 @@ class PlanSaaS(models.Model):
     def __str__(self):
         return self.nombre
 
+from django.db import models
+from django.contrib.auth.models import User
+# Asegúrate de importar tu modelo PlanSaaS si está en otro archivo, o déjalo como lo tienes
+
 class Negocio(models.Model):
     propietario = models.OneToOneField(User, on_delete=models.CASCADE)
     nombre = models.CharField(max_length=100)
 
-    plan = models.ForeignKey(PlanSaaS, on_delete=models.PROTECT, related_name='negocios', null=True, blank=True)
+    # ==========================================
+    # 🏢 1. IDENTIDAD COMERCIAL
+    # ==========================================
+    ruc = models.CharField(max_length=11, blank=True, null=True, unique=True)
+    razon_social = models.CharField(max_length=255, blank=True, null=True)
+    logo = models.ImageField(upload_to='negocios/logos/', blank=True, null=True)
 
+    # ==========================================
+    # 📱 2. BILLETERAS DIGITALES (QRs y Números)
+    # ==========================================
+    yape_numero = models.CharField(max_length=15, blank=True, null=True)
+    yape_qr = models.ImageField(upload_to='negocios/qrs/yape/', blank=True, null=True)
+    
+    plin_numero = models.CharField(max_length=15, blank=True, null=True)
+    plin_qr = models.ImageField(upload_to='negocios/qrs/plin/', blank=True, null=True)
+
+    # ==========================================
+    # 💳 3. PASARELA DE PAGO (Culqi)
+    # ==========================================
+    usa_culqi = models.BooleanField(default=False)
+    culqi_public_key = models.CharField(max_length=255, blank=True, null=True)
+    culqi_private_key = models.CharField(max_length=255, blank=True, null=True)
+
+    # ==========================================
+    # ⚙️ CONFIGURACIÓN DEL PLAN
+    # ==========================================
+    plan = models.ForeignKey('PlanSaaS', on_delete=models.PROTECT, related_name='negocios', null=True, blank=True)
     fecha_registro = models.DateTimeField(auto_now_add=True)
     fin_prueba = models.DateTimeField() # Para el demo de 15 días
     activo = models.BooleanField(default=True)
-    numero_yape = models.CharField(max_length=15, blank=True, null=True)
     
+    # ==========================================
     # 🛡️ MÓDULOS DEL SISTEMA (Feature Flags)
+    # ==========================================
     mod_salon_activo = models.BooleanField(default=True) # Activa/Desactiva el mapa de mesas
     mod_cocina_activo = models.BooleanField(default=False) # KDS
     mod_inventario_activo = models.BooleanField(default=False)
@@ -44,10 +74,12 @@ class Negocio(models.Model):
     mod_clientes_activo = models.BooleanField(default=False) # CRM (Base de datos de clientes)
     mod_facturacion_activo = models.BooleanField(default=False) # Boletas/Facturas Sunat
     mod_carta_qr_activo = models.BooleanField(default=False) # Carta digital con QR para mesas y delivery
-    mod_bot_wsp_activo = models.BooleanField(default=False) # Bot de WhatsApp para tomar pedidos y consultas automáticas
-    mod_ml_activo = models.BooleanField(default=False) # Módulo de Machine Learning para recomendaciones y predicciones de ventas
+    mod_bot_wsp_activo = models.BooleanField(default=False) # Bot de WhatsApp
+    mod_ml_activo = models.BooleanField(default=False) # Machine Learning
     
+    # ==========================================
     # 🎨 PERSONALIZACIÓN VISUAL
+    # ==========================================
     color_primario = models.CharField(max_length=7, default='#ff5a1f') # Naranja Brava por defecto
     tema_fondo = models.CharField(max_length=10, default='dark') # 'dark' o 'light'
     

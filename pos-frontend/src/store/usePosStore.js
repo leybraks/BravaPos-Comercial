@@ -4,26 +4,21 @@ const usePosStore = create((set, get) => ({
   // ==========================================
   // ⚙️ 0. CONFIGURACIÓN GLOBAL (EL CEREBRO DEL SAAS)
   // ==========================================
+  // ==========================================
+  // ⚙️ 0. CONFIGURACIÓN GLOBAL (EL CEREBRO DEL SAAS)
+  // ==========================================
   configuracionGlobal: {
-    // Apariencia
     colorPrimario: '#ff5a1f', 
     temaFondo: 'dark',
-    numeroYape: '',
-    
-    // Módulos Básicos
+    ruc: '', razon_social: '', logo: null,
+    yape_numero: '', yape_qr: null,
+    plin_numero: '', plin_qr: null,
+    usa_culqi: false, culqi_public_key: '',
     modulos: {
-      salon: true,       // Mapa de mesas
-      cocina: false,     // KDS
-      delivery: false,   // Pestaña Para Llevar/Delivery
-      inventario: false, // Control de stock
-      clientes: false,   // CRM
-      facturacion: false,// Boletas Sunat
-      
-      // 🚀 MÓDULOS AVANZADOS (Planes Premium)
-      cartaQr: false,    // Menú QR + Cuenta en Vivo
-      botWsp: false,     // Pedidos automáticos por WhatsApp
-      machineLearning: false // Sugerencias inteligentes (Próximamente)
+      salon: true, cocina: false, delivery: false, inventario: false, 
+      clientes: false, facturacion: false, cartaQr: false, botWsp: false, machineLearning: false
     }
+  
   },
 
   // Acción para sobrescribir la configuración completa al hacer Login o recargar

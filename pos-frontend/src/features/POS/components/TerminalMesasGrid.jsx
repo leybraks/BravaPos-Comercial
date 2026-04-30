@@ -2,7 +2,8 @@ import React, { useMemo } from 'react';
 
 export default function TerminalMesasGrid({
   mesas, modoUnir, mesaPrincipal, mesaSeleccionada, manejarClickMesa,
-  mostrarPuertaMovil, setMostrarPuertaMovil, tema, colorPrimario, sedeActual
+  mostrarPuertaMovil, setMostrarPuertaMovil, tema, colorPrimario, sedeActual,
+  manejarSepararMesa
 }) {
   const mesasAgrupadas = useMemo(() => {
     return mesas.filter((m) => m.estado !== 'unida').map((padre) => {
@@ -27,7 +28,6 @@ export default function TerminalMesasGrid({
   const getEstilosMesa = (mesa, variant = 'pc') => {
     const estado = mesa.estado?.toLowerCase() || 'libre';
     const esOcupada = estado === 'ocupada';
-    // ✨ EL MISMO BUG AQUÍ: Lo actualizamos a 'pidiendo'
     const esPidiendo = estado === 'pidiendo'; 
     const esCobrando = estado === 'cobrando';
     const esPrincipal = modoUnir && mesaPrincipal === mesa.id;
@@ -40,9 +40,12 @@ export default function TerminalMesasGrid({
     let icono = null; let labelEstado = estado;
 
     if (esActiva && !modoUnir) inlineStyle = { outline: `2px solid ${colorPrimario}`, outlineOffset: '2px' };
-    if (esOcupada) { cardClass = ''; inlineStyle = { ...inlineStyle, backgroundColor: tema === 'dark' ? `${colorPrimario}0D` : `${colorPrimario}0A`, borderColor: `${colorPrimario}60`, boxShadow: `0 4px 20px ${colorPrimario}10` }; badgeClass = ''; icono = '🍴'; labelEstado = 'ocupada'; }
-    if (esPidiendo) { cardClass = ''; inlineStyle = { backgroundColor: tema === 'dark' ? '#fbbf2408' : '#fef9c3', borderColor: '#fbbf24aa', boxShadow: '0 4px 20px #fbbf2415' }; badgeClass = 'bg-yellow-400/20 text-yellow-400'; icono = '📝'; labelEstado = 'pidiendo'; }
-    if (esCobrando) { cardClass = ''; inlineStyle = { backgroundColor: tema === 'dark' ? '#f9731608' : '#fff7ed', borderColor: '#f97316aa', boxShadow: '0 4px 20px #f9731615' }; badgeClass = 'bg-orange-400/20 text-orange-400'; icono = '💳'; labelEstado = 'cobrando'; }
+    
+    // RESTAURADOS LOS ICONOS fi-rr
+    if (esOcupada) { cardClass = ''; inlineStyle = { ...inlineStyle, backgroundColor: tema === 'dark' ? `${colorPrimario}0D` : `${colorPrimario}0A`, borderColor: `${colorPrimario}60`, boxShadow: `0 4px 20px ${colorPrimario}10` }; badgeClass = ''; icono = <i className="fi fi-rr-restaurant mt-0.5"></i>; labelEstado = 'ocupada'; }
+    if (esPidiendo) { cardClass = ''; inlineStyle = { backgroundColor: tema === 'dark' ? '#fbbf2408' : '#fef9c3', borderColor: '#fbbf24aa', boxShadow: '0 4px 20px #fbbf2415' }; badgeClass = 'bg-yellow-400/20 text-yellow-400'; icono = <i className="fi fi-rr-edit mt-0.5"></i>; labelEstado = 'pidiendo'; }
+    if (esCobrando) { cardClass = ''; inlineStyle = { backgroundColor: tema === 'dark' ? '#f9731608' : '#fff7ed', borderColor: '#f97316aa', boxShadow: '0 4px 20px #f9731615' }; badgeClass = 'bg-orange-400/20 text-orange-400'; icono = <i className="fi fi-rr-credit-card mt-0.5"></i>; labelEstado = 'cobrando'; }
+    
     if (esPrincipal) { cardClass = 'scale-105 z-10 text-white'; inlineStyle = { backgroundColor: colorPrimario, borderColor: colorPrimario, boxShadow: `0 10px 30px ${colorPrimario}60` }; badgeClass = 'bg-white/20 text-white'; titleClass = 'text-white'; }
 
     return { cardClass, badgeClass, titleClass, inlineStyle, icono, labelEstado, esOcupada };
@@ -52,7 +55,7 @@ export default function TerminalMesasGrid({
     <div className="p-4 md:p-5 flex flex-col animate-fadeIn">
       {modoUnir && (
         <div className="p-4 rounded-2xl mb-5 text-sm flex items-center gap-3 animate-pulse border w-full max-w-3xl mx-auto md:max-w-none" style={{ backgroundColor: `${colorPrimario}1A`, borderColor: `${colorPrimario}4D`, color: colorPrimario }}>
-          <span className="text-xl">🔗</span>
+          <i className="fi fi-rr-link text-xl"></i>
           <span className="font-bold">{mesaPrincipal ? `Selecciona la mesa que se unirá a Mesa ${mesaPrincipal}...` : 'Paso 1: Selecciona la Mesa Principal...'}</span>
         </div>
       )}
@@ -77,7 +80,17 @@ export default function TerminalMesasGrid({
               <button key={`m-${mesa.id}`} onClick={() => manejarClickMesa(mesa)} style={inlineStyle} className={`border-[1.5px] rounded-3xl p-3.5 flex flex-col active:scale-95 text-left h-32 relative transition-all ${cardClass} ${mesa.esGigante ? 'col-span-2' : ''}`}>
                 <div className="flex justify-between items-start w-full mb-1">
                   <span className={`text-[9px] font-black px-2 py-1 rounded-md uppercase tracking-widest ${badgeClass}`} style={esOcupada && !modoUnir ? { backgroundColor: `${colorPrimario}20`, color: colorPrimario } : {}}>{mesa.esGigante ? 'GRUPO' : labelEstado}</span>
-                  {icono && !modoUnir && <span className="opacity-70 text-sm">{icono}</span>}
+                  
+                  {mesa.esGigante && !modoUnir && (
+                    <div 
+                      onClick={(e) => { e.stopPropagation(); if (manejarSepararMesa) manejarSepararMesa(mesa); }}
+                      className={`text-[9px] font-bold px-2 py-1 rounded-md z-10 ${tema === 'dark' ? 'bg-red-500/20 text-red-400' : 'bg-red-100 text-red-600'}`}
+                    >
+                      SEPARAR
+                    </div>
+                  )}
+
+                  {icono && !modoUnir && !mesa.esGigante && <span className="opacity-70 text-sm">{icono}</span>}
                 </div>
                 <div className="flex-1 flex items-center justify-center w-full">
                   <h3 className={`font-black tracking-tight leading-none ${mesa.esGigante ? 'text-2xl' : 'text-xl'} ${titleClass}`}>{mesa.esGigante ? mesa.mesasInvolucradas.join(' + ') : mesa.numero}</h3>
@@ -96,13 +109,23 @@ export default function TerminalMesasGrid({
             <button key={`pc-${mesa.id}`} onClick={() => manejarClickMesa(mesa)} style={inlineStyle} className={`border-[1.5px] rounded-3xl p-4 flex flex-col transition-all active:scale-95 text-left h-40 relative ${cardClass} ${mesa.esGigante ? 'col-span-2' : ''}`}>
               <div className="flex justify-between items-start w-full mb-2">
                 <span className={`text-[10px] font-black px-2.5 py-1.5 rounded-lg uppercase tracking-widest ${badgeClass}`} style={esOcupada && !modoUnir ? { backgroundColor: `${colorPrimario}20`, color: colorPrimario } : {}}>{mesa.esGigante ? 'GRUPO' : labelEstado}</span>
-                {icono && !modoUnir && <span className="opacity-50 text-sm">{icono}</span>}
+                
+                {mesa.esGigante && !modoUnir && (
+                  <div 
+                    onClick={(e) => { e.stopPropagation(); if (manejarSepararMesa) manejarSepararMesa(mesa); }}
+                    className={`text-[10px] font-bold px-2.5 py-1.5 rounded-lg transition-colors z-10 hover:bg-red-500 hover:text-white ${tema === 'dark' ? 'bg-red-500/20 text-red-400' : 'bg-red-100 text-red-600'}`}
+                  >
+                    SEPARAR
+                  </div>
+                )}
+
+                {icono && !modoUnir && !mesa.esGigante && <span className="opacity-50 text-sm">{icono}</span>}
               </div>
               <div className="flex-1 flex items-center justify-center w-full">
                 <h3 className={`font-black tracking-tight ${mesa.esGigante ? 'text-4xl' : 'text-3xl'} ${titleClass}`}>{mesa.esGigante ? mesa.mesasInvolucradas.join(' + ') : `Mesa ${mesa.numero}`}</h3>
               </div>
               <div className={`w-full flex justify-center items-center gap-1.5 mt-2 ${tema === 'dark' ? 'text-neutral-500' : 'text-gray-400'}`}>
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+                <i className="fi fi-rr-users text-[10px] mt-0.5"></i>
                 <span className="text-[11px] font-bold">{mesa.capacidadTotal || mesa.capacidad} pax</span>
               </div>
             </button>
