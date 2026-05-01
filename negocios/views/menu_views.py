@@ -35,14 +35,7 @@ class MesaViewSet(viewsets.ModelViewSet):
         if empleado:
             return queryset.filter(sede=empleado.sede)
 
-        # Dueño autenticado por JWT → acotamos al negocio del usuario para evitar IDOR
-        if self.request.user.is_superuser:
-            pass  # superuser lo ve todo
-        elif hasattr(self.request.user, 'negocio'):
-            queryset = queryset.filter(sede__negocio=self.request.user.negocio)
-        else:
-            return queryset.none()
-
+        # Dueño/admin autenticado por JWT → filtra por sede_id si se indica
         sede_id = self.request.query_params.get('sede_id')
         if not es_valor_nulo(sede_id):
             queryset = queryset.filter(sede_id=sede_id)
