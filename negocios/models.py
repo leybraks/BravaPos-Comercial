@@ -394,6 +394,9 @@ class Orden(models.Model):
     pago_validado_bot = models.BooleanField(default=False, help_text="¿Gemini validó la captura?")
     estado = models.CharField(max_length=20, choices=ESTADOS_COCINA, default='pendiente')
     estado_pago = models.CharField(max_length=20, choices=ESTADOS_PAGO, default='pendiente') # 👈 NUEVO
+    subtotal = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    descuento_total = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    recargo_total = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     total = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     
     cliente_nombre = models.CharField(max_length=100, null=True, blank=True)

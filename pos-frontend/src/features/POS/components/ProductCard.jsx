@@ -79,7 +79,11 @@ export default function ProductCard({
   // ==========================================
   // CASO 2: PRODUCTO ESTÁNDAR (Con o sin variantes opcionales)
   // ==========================================
-  const precioAMostrar = parseFloat(prod.precio_base || prod.precio);
+  const base = parseFloat(prod.precio_base ?? prod.precio ?? 0);
+  const min  = parseFloat(prod.precio_minimo ?? base);
+  const max  = parseFloat(prod.precio_maximo ?? base);
+  const precioAMostrar = min;
+  const mostrarDesde = prod.tiene_variaciones && min !== max;
   
   return (
     <div 
@@ -118,6 +122,7 @@ export default function ProductCard({
         </p>
         
         <p className="font-black text-xs sm:text-sm mt-auto pb-1" style={{ color: colorPrimario }}>
+          {mostrarDesde && <span className="text-[9px] font-black opacity-60 mr-0.5">Desde </span>}
           <span className="text-[10px] mr-0.5 opacity-80">S/</span>{formatearSoles(precioAMostrar).replace('S/ ', '')}
         </p>
       </div>

@@ -70,7 +70,17 @@ export default function MenuTemaHero({ mesaId, productos, categorias, ordenActiv
                   <div className="flex justify-between items-end mb-4">
                     <h3 className="font-black text-2xl text-white leading-none tracking-tight shadow-black drop-shadow-lg" style={{ fontFamily: fuentes.titulos }}>{plato.nombre}</h3>
                     <div className="bg-[#111] border border-white/10 px-4 py-2 rounded-2xl shadow-xl">
-                      <span className="font-black text-xl" style={{ color: colorAcento, fontFamily: fuentes.titulos }}>S/ {parseFloat(plato.precio_base).toFixed(2)}</span>
+                      <span className="font-black text-xl" style={{ color: colorAcento, fontFamily: fuentes.titulos }}>
+                        {(() => {
+                          const base = parseFloat(plato.precio_base ?? 0);
+                          const min  = parseFloat(plato.precio_minimo ?? base);
+                          const max  = parseFloat(plato.precio_maximo ?? base);
+                          const desde = plato.tiene_variaciones && min !== max;
+                          return desde
+                            ? <><span style={{ fontSize: 12, opacity: 0.7 }}>Desde </span>S/ {min.toFixed(2)}</>
+                            : <>S/ {min.toFixed(2)}</>;
+                        })()}
+                      </span>
                     </div>
                   </div>
                   

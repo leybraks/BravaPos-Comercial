@@ -33,7 +33,7 @@ def menu_publico(request, sede_id):
         sede = Sede.objects.get(id=sede_id)
         productos = Producto.objects.filter(
             negocio=sede.negocio, activo=True, disponible=True
-        ).select_related('categoria')
+        ).select_related('categoria').prefetch_related('grupos_variacion__opciones')
 
         categorias_ids = list(productos.values_list('categoria', flat=True).distinct())
         categorias = Categoria.objects.filter(id__in=categorias_ids)

@@ -66,10 +66,35 @@ class GrupoVariacionSerializer(serializers.ModelSerializer):
 
 class ProductoSerializer(serializers.ModelSerializer):
     grupos_variacion = GrupoVariacionSerializer(many=True, required=False)
+    precio_minimo = serializers.SerializerMethodField()
+    precio_maximo = serializers.SerializerMethodField()
 
     class Meta:
         model = Producto
         fields = '__all__'
+
+    def get_precio_minimo(self, obj):
+        base = float(obj.precio_base)
+        if not obj.tiene_variaciones:
+            return base
+        adicional = 0.0
+        for grupo in obj.grupos_variacion.all():
+            if grupo.obligatorio:
+                precios = [float(op.precio_adicional) for op in grupo.opciones.all()]
+                if precios:
+                    adicional += min(precios)
+        return base + adicional
+
+    def get_precio_maximo(self, obj):
+        base = float(obj.precio_base)
+        if not obj.tiene_variaciones:
+            return base
+        adicional = 0.0
+        for grupo in obj.grupos_variacion.all():
+            precios = [float(op.precio_adicional) for op in grupo.opciones.all()]
+            if precios:
+                adicional += max(precios)
+        return base + adicional
 
     # 🚀 MAGIA 1 ACTUALIZADA (Soporta Recetas de Opciones)
     def create(self, validated_data):
@@ -163,12 +188,12 @@ class OrdenSerializer(serializers.ModelSerializer):
     class Meta:
         model = Orden
         fields = [
-            'id', 'sede', 'sede_nombre', 'mesa', 'mesa_nombre', 
-            'mesero', 'mesero_nombre', 'tipo', 'estado', 'estado_pago', 
-            'total', 'cliente_nombre', 'cliente_telefono', 
+            'id', 'sede', 'sede_nombre', 'mesa', 'mesa_nombre',
+            'mesero', 'mesero_nombre', 'tipo', 'estado', 'estado_pago',
+            'subtotal', 'descuento_total', 'recargo_total', 'total',
+            'cliente_nombre', 'cliente_telefono',
             'motivo_cancelacion', 'creado_en', 'detalles',
-            # ✨ AÑADIMOS LOS CAMPOS DE DELIVERY AQUÍ:
-            'direccion_entrega', 'latitud', 'longitud', 
+            'direccion_entrega', 'latitud', 'longitud',
             'costo_envio', 'metodo_pago_esperado'
         ]
 
