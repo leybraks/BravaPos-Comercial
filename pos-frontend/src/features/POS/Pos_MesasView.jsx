@@ -57,7 +57,6 @@ export default function MesasView({ onSeleccionarMesa, onIrAErp, mesaActivaId })
     vistaLocal, setVistaLocal, modulos
   } = useMesasData(sedeActualId, triggerRecarga, setConfiguracionGlobal, manejarCambioSede);
 
-  useMesasWS(sedeActualId, setMesas, setOrdenesLlevar);
   const wsRef = useMesasWS(sedeActualId, setMesas, setOrdenesLlevar);
 
   const avisarEstadoMesa = (mesaId, nuevoEstado) => {

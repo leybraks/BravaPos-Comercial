@@ -47,20 +47,23 @@ export const useMesasData = (sedeActualId, triggerRecarga, setConfiguracionGloba
   }, [setConfiguracionGlobal]);
 
   // 2a. Cargar listado de sedes (siempre, para mostrar el selector al dueño)
-  //     Si no hay sede seleccionada, auto-selecciona la primera.
+  //     Si no hay sede seleccionada o la guardada ya no existe, auto-selecciona la primera.
   useEffect(() => {
     let isMounted = true;
     getSedes().then(resSedes => {
       if (!isMounted) return;
       const sedesData = resSedes.data;
       setSedes(sedesData);
-      // Auto-seleccionar la primera sede si no hay ninguna activa
-      if (!sedeActualId && sedesData.length > 0 && onSedeAutoselected) {
-        onSedeAutoselected(String(sedesData[0].id));
+      if (sedesData.length > 0 && onSedeAutoselected) {
+        const existe = sedesData.some(s => String(s.id) === String(sedeActualId));
+        // Auto-seleccionar si: no hay sede activa O la guardada ya no está disponible
+        if (!sedeActualId || !existe) {
+          onSedeAutoselected(String(sedesData[0].id));
+        }
       }
     }).catch(err => console.error('Error cargando sedes:', err));
     return () => { isMounted = false; };
-  // Solo se ejecuta al montar y cuando sedeActualId pasa de vacío a tener valor
+  // Solo se ejecuta al montar (sedeActualId de localStorage no debe re-disparar esto)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

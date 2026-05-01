@@ -31,8 +31,17 @@ class MesaViewSet(viewsets.ModelViewSet):
         queryset = Mesa.objects.filter(activo=True).order_by('posicion_x')
         empleado = get_empleado_desde_header(self.request)
 
+        # Empleado autenticado por PIN → solo ve las mesas de su sede
         if empleado:
             return queryset.filter(sede=empleado.sede)
+
+        # Dueño autenticado por JWT → acotamos al negocio del usuario para evitar IDOR
+        if self.request.user.is_superuser:
+            pass  # superuser lo ve todo
+        elif hasattr(self.request.user, 'negocio'):
+            queryset = queryset.filter(sede__negocio=self.request.user.negocio)
+        else:
+            return queryset.none()
 
         sede_id = self.request.query_params.get('sede_id')
         if not es_valor_nulo(sede_id):
