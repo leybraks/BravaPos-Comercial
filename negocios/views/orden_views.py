@@ -130,6 +130,12 @@ class OrdenViewSet(viewsets.ModelViewSet):
 
             for d in detalles_data:
                 producto = Producto.objects.get(id=d['producto'])
+                # ── Validación de disponibilidad ──────────────────────────
+                if not producto.disponible:
+                    return Response(
+                        {'error': f'"{producto.nombre}" está agotado y no puede agregarse.'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
                 precio_seguro = producto.precio_base
 
                 notas = d.get('notas_y_modificadores', {})
@@ -358,8 +364,9 @@ class OrdenViewSet(viewsets.ModelViewSet):
                 aplicar_reglas_negocio(orden, metodo_pago=metodo_dominante)
                 orden.save()
 
-                pagos_historicos = Pago.objects.filter(orden=orden).aggregate(Sum('monto'))['monto__sum'] or Decimal('0.00')
-                total_cubierto = pagos_historicos + total_pagado_ahora
+                # pagos_historicos ya incluye los registros creados en esta misma
+                # transacción, así que es suficiente para saber el total cubierto.
+                total_cubierto = Pago.objects.filter(orden=orden).aggregate(Sum('monto'))['monto__sum'] or Decimal('0.00')
 
                 # 2. ACTUALIZAR ESTADO DE LA ORDEN
                 if total_cubierto >= orden.total:
@@ -417,6 +424,25 @@ class OrdenViewSet(viewsets.ModelViewSet):
         except Exception as e:
             logger.error(f"Error procesando cobro de orden {orden.id}: {str(e)}", exc_info=True)
             return Response({'error': 'Error interno al procesar el pago.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=True, methods=['post'])
+    def preview_cobro(self, request, pk=None):
+        """
+        Devuelve el desglose de precios (subtotal / descuento / recargo / total)
+        que resultaría de cobrar con un método de pago dado, SIN persistir nada.
+        Útil para mostrar el descuento Yape/Efectivo en el modal de cobro del POS.
+        """
+        orden = self.get_object()
+        metodo_pago = request.data.get('metodo', '')
+        aplicar_reglas_negocio(orden, metodo_pago=metodo_pago)
+        # Nota: NO llamamos orden.save() — solo calculamos y devolvemos.
+        return Response({
+            'subtotal':        float(orden.subtotal),
+            'descuento_total': float(orden.descuento_total),
+            'recargo_total':   float(orden.recargo_total),
+            'total':           float(orden.total),
+            'metodo':          metodo_pago,
+        })
 
     @action(detail=False, methods=['get'], permission_classes=[AllowAny])
     def estado_orden_bot(self, request):

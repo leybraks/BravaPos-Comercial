@@ -1,17 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { loginAdministrador, validarPinEmpleado, getEstadoCaja, abrirCajaBD, getSedes } from '../api/api';
+import { useToast } from '../context/ToastContext';
 
 // =========================================================
 // ✨ HELPER DE SEGURIDAD (Desencripta el JWT de forma segura)
 // =========================================================
 
 export default function LoginView({ onAccesoConcedido }) {
+  const toast = useToast();
+
   // =========================================================
   // 1. MÁQUINA DE ESTADOS (Lobby Gateway)
   // =========================================================
   const tabletConfigurada = localStorage.getItem('tablet_token') && localStorage.getItem('sede_id');
   const [modo, setModo] = useState(tabletConfigurada ? 'empleado' : 'inicio');
-  
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [sedesDisponibles, setSedesDisponibles] = useState([]);
@@ -20,10 +23,21 @@ export default function LoginView({ onAccesoConcedido }) {
 
   const [pin, setPin] = useState('');
   const [horaLocal, setHoraLocal] = useState('');
-  const [estadoLocal, setEstadoLocal] = useState('cargando...'); 
+  const [estadoLocal, setEstadoLocal] = useState('cargando...');
   const [modalApertura, setModalApertura] = useState(false);
   const [fondoCaja, setFondoCaja] = useState('');
-  const [empleadoActual, setEmpleadoActual] = useState(null); 
+  const [empleadoActual, setEmpleadoActual] = useState(null);
+
+  // ── Seguridad PIN: bloqueo por intentos fallidos ──────────
+  const [intentosFallidos, setIntentosFallidos] = useState(0);
+  const [bloqueadoHasta, setBloqueadoHasta] = useState(null);
+  const MAX_INTENTOS = 3;
+  const BLOQUEO_MS  = 2 * 60 * 1000; // 2 minutos
+
+  const estaBlockeado = bloqueadoHasta && Date.now() < bloqueadoHasta;
+  const segundosBloqueo = bloqueadoHasta
+    ? Math.ceil((bloqueadoHasta - Date.now()) / 1000)
+    : 0;
 
   const negocioInfo = { marca: 'CAÑA BRAVA', sede: localStorage.getItem('sede_nombre') || 'Sede Principal' };
 
@@ -72,13 +86,13 @@ export default function LoginView({ onAccesoConcedido }) {
       }
   
     } catch (error) {
-      alert('❌ Error: Credenciales incorrectas.');
+      toast.error('Credenciales incorrectas. Verifica usuario y contraseña.');
     } finally {
       setLoadingAuth(false);
     }
   };
 
-  const handleGoogleLogin = (destino) => alert("🚀 Google Sign-In Próximamente...");
+  const handleGoogleLogin = () => toast.info('Google Sign-In estará disponible próximamente.');
 
   const handleSedeSetup = (e) => {
     e.preventDefault();
@@ -96,47 +110,75 @@ export default function LoginView({ onAccesoConcedido }) {
 
   const procesarPin = async (accion) => {
     if (pin.length !== 4) return;
+
+    // ── Bloqueo por intentos fallidos ─────────────────────
+    if (estaBlockeado) {
+      toast.error(`Terminal bloqueada. Intenta en ${segundosBloqueo}s.`);
+      return;
+    }
+
     try {
       const respuesta = await validarPinEmpleado({ pin, accion });
       const empleado = respuesta.data;
-      
-      // Guardamos IDs, NO ROLES en localStorage
+
+      // Éxito → resetear contador de intentos
+      setIntentosFallidos(0);
+      setBloqueadoHasta(null);
+
       localStorage.setItem('empleado_id', empleado.id);
       localStorage.setItem('empleado_nombre', empleado.nombre);
       localStorage.setItem('usuario_rol', empleado.rol_nombre);
-      
+
       if (accion === 'asistencia') {
-        alert(`🕒 Asistencia: ${empleado.nombre}`); setPin(''); return;
+        toast.success(`Asistencia registrada — ${empleado.nombre}`);
+        setPin('');
+        return;
       }
-      
+
       if (accion === 'entrar') {
         if (['Cocina', 'Cocinero'].includes(empleado.rol_nombre)) {
-          // El rol va a la RAM directamente
-          onAccesoConcedido(empleado.rol_nombre); return;
+          onAccesoConcedido(empleado.rol_nombre);
+          return;
         }
-        
+
         if (estadoLocal === 'cerrado') {
           if (['Administrador', 'Cajero', 'Admin'].includes(empleado.rol_nombre)) {
-            setEmpleadoActual(empleado); setModalApertura(true);      
-          } else { alert(`Caja cerrada.`); setPin(''); }
+            setEmpleadoActual(empleado);
+            setModalApertura(true);
+          } else {
+            toast.warning('La caja está cerrada. Contacta al administrador.');
+            setPin('');
+          }
         } else {
-          // El rol va a la RAM directamente
           onAccesoConcedido(empleado.rol_nombre);
         }
       }
-    } catch (error) { alert("❌ PIN incorrecto."); setPin(''); }
+    } catch (error) {
+      const nuevosIntentos = intentosFallidos + 1;
+      setIntentosFallidos(nuevosIntentos);
+      setPin('');
+
+      if (nuevosIntentos >= MAX_INTENTOS) {
+        const hasta = Date.now() + BLOQUEO_MS;
+        setBloqueadoHasta(hasta);
+        toast.error(`PIN incorrecto. Terminal bloqueada por 2 minutos por seguridad.`, 6000);
+      } else {
+        toast.error(`PIN incorrecto. Intentos restantes: ${MAX_INTENTOS - nuevosIntentos}.`);
+      }
+    }
   };
 
   const abrirLocal = async () => {
-    if (fondoCaja === '') return alert("Ingresa el fondo inicial");
+    if (fondoCaja === '') { toast.warning('Ingresa el fondo inicial de caja.'); return; }
     try {
       const respuesta = await abrirCajaBD({ empleado_id: empleadoActual.id, fondo_inicial: parseFloat(fondoCaja) });
       localStorage.setItem('sesion_caja_id', respuesta.data.id);
       setEstadoLocal('abierto');
       setModalApertura(false);
-      // Pasamos el rol a la RAM
-      onAccesoConcedido(empleadoActual.rol_nombre); 
-    } catch (error) { alert("Error al abrir caja."); }
+      onAccesoConcedido(empleadoActual.rol_nombre);
+    } catch (error) {
+      toast.error('No se pudo abrir la caja. Verifica la conexión.');
+    }
   };
 
   // =========================================================
@@ -160,9 +202,25 @@ export default function LoginView({ onAccesoConcedido }) {
 
           <div className="flex gap-5 mb-12">
             {[0, 1, 2, 3].map(i => (
-              <div key={i} className={`w-5 h-5 rounded-full transition-all duration-300 ${pin.length > i ? 'bg-white scale-125 shadow-[0_0_20px_rgba(255,255,255,0.4)]' : 'bg-[#1a1a1a] border border-[#333]'}`}></div>
+              <div key={i} className={`w-5 h-5 rounded-full transition-all duration-300 ${
+                estaBlockeado
+                  ? 'bg-red-500/40 border border-red-500/60'
+                  : pin.length > i
+                    ? 'bg-white scale-125 shadow-[0_0_20px_rgba(255,255,255,0.4)]'
+                    : 'bg-[#1a1a1a] border border-[#333]'
+              }`}></div>
             ))}
           </div>
+          {estaBlockeado && (
+            <p className="text-red-400 text-xs font-black uppercase tracking-widest mb-4 animate-pulse">
+              🔒 Bloqueado — {segundosBloqueo}s
+            </p>
+          )}
+          {!estaBlockeado && intentosFallidos > 0 && (
+            <p className="text-orange-400 text-xs font-bold mb-4">
+              {MAX_INTENTOS - intentosFallidos} intento{MAX_INTENTOS - intentosFallidos !== 1 ? 's' : ''} restante{MAX_INTENTOS - intentosFallidos !== 1 ? 's' : ''}
+            </p>
+          )}
 
           <div className="grid grid-cols-3 gap-4 sm:gap-6 max-w-[360px] w-full">
             {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => (
@@ -176,7 +234,13 @@ export default function LoginView({ onAccesoConcedido }) {
           </div>
 
           <div className="w-full max-w-[360px] mt-12 flex flex-col gap-5">
-            <button onClick={() => procesarPin('entrar')} className="w-full bg-gradient-to-r from-[#ff5a1f] to-[#e0155b] hover:opacity-90 text-white py-6 rounded-[2rem] font-black text-lg tracking-widest active:scale-95 transition-all uppercase shadow-[0_15px_40px_rgba(255,90,31,0.25)]">Ingresar 🚀</button>
+            <button
+              onClick={() => procesarPin('entrar')}
+              disabled={estaBlockeado}
+              className="w-full bg-gradient-to-r from-[#ff5a1f] to-[#e0155b] hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed text-white py-6 rounded-[2rem] font-black text-lg tracking-widest active:scale-95 transition-all uppercase shadow-[0_15px_40px_rgba(255,90,31,0.25)]"
+            >
+              {estaBlockeado ? `Bloqueado ${segundosBloqueo}s` : 'Ingresar 🚀'}
+            </button>
           </div>
         </div>
 
@@ -252,7 +316,7 @@ export default function LoginView({ onAccesoConcedido }) {
                   <svg className="w-5 h-5" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
                   Google
                 </button>
-                <button onClick={() => alert("Apple Login")} className="flex-1 bg-transparent border border-[#333] hover:bg-[#161616] py-3.5 rounded-xl flex items-center justify-center gap-3 transition-colors text-sm font-bold">
+                <button onClick={() => toast.info('Apple Login estará disponible próximamente.')} className="flex-1 bg-transparent border border-[#333] hover:bg-[#161616] py-3.5 rounded-xl flex items-center justify-center gap-3 transition-colors text-sm font-bold">
                   <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M17.05 20.28c-.98.95-2.05 1.8-3.08 1.81-.98 0-1.42-.58-2.58-.58-1.14 0-1.63.56-2.56.59-1.05.03-2.27-.96-3.18-2.27-1.34-1.9-2.29-5.18-1.42-7.58.42-1.15 1.18-2.03 2.12-2.6.93-.57 1.98-.6 2.97-.6.94 0 1.8.46 2.51.87.69.41 1.05.65 1.58.65.57 0 1.05-.27 1.84-.73 1.05-.62 2.21-.86 3.46-.66 1.34.22 2.37.84 3.03 1.75-2.48 1.48-2.06 4.96.38 5.92-.5 1.25-1.19 2.52-2.07 3.43zM14.98 5.7c-.52.64-1.26 1.08-2.06 1.13-.12-1.37.52-2.73 1.33-3.63.53-.61 1.33-1.09 2.16-1.16.14 1.39-.46 2.65-1.43 3.66z"/></svg>
                   Apple
                 </button>

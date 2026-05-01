@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import api from '../../api/api';
 import usePosStore from '../../store/usePosStore';
+import { useToast } from '../../context/ToastContext';
 import { 
   Bot, Plug, MessageSquare, CheckCircle, Power, 
   Smartphone, Loader2, QrCode, Check, Timer,
@@ -9,6 +10,7 @@ import {
 import Bot_Operaciones from './BotComponents/Bot_Operaciones';
 import Bot_QrModal from './BotComponents/Bot_QrModal';
 export default function Erp_BotWsp({ sedesReales = [], onRefrescar , productosReales = []}) {
+  const toast = useToast();
   const { configuracionGlobal } = usePosStore();
   const colorPrimario = configuracionGlobal?.colorPrimario || '#ff5a1f';
   const temaFondo = configuracionGlobal?.temaFondo || 'dark';
@@ -54,7 +56,7 @@ export default function Erp_BotWsp({ sedesReales = [], onRefrescar , productosRe
         setTiempoQr((prev) => {
           if (prev <= 1) {
             setQrModal({ open: false, qrBase64: '', sedeId: null, sedeNombre: '' });
-            alert("El código QR ha expirado. Por favor, genera uno nuevo.");
+            toast.warning('El código QR expiró. Genera uno nuevo.');
             return 0;
           }
           return prev - 1;
@@ -164,21 +166,21 @@ export default function Erp_BotWsp({ sedesReales = [], onRefrescar , productosRe
       setQrModal({ open: true, qrBase64: response.data.qr_base64, sedeId: sede.id, sedeNombre: sede.nombre });
       
     } catch (error) {
-      alert(error.response?.data?.error?.message || 'Error al conectar. Intenta de nuevo.');
+      toast.error(error.response?.data?.error?.message || 'Error al conectar. Intenta de nuevo.');
     } finally {
       setLoadingAction(null);
     }
   };
 
   const manejarDesvincularWsp = async (sedeId) => {
-    if (!window.confirm("¿Estás seguro de desconectar el Bot?...")) return;
+    if (!window.confirm('¿Estás seguro de desconectar el Bot?')) return;
     setLoadingAction(`desvincular_${sedeId}`);
     try {
       await api.delete(`/sedes/${sedeId}/eliminar_instancia/`);
-      // ✅ Avisa al padre para que recargue datos frescos del backend
       if (onRefrescar) onRefrescar();
+      toast.success('Bot desconectado correctamente.');
     } catch (error) {
-      alert('Error al desconectar el Bot.');
+      toast.error('Error al desconectar el Bot.');
     } finally {
       setLoadingAction(null);
     }
@@ -188,9 +190,12 @@ export default function Erp_BotWsp({ sedesReales = [], onRefrescar , productosRe
     setLoadingAction(`numero_${sedeId}`);
     try {
       await api.patch(`/sedes/${sedeId}/`, { whatsapp_numero: numerosWsp[sedeId] });
-      alert('📱 Número guardado como referencia.');
-    } catch (error) { alert('Error al guardar el número.'); } 
-    finally { setLoadingAction(null); }
+      toast.success('Número guardado correctamente.');
+    } catch (error) {
+      toast.error('Error al guardar el número.');
+    } finally {
+      setLoadingAction(null);
+    }
   };
 
   // ✨ Función para cancelar y borrar lo que se creó a medias
@@ -214,7 +219,7 @@ export default function Erp_BotWsp({ sedesReales = [], onRefrescar , productosRe
   const manejarGuardarOperaciones = async () => {
     // Tomamos el ID de la sede actual (asegurando compatibilidad con tu código actual)
     const sedeId = sedeActivaId || sedesVisibles[0]?.id; 
-    if (!sedeId) return alert("No hay una sede seleccionada.");
+    if (!sedeId) { toast.warning('Selecciona una sede primero.'); return; }
 
     setLoadingAction('guardar_operaciones');
     try {
@@ -235,14 +240,14 @@ export default function Erp_BotWsp({ sedesReales = [], onRefrescar , productosRe
         bot_cumple_productos: operaciones.cumpleProductos || []
       });
       
-      alert('✅ Configuraciones del Bot guardadas correctamente.');
+      toast.success('Configuraciones del Bot guardadas correctamente.');
       
       // Llamamos a tu función para que refresque visualmente sin presionar F5
       if (onRefrescar) onRefrescar();
       
     } catch (error) {
       console.error("Error guardando config del bot:", error);
-      alert('Error al guardar las configuraciones. Revisa la consola.');
+      toast.error('Error al guardar las configuraciones.');
     } finally {
       setLoadingAction(null);
     }
