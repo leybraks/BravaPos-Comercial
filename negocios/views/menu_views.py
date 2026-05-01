@@ -1,7 +1,7 @@
 import logging
 import os
 from django.db import transaction
-from rest_framework import viewsets
+from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -47,6 +47,42 @@ class MesaViewSet(viewsets.ModelViewSet):
         if not es_valor_nulo(sede_id):
             queryset = queryset.filter(sede_id=sede_id)
         return queryset
+
+    def create(self, request, *args, **kwargs):
+        """
+        Si existe una mesa inactiva (activo=False) con el mismo sede+nombre,
+        la reactivamos en lugar de intentar insertar una nueva fila que violaría
+        el unique_together a nivel de base de datos.
+        Esto le da al dueño una experiencia limpia: "crear mesa" = activarla si ya existió.
+        """
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        sede  = serializer.validated_data.get('sede')
+        nombre = serializer.validated_data.get('numero_o_nombre')
+
+        # ¿Hay una mesa inactiva con ese mismo sede+nombre?
+        mesa_inactiva = Mesa.all_objects.filter(
+            sede=sede, numero_o_nombre=nombre, activo=False
+        ).first()
+
+        if mesa_inactiva:
+            # Actualizar campos editables y reactivar
+            for campo in ('capacidad', 'posicion_x', 'posicion_y', 'forma'):
+                val = serializer.validated_data.get(campo)
+                if val is not None:
+                    setattr(mesa_inactiva, campo, val)
+            mesa_inactiva.activo = True
+            mesa_inactiva.save()
+            return Response(
+                self.get_serializer(mesa_inactiva).data,
+                status=status.HTTP_201_CREATED,
+            )
+
+        # Camino normal: no existe ninguna mesa inactiva con ese nombre
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
 
 # ============================================================
