@@ -1,6 +1,8 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
+from negocios.views.marketing_views import MarketingGlobalView
+
 # 🛡️ IMPORTAMOS TUS VISTAS SEGURAS DE COOKIES
 from .serializers_jwt import CustomTokenObtainPairView, CustomTokenRefreshView, LogoutView
 from . import views
@@ -51,7 +53,7 @@ urlpatterns = [
     path('dashboard/metricas/', views.metricas_dashboard, name='metricas_dashboard'),
     path('movimientos-caja/', views.registrar_movimiento_caja, name='registrar_movimiento_caja'),
     path('verificar-sesion/', views.verificar_sesion, name='verificar_sesion'),
-
+    path('marketing/guardar-global/', MarketingGlobalView.as_view(), name='guardar_marketing_global'),
     # 🩺 HEALTHCHECK PARA GITHUB ACTIONS (público, sin token)
     path('health/', views.health_check, name='health_check'),
 
