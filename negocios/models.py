@@ -93,29 +93,73 @@ class Negocio(models.Model):
 
 class Sede(models.Model):
     negocio = models.ForeignKey(Negocio, on_delete=models.CASCADE, related_name='sedes')
-    nombre = models.CharField(max_length=100) # Ej: "Local Ventanilla", "Sede Centro"
-    
-    # Actualizamos el help_text para guiar al usuario
-    direccion = models.CharField(max_length=200, null=True, blank=True, help_text="Pega el Plus Code de Google Maps (Ej: 6MC5+QQ Ventanilla)")
+    nombre = models.CharField(max_length=100)
+    direccion = models.CharField(
+        max_length=200, null=True, blank=True,
+        help_text="Pega el Plus Code de Google Maps (Ej: 6MC5+QQ Ventanilla)"
+    )
     activo = models.BooleanField(default=True)
     columnas_salon = models.IntegerField(default=2)
-
     latitud = models.FloatField(null=True, blank=True, help_text="Se autocompleta al guardar")
     longitud = models.FloatField(null=True, blank=True, help_text="Se autocompleta al guardar")
 
-    # ✨ CAMPOS PARA EL BOT MULTI-SEDE
+    # ==========================================
+    # 📱 BOT MULTI-SEDE
+    # ==========================================
     whatsapp_instancia = models.CharField(max_length=50, null=True, blank=True, help_text="Nombre exacto en Evolution API")
     whatsapp_numero = models.CharField(max_length=20, null=True, blank=True, help_text="Número del bot")
     enlace_carta_virtual = models.URLField(max_length=500, null=True, blank=True, help_text="Link a tu menú digital, Canva, Drive o Instagram")
     carta_pdf = models.FileField(upload_to='cartas_pdf/', null=True, blank=True, help_text="Sube tu carta en formato PDF")
-    hora_apertura = models.TimeField(null=True, blank=True, help_text="Hora de apertura")
-    hora_cierre = models.TimeField(null=True, blank=True, help_text="Hora de cierre")
+    hora_apertura = models.TimeField(null=True, blank=True)
+    hora_cierre = models.TimeField(null=True, blank=True)
+
+    # ⚠️ CAMBIO: de JSONField a un choices fijo.
+    # El JSONField libre era propenso a errores de tipeo ("Lunes" vs "lunes" vs "LUN").
+    # Con IntegerField + choices el bot siempre lee números: 0=Lun, 1=Mar... 6=Dom.
+    DIAS_SEMANA = [(0,'Lunes'),(1,'Martes'),(2,'Miércoles'),(3,'Jueves'),(4,'Viernes'),(5,'Sábado'),(6,'Domingo')]
     dias_atencion = models.JSONField(
-        default=list, 
+        default=list,
         blank=True,
-        help_text="Lista de días. Ej: ['Lunes', 'Martes', ...]"
+        help_text="Lista de enteros: [0,1,2] = Lun, Mar, Mié. (0=Lun … 6=Dom)"
     )
-    objects = ActivoManager()      
+
+    bot_puntos_activos = models.BooleanField(default=True, help_text="¿El bot gestiona y menciona los puntos?")
+    bot_max_pedidos_pendientes = models.IntegerField(
+        default=20,
+        help_text="Límite de pedidos en preparación antes de activar el Modo Cocina Colapsada"
+    )
+
+    # ==========================================
+    # 🎂 PROMOCIÓN DE CUMPLEAÑOS
+    # ==========================================
+    TIPO_CUMPLE = [
+        ('porcentaje', 'Porcentaje de descuento'),
+        ('fijo', 'Monto fijo en soles'),
+        ('combo', 'Combo / Producto gratis'),
+    ]
+
+    bot_cumple_activo = models.BooleanField(default=False, help_text="¿Activar promoción de cumpleaños?")
+    bot_cumple_tipo = models.CharField(max_length=20, choices=TIPO_CUMPLE, default='porcentaje')
+    bot_cumple_valor = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text="Para 'porcentaje': escribe 20 (= 20%). Para 'fijo': escribe 15 (= S/ 15). Dejar vacío si el tipo es 'combo'."
+    )
+    bot_cumple_minimo = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text="Consumo mínimo en soles para que aplique el beneficio."
+    )
+
+    # ✅ CAMBIO: ManyToManyField en lugar de JSONField con IDs.
+    # Con M2M, si un producto se elimina Django limpia la relación automáticamente.
+    # Con el JSONField anterior, quedaban IDs huérfanos sin ningún aviso.
+    bot_cumple_productos = models.ManyToManyField(
+        'Producto',
+        blank=True,
+        related_name='sedes_promo_cumple',
+        help_text="Solo para tipo 'combo': productos que se regalan o descuentan."
+    )
+
+    objects = ActivoManager()
     all_objects = models.Manager()
 
     class Meta:
@@ -124,20 +168,44 @@ class Sede(models.Model):
     def __str__(self):
         return f"{self.nombre} ({self.negocio.nombre})"
 
-    # ✨ LA MAGIA: Interceptamos el guardado para calcular las coordenadas
+    # ✅ NUEVO: Validación cruzada entre tipo y valor/productos.
+    # Sin esto, el admin podía guardar tipo='combo' sin productos, o tipo='fijo' sin valor,
+    # y el bot explotaría en runtime sin ningún mensaje claro de por qué.
+    def clean(self):
+        super().clean()
+        if not self.bot_cumple_activo:
+            return  # Si la promo está apagada, no validamos nada más.
+
+        if self.bot_cumple_tipo in ('porcentaje', 'fijo'):
+            if self.bot_cumple_valor is None:
+                raise ValidationError({
+                    'bot_cumple_valor': f"Debes ingresar un valor para el tipo '{self.bot_cumple_tipo}'."
+                })
+            if self.bot_cumple_tipo == 'porcentaje' and not (0 < self.bot_cumple_valor <= 100):
+                raise ValidationError({
+                    'bot_cumple_valor': "El porcentaje debe estar entre 1 y 100."
+                })
+
+        # Nota: la validación de 'combo' (que haya productos seleccionados)
+        # no se puede hacer aquí porque M2M no existe hasta después del save().
+        # Esa validación vive en el serializer o en el admin con clean() del formulario.
+
     def save(self, *args, **kwargs):
+        self.full_clean()  # Dispara clean() antes de guardar
         if self.direccion and '+' in self.direccion:
             try:
-                # Extraemos solo el código, ignorando si el usuario pegó la ciudad (Ej: "6MC5+QQ Ventanilla")
-                codigo_limpio = self.direccion.split(' ')[0] 
-                
+                codigo_limpio = self.direccion.split(' ')[0]
                 if olc.isFull(codigo_limpio):
                     code_area = olc.decode(codigo_limpio)
                     self.latitud = code_area.latitudeCenter
                     self.longitud = code_area.longitudeCenter
             except Exception as e:
-                print(f"Error decodificando Plus Code: {e}")
-                
+                # ✅ CAMBIO: usa logging en lugar de print().
+                # print() no aparece en producción (Gunicorn/Railway lo suprime).
+                # logging sí llega a tus logs de servidor.
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning("Error decodificando Plus Code '%s': %s", self.direccion, e)
         super().save(*args, **kwargs)
 
 class Mesa(models.Model):
@@ -634,6 +702,9 @@ class ReglaNegocio(models.Model):
         ('recargo_llevar', 'Recargo por empaque (Llevar)'),
         ('delivery_gratis', 'Delivery Gratis por Monto'),
         ('descuento_dia', 'Descuento por Día Específico'),
+        ('descuento_yape_efectivo', 'Descuento por pagar con Yape/Efectivo'),
+        ('servicio_grupo_grande', 'Recargo 10% por mesa grande (> X personas)'),
+        ('recargo_nocturno', 'Tarifa extra de madrugada'),
     ]
     negocio = models.ForeignKey('Negocio', on_delete=models.CASCADE)
     tipo = models.CharField(max_length=30, choices=TIPO_REGLA)

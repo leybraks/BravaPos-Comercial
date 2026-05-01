@@ -87,15 +87,17 @@ export const useErpDashboard = () => {
     return true; 
   });
   
+  // ✨ LA EXTRAEMOS PARA QUE OTROS COMPONENTES LA PUEDAN USAR
+  const recargarSedes = async () => {
+    try {
+      const negocioId = parseInt(localStorage.getItem('negocio_id') || 1);
+      const resSedes = await api.get(`/sedes/`, { params: { negocio_id: negocioId } });
+      setSedesReales(resSedes.data);
+    } catch (error) { console.error("Error cargando sedes:", error); }
+  };
+
   useEffect(() => {
-    const cargarSedesGlobal = async () => {
-      try {
-        const negocioId = parseInt(localStorage.getItem('negocio_id') || 1);
-        const resSedes = await api.get(`/sedes/`, { params: { negocio_id: negocioId } });
-        setSedesReales(resSedes.data);
-      } catch (error) { console.error("Error cargando sedes:", error); }
-    };
-    cargarSedesGlobal();
+    recargarSedes(); // Se ejecuta al inicio, igual que antes
   }, []);
 
   // ==========================================
@@ -156,7 +158,7 @@ export const useErpDashboard = () => {
 
   // Menú
   useEffect(() => {
-    if (vistaActiva === 'menu') {
+    if (vistaActiva === 'menu'|| vistaActiva === 'bot_wsp'|| vistaActiva === 'crm') {
       const cargarMenu = async () => {
         try {
           const negocioId = localStorage.getItem('negocio_id');
@@ -466,6 +468,6 @@ export const useErpDashboard = () => {
     cambiarSedeFiltro, manejarCambioVista, descartarCambios, guardarYCambiarVista,
     cancelarCambioVista, manejarGuardarConfig, abrirModalEdicion, toggleActivo,
     manejarGuardarEmpleado, manejarGuardarPlato, manejarCrearCategoria,
-    eliminarCategoriaLocal, toggleDisponibilidad, abrirModalEditar, cerrarModalPlato
+    eliminarCategoriaLocal, toggleDisponibilidad, abrirModalEditar, cerrarModalPlato,recargarSedes
   };
 };

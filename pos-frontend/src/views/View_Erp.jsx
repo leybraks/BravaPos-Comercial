@@ -161,7 +161,7 @@ export default function ErpDashboard({ onVolverAlPos, rolUsuario }) {
     return <SinPermisos onVolver={onVolverAlPos} />;
   }
   const {
-    tema, colorPrimario, config, setConfig, vistaActiva, 
+    tema, colorPrimario, config, setConfig, vistaActiva, recargarSedes,
     sedeFiltro, cambiarSedeFiltro, sedeFiltroId, setSedeFiltroId, 
     menuAbierto, setMenuAbierto, isCollapsed, setIsCollapsed, modalEmpleado, setModalEmpleado, 
     modalVariacionesOpen, setModalVariacionesOpen, productoParaVariaciones, setProductoParaVariaciones, 
@@ -256,7 +256,12 @@ export default function ErpDashboard({ onVolverAlPos, rolUsuario }) {
           )}
 
           {vistaActiva === 'crm' && (
-            <Erp_Crm config={config} />
+            <Erp_Crm 
+              config={config} 
+              sedesReales={sedesReales} 
+              productosReales={productosReales} 
+              categoriasReales={categorias}
+            />
           )}
 
           {vistaActiva === 'inventario' && (
@@ -272,7 +277,11 @@ export default function ErpDashboard({ onVolverAlPos, rolUsuario }) {
           )}
 
           {vistaActiva === 'bot_wsp' && (
-            <Erp_BotWsp sedesReales={sedesReales} />
+            <Erp_BotWsp 
+              sedesReales={sedesReales} 
+              onRefrescar={recargarSedes} // 👈 ¡EL CABLE MÁGICO CONECTADO!
+              productosReales={productosReales}
+            />
           )}
 
           {vistaActiva === 'facturacion' && (

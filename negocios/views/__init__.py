@@ -57,6 +57,9 @@ from .cliente_views import (
     ReglaNegocioViewSet,
     calcular_distancia_km,
 )
+from .marketing_views import (
+    MarketingGlobalView
+)
 
 from .publico_views import (
     health_check,
