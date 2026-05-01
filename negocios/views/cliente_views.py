@@ -4,7 +4,7 @@ import logging
 from django.utils import timezone
 from rest_framework import viewsets
 from rest_framework.decorators import action
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from ..models import Cliente, ZonaDelivery, ReglaNegocio, Sede
@@ -29,7 +29,7 @@ class ClienteViewSet(viewsets.ModelViewSet):
             return Cliente.objects.none()
         return Cliente.objects.filter(negocio=user.negocio)
 
-    @action(detail=False, methods=['get'], url_path='buscar_por_telefono', permission_classes=[AllowAny])
+    @action(detail=False, methods=['get'], url_path='buscar_por_telefono', permission_classes=[IsAuthenticated])
     def buscar_por_telefono(self, request):
         """
         Endpoint que usará n8n para reconocer al cliente de WhatsApp.
@@ -101,6 +101,12 @@ class ZonaDeliveryViewSet(viewsets.ReadOnlyModelViewSet):
         if not sede_id or lat_cliente == 0 or lon_cliente == 0:
             return Response({"error": "Faltan parámetros (sede_id, lat, lon)"}, status=400)
 
+        # Subtotal opcional — permite aplicar regla delivery_gratis en la cotización
+        try:
+            subtotal = float(request.query_params.get('subtotal', 0))
+        except ValueError:
+            subtotal = 0.0
+
         try:
             sede = Sede.objects.get(id=sede_id)
             if not sede.latitud or not sede.longitud:
@@ -118,12 +124,31 @@ class ZonaDeliveryViewSet(viewsets.ReadOnlyModelViewSet):
             ).order_by('radio_max_km').first()
 
             if zona:
-                return Response({
+                costo_envio = float(zona.costo_envio)
+                delivery_gratis = False
+
+                # Aplicar regla delivery_gratis si el subtotal la activa
+                if subtotal > 0:
+                    regla_gratis = ReglaNegocio.objects.filter(
+                        negocio=sede.negocio,
+                        tipo='delivery_gratis',
+                        activa=True,
+                        monto_minimo_orden__lte=subtotal
+                    ).first()
+                    if regla_gratis:
+                        costo_envio = 0.0
+                        delivery_gratis = True
+
+                respuesta = {
                     "zona": zona.nombre,
-                    "costo": zona.costo_envio,
+                    "costo": costo_envio,
                     "minimo": zona.pedido_minimo,
-                    "distancia_km": round(distancia_estimada_ruta, 2)
-                })
+                    "distancia_km": round(distancia_estimada_ruta, 2),
+                }
+                if delivery_gratis:
+                    respuesta["delivery_gratis"] = True
+                    respuesta["mensaje_promo"] = "🎉 ¡Delivery gratis por tu pedido!"
+                return Response(respuesta)
             else:
                 return Response({
                     "error": f"Estás a {round(distancia_estimada_ruta, 2)}km de ruta. Por ahora nuestra cobertura máxima no llega hasta tu ubicación.",

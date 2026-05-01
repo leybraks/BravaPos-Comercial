@@ -98,6 +98,23 @@ class NegocioViewSet(viewsets.ModelViewSet):
         if ext not in ('.png', '.jpg', '.jpeg', '.webp', '.svg'):
             return Response({'error': 'Formato no permitido. Usa PNG, JPG, WEBP o SVG'}, status=400)
 
+        # 🛡️ Validación de contenido real (magic bytes) — previene disfraz de archivos
+        archivo.seek(0)
+        header = archivo.read(16)
+        archivo.seek(0)
+
+        es_png  = header[:4] == b'\x89PNG'
+        es_jpg  = header[:3] == b'\xff\xd8\xff'
+        es_webp = header[:4] == b'RIFF' and header[8:12] == b'WEBP'
+
+        if ext in ('.png',) and not es_png:
+            return Response({'error': 'El archivo no es un PNG válido.'}, status=400)
+        if ext in ('.jpg', '.jpeg') and not es_jpg:
+            return Response({'error': 'El archivo no es un JPG válido.'}, status=400)
+        if ext == '.webp' and not es_webp:
+            return Response({'error': 'El archivo no es un WEBP válido.'}, status=400)
+        # SVG: validación por extensión solamente (es texto XML, sin firma binaria)
+
         # Guardar en MEDIA: negocios/carta/{negocio_id}/{tipo}{ext}
         # Sobreescribe el archivo anterior del mismo tipo automáticamente
         ruta = f'negocios/carta/{negocio.id}/{tipo}{ext}'

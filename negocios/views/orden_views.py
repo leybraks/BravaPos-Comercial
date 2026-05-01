@@ -15,11 +15,11 @@ from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
-from .helpers import es_valor_nulo, get_empleado_desde_header
+from .helpers import es_valor_nulo, get_empleado_desde_header, get_empleado_verificado
 from ..services import aplicar_reglas_negocio
 from ..models import (
     Orden, DetalleOrden, DetalleOrdenOpcion, Pago,
-    Producto, OpcionVariacion, Cliente, SolicitudCambio, SesionCaja, RegistroAuditoria
+    Producto, OpcionVariacion, Cliente, SolicitudCambio, SesionCaja, RegistroAuditoria, Sede
 )
 from ..serializers import OrdenSerializer, DetalleOrdenSerializer, PagoSerializer
 from django.db.models import Sum
@@ -67,6 +67,18 @@ class OrdenViewSet(viewsets.ModelViewSet):
             'detalles__producto', 'detalles__opciones_seleccionadas'
         ).all()
 
+        # ============================================================
+        # 🛡️ IDOR FIX: Acotar SIEMPRE al negocio del usuario autenticado
+        # Esto garantiza que ningún query param ni header pueda cruzar
+        # la frontera entre negocios.
+        # ============================================================
+        if self.request.user.is_superuser:
+            pass  # Superusuario ve todo
+        elif hasattr(self.request.user, 'negocio'):
+            queryset = queryset.filter(sede__negocio=self.request.user.negocio)
+        else:
+            return queryset.none()
+
         empleado = get_empleado_desde_header(self.request)
         sede_id_filtrar = None
         modo = self.request.query_params.get('modo')
@@ -92,16 +104,10 @@ class OrdenViewSet(viewsets.ModelViewSet):
             ).exclude(estado='cancelado').order_by('-creado_en')
 
             if sede_id_filtrar:
-                # Sede específica seleccionada (dueño o admin)
                 queryset = queryset.filter(sede_id=sede_id_filtrar)
-            elif hasattr(self.request.user, 'negocio'):
-                # Dueño eligió "General" → todas las sedes del negocio
-                queryset = queryset.filter(sede__negocio=self.request.user.negocio)
-            else:
-                queryset = queryset.none()
 
         # ============================================================
-        # Modo POS normal (sin cambios respecto al original)
+        # Modo POS normal
         # ============================================================
         else:
             if sede_id_filtrar:
@@ -111,20 +117,42 @@ class OrdenViewSet(viewsets.ModelViewSet):
                 ).exclude(estado='cancelado').filter(
                     models.Q(estado_pago='pendiente') | models.Q(creado_en__date=hoy)
                 ).order_by('-creado_en')
-            elif hasattr(self.request.user, 'negocio'):
-                queryset = queryset.filter(
-                    sede__negocio=self.request.user.negocio
-                ).order_by('-creado_en')
             else:
-                queryset = queryset.none()
+                queryset = queryset.order_by('-creado_en')
 
         return queryset
 
     def perform_create(self, serializer):
         empleado = get_empleado_desde_header(self.request)
+        sede_id_solicitada = self.request.data.get('sede')
+
+        # ─────────────────────────────────────────────────────────────────
+        # 🛡️ VALIDACIÓN DE SEDE: el localStorage del cliente no es fuente
+        # de verdad — el backend debe confirmar que la sede pertenece al
+        # negocio del usuario autenticado antes de crear cualquier orden.
+        # ─────────────────────────────────────────────────────────────────
+        if empleado:
+            # Caso empleado: forzar la sede real del empleado sin importar
+            # lo que venga en el cuerpo del request.
+            sede_id_validada = empleado.sede_id
+        elif hasattr(self.request.user, 'negocio'):
+            # Caso dueño: verificar que la sede pedida le pertenezca.
+            if not sede_id_solicitada:
+                from rest_framework.exceptions import ValidationError as DRFValidationError
+                raise DRFValidationError({'sede': 'Debes indicar una sede para la orden.'})
+            if not Sede.objects.filter(
+                id=sede_id_solicitada,
+                negocio=self.request.user.negocio
+            ).exists():
+                from rest_framework.exceptions import ValidationError as DRFValidationError
+                raise DRFValidationError({'sede': 'La sede indicada no pertenece a tu negocio.'})
+            sede_id_validada = sede_id_solicitada
+        else:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('No tienes permiso para crear órdenes.')
 
         with transaction.atomic():
-            orden = serializer.save(mesero=empleado)
+            orden = serializer.save(mesero=empleado, sede_id=sede_id_validada)
             detalles_data = self.request.data.get('detalles', [])
             nuevo_total = Decimal('0.00')
 
@@ -333,6 +361,14 @@ class OrdenViewSet(viewsets.ModelViewSet):
         EL ENDPOINT DEFINITIVO DE COBRO Y CRM
         Recibe los pagos y el WhatsApp del cliente para fidelización.
         """
+        # 🛡️ RBAC: verificar que el empleado tiene permiso para cobrar
+        empleado_rbac = get_empleado_verificado(request)
+        if empleado_rbac and (not empleado_rbac.rol or not empleado_rbac.rol.puede_cobrar):
+            return Response(
+                {'error': 'Tu rol no tiene permiso para cobrar órdenes.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
         orden = self.get_object()
 
         pagos_data = request.data.get('pagos', [])
@@ -444,7 +480,7 @@ class OrdenViewSet(viewsets.ModelViewSet):
             'metodo':          metodo_pago,
         })
 
-    @action(detail=False, methods=['get'], permission_classes=[AllowAny])
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
     def estado_orden_bot(self, request):
         """
         Endpoint consumido por n8n para que el bot consulte el estado 
@@ -475,7 +511,7 @@ class OrdenViewSet(viewsets.ModelViewSet):
             logger.error("Error en estado_orden_bot para sede %s telefono %s", sede_id, telefono, exc_info=True)
             return Response({"error": "Ocurrió un error interno en el servidor."}, status=500)
 
-    @action(detail=True, methods=['post'], permission_classes=[AllowAny])
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
     def modificar_desde_bot(self, request, pk=None):
         """
         Paso 1: El bot (n8n) llama a este endpoint cuando el cliente pide un cambio.

@@ -1,21 +1,25 @@
 import React from 'react';
 
 export default function MesasHeader({
-  colorPrimario, vistaLocal, esDueño, sedes, sedeActualId, manejarCambioSede, 
-  modoUnir, setModoUnir, setMesaPrincipal, modSalonActivo, modLlevarActivo, 
-  setVistaLocal, ordenesLlevar, setDrawerVentaRapidaAbierto, rolUsuario, 
+  colorPrimario, vistaLocal, esDueño, sedes, sedeActualId, manejarCambioSede,
+  modoUnir, setModoUnir, setMesaPrincipal, modSalonActivo, modLlevarActivo,
+  setVistaLocal, ordenesLlevar, setDrawerVentaRapidaAbierto, rolUsuario,
   onIrAErp, setModalMovimientosAbierto, manejarCierreCajaSeguro
 }) {
+  // Nombre de la sede actualmente seleccionada
+  const sedeActual = sedes?.find(s => String(s.id) === String(sedeActualId));
+  const nombreSede = sedeActual?.nombre || 'Principal';
+
   return (
     <header className="px-4 py-4 md:px-5 md:pt-6 md:pb-5 sticky top-0 z-10 border-b bg-[#0a0a0a]/95 border-[#222] backdrop-blur-md shadow-xl">
       <div className="flex justify-between items-start gap-2">
-        
+
         <div className="shrink-0 mt-1">
           <h1 className="text-xl sm:text-2xl md:text-[28px] font-black tracking-tight uppercase leading-none flex flex-col sm:block">
             {vistaLocal === 'salon' ? (
-              <><span className="text-white">Salón</span> <span style={{ color: colorPrimario }}>Principal</span></>
+              <><span className="text-white">Salón</span>{' '}<span style={{ color: colorPrimario }}>{nombreSede}</span></>
             ) : (
-              <><span className="text-white">Para</span> <span style={{ color: colorPrimario }}>Llevar</span></>
+              <><span className="text-white">Para</span>{' '}<span style={{ color: colorPrimario }}>Llevar</span></>
             )}
           </h1>
           <div className="flex items-center gap-2 mt-1 sm:mt-2">
@@ -23,17 +27,18 @@ export default function MesasHeader({
             <span className="w-2 h-2 sm:w-2.5 sm:h-2.5 bg-green-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]"></span>
           </div>
         </div>
-        
+
         <div className="flex flex-col items-end gap-2 sm:gap-3">
-          {esDueño && sedes?.length > 1 &&(
+          {/* Selector de sede — visible para el dueño cuando hay sedes disponibles */}
+          {esDueño && sedes?.length >= 1 && (
             <div className="flex items-center gap-2 mb-1">
-              <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-neutral-500">Modo Dueño:</span>
-              <select 
+              <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-neutral-500">Sede:</span>
+              <select
                 value={sedeActualId || ''} onChange={(e) => manejarCambioSede(e.target.value)}
                 className="text-xs font-bold px-3 py-1.5 rounded-lg border outline-none cursor-pointer appearance-none text-center shadow-sm transition-colors bg-[#1a1a1a] text-white border-[#333] hover:border-[#ff5a1f] focus:border-[#ff5a1f]"
                 style={{ color: colorPrimario }}
               >
-                <option value="" disabled>Seleccionar Sede...</option>
+                {!sedeActualId && <option value="" disabled>Seleccionar Sede...</option>}
                 {sedes?.map(sede => <option key={sede.id} value={sede.id}>📍 {sede.nombre}</option>)}
               </select>
             </div>
