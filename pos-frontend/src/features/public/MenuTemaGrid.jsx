@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 // ─────────────────────────────────────────────────────────────
 //  CONFIGURACIÓN — cambia solo esta constante para producción
 // ─────────────────────────────────────────────────────────────
-const API_BASE = 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 /** Resuelve la URL de cualquier imagen que venga del backend.
  *  - Si ya es https:// la devuelve tal cual
@@ -84,10 +84,15 @@ function Img({ src, alt, style, fallback = '🍽️', fallbackSize = 44 }) {
 //  Por ahora toma los primeros 5 productos como destacados.
 // ─────────────────────────────────────────────────────────────
 function CarruselHero({ productos, productosRecomendados, colorAcento, fuentes, onVerDetalle }) {
-  // Si llega lista de recomendados ML la usamos; si no, los primeros 5
+  // Si llega lista de recomendados ML la usamos.
+  // Si no, usamos productos con destacar_como_promocion=true.
+  // Si tampoco hay, tomamos los primeros 5.
+  const destacados = productos.filter(p => p.destacar_como_promocion);
   const slides = (productosRecomendados && productosRecomendados.length > 0)
     ? productosRecomendados.slice(0, 5)
-    : productos.slice(0, 5);
+    : destacados.length > 0
+      ? destacados.slice(0, 5)
+      : productos.slice(0, 5);
 
   const [idx, setIdx] = useState(0);
   const timerRef = useRef(null);
@@ -141,7 +146,7 @@ function CarruselHero({ productos, productosRecomendados, colorAcento, fuentes, 
           }}>
             <Icons.Sparkle />
             <span style={{ fontSize: 9, fontWeight: 800, color: colorAcento, letterSpacing: '0.12em', textTransform: 'uppercase', fontFamily: fuentes.cuerpo }}>
-              {productosRecomendados ? 'Recomendado' : 'Destacado'}
+              {productosRecomendados ? 'Recomendado' : plato.destacar_como_promocion ? 'Promoción' : 'Destacado'}
             </span>
           </div>
 
@@ -517,7 +522,7 @@ export default function MenuTemaGrid({
               background: color, display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontFamily: fuentes?.titulos, fontSize: 20, fontWeight: 900, color: '#000',
             }}>
-              {(carta.nombreNegocio || 'M').charAt(0).toUpperCase()}
+              {(carta.nombreNegocio || '?').charAt(0).toUpperCase()}
             </div>
           )}
           <div>
@@ -525,7 +530,7 @@ export default function MenuTemaGrid({
               fontFamily: fuentes?.titulos, fontSize: 17, fontWeight: 900,
               color: '#fff', lineHeight: 1.1, letterSpacing: '-0.02em',
             }}>
-              {carta.nombreNegocio || 'Menú'}
+              {carta.nombreNegocio}
             </div>
             {carta.slogan && (
               <div style={{

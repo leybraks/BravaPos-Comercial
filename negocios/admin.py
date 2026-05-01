@@ -108,23 +108,31 @@ class ProductoAdmin(admin.ModelAdmin):
 
 @admin.register(Sede)
 class SedeAdmin(admin.ModelAdmin):
-    # Agregamos latitud y longitud a la vista de lista
-    list_display = ('nombre', 'negocio', 'latitud', 'longitud', 'activo')
-    list_editable = ('latitud', 'longitud', 'activo')
-    search_fields = ('nombre',)
-    # Organizamos los campos en el formulario de edición
+    # Agregamos los horarios a la vista rápida para que sea fácil revisarlos
+    list_display = ('nombre', 'negocio', 'hora_apertura', 'hora_cierre', 'activo')
+    list_editable = ('activo',) 
+    search_fields = ('nombre', 'negocio__nombre')
+    
+    # Organizamos los campos en el formulario de edición por bloques visuales
     fieldsets = (
-        (None, {
-            'fields': ('negocio', 'nombre', 'direccion', 'activo')
+        ('Información Principal', {
+            'fields': ('negocio', 'nombre', 'direccion', 'activo', 'columnas_salon')
+        }),
+        ('Horarios de Atención', {
+            'fields': ('hora_apertura', 'hora_cierre', 'dias_atencion'),
+            'description': 'Configura los días y horas en que el local y el bot están activos.'
         }),
         ('Geolocalización', {
             'fields': ('latitud', 'longitud'),
+            'classes': ('collapse',), # Esto hace que se pueda "ocultar" si no se usa mucho
         }),
         ('WhatsApp Config', {
             'fields': ('whatsapp_instancia', 'whatsapp_numero'),
         }),
+        ('Menú y Carta Virtual', {
+            'fields': ('enlace_carta_virtual', 'carta_pdf'),
+        }),
     )
-
 @admin.register(ZonaDelivery)
 class ZonaDeliveryAdmin(admin.ModelAdmin):
     # Cambiamos distritos por radio_max_km

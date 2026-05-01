@@ -108,7 +108,13 @@ class Sede(models.Model):
     whatsapp_numero = models.CharField(max_length=20, null=True, blank=True, help_text="Número del bot")
     enlace_carta_virtual = models.URLField(max_length=500, null=True, blank=True, help_text="Link a tu menú digital, Canva, Drive o Instagram")
     carta_pdf = models.FileField(upload_to='cartas_pdf/', null=True, blank=True, help_text="Sube tu carta en formato PDF")
-
+    hora_apertura = models.TimeField(null=True, blank=True, help_text="Hora de apertura")
+    hora_cierre = models.TimeField(null=True, blank=True, help_text="Hora de cierre")
+    dias_atencion = models.JSONField(
+        default=list, 
+        blank=True,
+        help_text="Lista de días. Ej: ['Lunes', 'Martes', ...]"
+    )
     objects = ActivoManager()      
     all_objects = models.Manager()
 

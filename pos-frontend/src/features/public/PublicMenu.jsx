@@ -46,7 +46,7 @@ export default function PublicMenu() {
           getOrdenPublica(sedeId, mesaId),
         ]);
         if (!isMounted) return;
-
+        
         setProductos(resMenu.data.productos || []);
         setCategorias(resMenu.data.categorias || []);
         setOrdenActiva(resOrden.data.orden || null);

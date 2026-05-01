@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { getSedes, actualizarSede, getMesas, actualizarMesa, crearMesa, crearSede } from '../../api/api';
 import usePosStore from '../../store/usePosStore';
 import { useSedeColors } from './Usesedecolors';
@@ -27,8 +27,14 @@ export default function Erp_GestionSedes() {
   const [guardando,   setGuardando]   = useState(false);
 
   // ── Pestaña info ────────────────────────────
-  const [formSede, setFormSede] = useState({ nombre: '', direccion: '' });
-
+  const [formSede, setFormSede] = useState({ 
+    nombre: '', 
+    direccion: '',
+    hora_apertura: '10:00',
+    hora_cierre: '22:00',
+    dias_atencion: ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+  });
+  const ultimaSedeCargada = useRef(null);
   // ── Editor de plano ─────────────────────────
   const [modalEditorAbierto, setModalEditorAbierto] = useState(false);
   const [mesas,              setMesas]              = useState([]);
@@ -62,22 +68,42 @@ export default function Erp_GestionSedes() {
   }, []);
 
   // ── Carga cuando cambia la sede activa ──────
+  // ── Carga cuando cambia la sede activa ──────
+  // ── Carga cuando cambia la sede activa ──────
   useEffect(() => {
-    if (esDueño && sedeActivaId) localStorage.setItem('memoria_sede_planos', sedeActivaId);
+    if (esDueño && sedeActivaId) {
+      localStorage.setItem('memoria_sede_planos', sedeActivaId);
+    }
 
     if (sedeActivaId && sedes.length > 0) {
       const sedeActual = sedes.find(s => String(s.id) === String(sedeActivaId));
+      
       if (sedeActual) {
-        setFormSede({ 
-            nombre: sedeActual.nombre || '', 
-            direccion: sedeActual.direccion || '',
-            latitud: sedeActual.latitud ? parseFloat(sedeActual.latitud) : -12.0464, // Lima por defecto
-            longitud: sedeActual.longitud ? parseFloat(sedeActual.longitud) : -77.0428
-        });
-        setColumnas(parseInt(sedeActual.columnas_salon) || 3);
+        // ✨ LA MAGIA: Solo actualizamos el formulario si el ID de la Sede es nuevo.
+        // Esto rompe el bucle de "cascading renders" y no requiere leer "formSede.nombre"
+        if (ultimaSedeCargada.current !== sedeActivaId) {
+            const horaAperturaLimpia = sedeActual.hora_apertura ? sedeActual.hora_apertura.substring(0, 5) : '10:00';
+            const horaCierreLimpia = sedeActual.hora_cierre ? sedeActual.hora_cierre.substring(0, 5) : '22:00';
+            const diasLimpios = sedeActual.dias_atencion?.length > 0 ? sedeActual.dias_atencion : ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+
+            setFormSede({ 
+                nombre: sedeActual.nombre || '', 
+                direccion: sedeActual.direccion || '',
+                latitud: sedeActual.latitud ? parseFloat(sedeActual.latitud) : -12.0464,
+                longitud: sedeActual.longitud ? parseFloat(sedeActual.longitud) : -77.0428,
+                hora_apertura: horaAperturaLimpia,
+                hora_cierre: horaCierreLimpia,
+                dias_atencion: diasLimpios
+            });
+            setColumnas(parseInt(sedeActual.columnas_salon) || 3);
+
+            // Marcamos que ya llenamos el form para esta sede
+            ultimaSedeCargada.current = sedeActivaId;
+        }
       }
     }
 
+    // --- CARGA DE MESAS (Se mantiene exacto a como lo tenías) ---
     const cargarMesas = async () => {
       if (!sedeActivaId) return;
       setMesas([]);
@@ -102,7 +128,7 @@ export default function Erp_GestionSedes() {
     };
 
     cargarMesas();
-  }, [sedeActivaId, sedes, esDueño]);
+  }, [sedeActivaId, sedes, esDueño]); // 👈 ¡Dependencias limpias y felices! // 👈 Quitamos `esDueño` de las dependencias para calmar a React
 
   // ── Carga mesas de todas las sedes al entrar al tab mapa ──
   useEffect(() => {
@@ -136,7 +162,11 @@ export default function Erp_GestionSedes() {
         nombre: formSede.nombre, 
         direccion: formSede.direccion,
         latitud: formSede.latitud,
-        longitud: formSede.longitud
+        longitud: formSede.longitud,
+        // ✨ Enviamos el horario
+        hora_apertura: formSede.hora_apertura,
+        hora_cierre: formSede.hora_cierre,
+        dias_atencion: formSede.dias_atencion
       });
       setSedes(prev => prev.map(s => String(s.id) === String(sedeActivaId) ? { ...s, ...res.data } : s));
       alert('📍 Información actualizada correctamente.');

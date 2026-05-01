@@ -3,7 +3,8 @@ import api from '../../api/api';
 import usePosStore from '../../store/usePosStore';
 import { 
   Bot, Plug, MessageSquare, CheckCircle, Power, 
-  Smartphone, Loader2, QrCode, Check, Timer 
+  Smartphone, Loader2, QrCode, Check, Timer,
+  Gift, Megaphone, Settings, Clock, ShieldCheck, Bike // 👈 Nuevos íconos
 } from 'lucide-react';
 
 export default function Erp_BotWsp({ sedesReales = [], onRefrescar }) {
@@ -15,19 +16,24 @@ export default function Erp_BotWsp({ sedesReales = [], onRefrescar }) {
   const rolUsuario = localStorage.getItem('usuario_rol') || '';
   const esDueño = ['dueño', 'admin', 'administrador'].includes(rolUsuario.trim().toLowerCase());
   const sedeAsignada = localStorage.getItem('sede_id');
-
+  const [tabActiva, setTabActiva] = useState('conexion'); 
   const [sedesVisibles, setSedesVisibles] = useState([]);
   const [numerosWsp, setNumerosWsp] = useState({});
   const [archivosCarta, setArchivosCarta] = useState({}); 
   const [linksCarta, setLinksCarta] = useState({});
   const [loadingAction, setLoadingAction] = useState(null);
-  const [tabActiva, setTabActiva] = useState('conexion'); 
+  
 
   // ✨ ESTADOS DEL MODAL QR Y TEMPORIZADOR
   const [qrModal, setQrModal] = useState({ open: false, qrBase64: '', sedeId: null, sedeNombre: '' });
   const [tiempoQr, setTiempoQr] = useState(40);
   const [qrEscaneado, setQrEscaneado] = useState(false);
-
+  const [operaciones, setOperaciones] = useState({
+    horarioInicio: '18:00',
+    horarioFin: '23:30',
+    ingresoAutomatico: true, // ¿Pasa directo a cocina o requiere clic en Caja?
+    deliveryActivo: true,    // Para apagarlo si llueve o no hay motorizado
+  });
   useEffect(() => {
     let filtradas = sedesReales;
     if (!esDueño && sedeAsignada) {
@@ -181,11 +187,13 @@ export default function Erp_BotWsp({ sedesReales = [], onRefrescar }) {
         </div>
       </div>
 
-      {/* 🔘 NAVEGACIÓN DE PESTAÑAS */}
+      {/* 🔘 NUEVA NAVEGACIÓN DE PESTAÑAS */}
       <div className={`flex gap-8 border-b overflow-x-auto custom-scrollbar ${isDark ? 'border-[#222]' : 'border-gray-200'}`}>
         {[
           { id: 'conexion', label: 'Conexión WhatsApp', icon: Plug },
-          { id: 'reglas', label: 'Comportamiento', icon: MessageSquare },
+          { id: 'reglas', label: 'Comportamiento', icon: Settings },
+          { id: 'fidelizacion', label: 'Promociones y Fidelización', icon: Gift },
+          { id: 'marketing', label: 'Marketing y Difusión', icon: Megaphone },
         ].map(tab => {
           const Icon = tab.icon;
           return (
@@ -314,7 +322,81 @@ export default function Erp_BotWsp({ sedesReales = [], onRefrescar }) {
           })}
         </div>
       )}
+      {/* ========================================== */}
+      {/* ⚙️ PESTAÑA 2: COMPORTAMIENTO (Operaciones Básicas) */}
+      {/* ========================================== */}
+      {tabActiva === 'reglas' && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fadeIn">
+          
+          {/* 🛠️ COLUMNA 1: OPERACIONES BÁSICAS */}
+          <div className={`rounded-[2rem] p-6 border ${isDark ? 'bg-[#111] border-[#2a2a2a]' : 'bg-white border-gray-200 shadow-sm'}`}>
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-2 rounded-xl" style={{ backgroundColor: colorPrimario + '20', color: colorPrimario }}>
+                <Settings size={24} />
+              </div>
+              <h3 className={`text-xl font-black ${isDark ? 'text-white' : 'text-gray-900'}`}>Operaciones Básicas</h3>
+            </div>
 
+            <div className="space-y-6">
+              {/* Horario de Atención */}
+              <div className={`p-4 rounded-2xl border ${isDark ? 'bg-[#161616] border-[#333]' : 'bg-gray-50 border-gray-100'}`}>
+                <div className="flex items-center gap-2 mb-4">
+                  <Clock size={18} className={isDark ? 'text-neutral-400' : 'text-gray-500'} />
+                  <h4 className={`font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>Horario del Bot</h4>
+                </div>
+                <div className="flex items-center gap-4">
+                  <div className="flex-1">
+                    <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest block mb-1">Apertura</label>
+                    <input type="time" value={operaciones.horarioInicio} onChange={(e) => setOperaciones({...operaciones, horarioInicio: e.target.value})} className={`w-full px-3 py-2 rounded-xl outline-none font-mono text-sm border ${isDark ? 'bg-[#0a0a0a] border-[#333] text-white' : 'bg-white border-gray-200 text-gray-900'}`} />
+                  </div>
+                  <div className="flex-1">
+                    <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest block mb-1">Cierre</label>
+                    <input type="time" value={operaciones.horarioFin} onChange={(e) => setOperaciones({...operaciones, horarioFin: e.target.value})} className={`w-full px-3 py-2 rounded-xl outline-none font-mono text-sm border ${isDark ? 'bg-[#0a0a0a] border-[#333] text-white' : 'bg-white border-gray-200 text-gray-900'}`} />
+                  </div>
+                </div>
+                <p className="text-xs text-neutral-500 mt-3 font-medium">Fuera de este horario, el bot responderá que el local está cerrado.</p>
+              </div>
+
+              {/* Aprobación de Pedidos */}
+              <div className={`p-4 rounded-2xl border flex items-center justify-between ${isDark ? 'bg-[#161616] border-[#333]' : 'bg-gray-50 border-gray-100'}`}>
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <ShieldCheck size={18} className={isDark ? 'text-neutral-400' : 'text-gray-500'} />
+                    <h4 className={`font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>Ingreso Automático</h4>
+                  </div>
+                  <p className="text-xs text-neutral-500">¿Los pedidos pasan directo a cocina sin revisión humana?</p>
+                </div>
+                {/* Toggle Switch */}
+                <button onClick={() => setOperaciones({...operaciones, ingresoAutomatico: !operaciones.ingresoAutomatico})} className={`w-12 h-6 rounded-full transition-colors relative flex items-center shrink-0 ${operaciones.ingresoAutomatico ? 'bg-green-500' : 'bg-neutral-500'}`}>
+                  <div className={`w-4 h-4 bg-white rounded-full absolute transition-transform ${operaciones.ingresoAutomatico ? 'translate-x-7' : 'translate-x-1'}`} />
+                </button>
+              </div>
+
+              {/* Botón de Guardar */}
+              <button 
+                className="w-full py-3.5 rounded-xl font-black text-sm uppercase tracking-widest transition-all text-white shadow-lg active:scale-95 mt-4"
+                style={{ backgroundColor: colorPrimario }}
+              >
+                Guardar Operaciones
+              </button>
+            </div>
+          </div>
+
+          {/* 🎨 COLUMNA 2: PERSONALIZACIÓN DEL BOT */}
+          <div className={`rounded-[2rem] p-6 border flex flex-col items-center justify-center text-center ${isDark ? 'bg-[#111] border-[#2a2a2a]' : 'bg-white border-gray-200 shadow-sm'}`}>
+            <MessageSquare size={48} className={isDark ? 'text-[#333]' : 'text-gray-200'} strokeWidth={1} mb={4} />
+            <h3 className={`text-xl font-black mb-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>Personalización</h3>
+            <p className={`text-sm max-w-sm ${isDark ? 'text-neutral-400' : 'text-gray-500'}`}>
+              Próximamente: Aquí podrás configurar el tono del bot (formal o amigable), agregar FAQs (cochera, ubicación) y más detalles de personalidad.
+            </p>
+          </div>
+
+        </div>
+      )}
+      
+      {/* Pestañas vacías para el futuro */}
+      {tabActiva === 'fidelizacion' && <div className="p-10 text-center font-bold text-neutral-500">Módulo de Promociones en construcción... 🎁</div>}
+      {tabActiva === 'marketing' && <div className="p-10 text-center font-bold text-neutral-500">Módulo de Marketing en construcción... 📢</div>}
       {/* ========================================== */}
       {/* 🧩 MODAL MÁGICO PARA ESCANEAR EL QR */}
       {/* ========================================== */}

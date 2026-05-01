@@ -3,7 +3,7 @@ from urllib import response
 import requests
 import logging
 import os                    # ✨ NUEVO
-
+from django.utils import timezone
 from django.conf import settings
 from django.core.files.storage import default_storage   # ✨ NUEVO
 from django.core.files.base import ContentFile          # ✨ NUEVO
@@ -157,7 +157,7 @@ class NegocioViewSet(viewsets.ModelViewSet):
 
 class SedeViewSet(viewsets.ModelViewSet):
     serializer_class = SedeSerializer
-
+    
     def get_queryset(self):
         if self.request.user.is_superuser:
             return Sede.objects.all()
@@ -180,16 +180,50 @@ class SedeViewSet(viewsets.ModelViewSet):
         instancia = request.query_params.get('instancia')
         if not instancia:
             return Response({'error': 'Falta el parámetro instancia'}, status=400)
+            
         sede = Sede.objects.filter(whatsapp_instancia=instancia).first()
         if not sede:
             return Response({'error': 'Instancia no registrada en ninguna Sede'}, status=404)
+
+        # ✨ 1. OBTENEMOS LA HORA Y DÍA ACTUAL
+        ahora = timezone.localtime() # Obtiene la hora en la zona de Perú (America/Lima)
+        hora_actual = ahora.time()
+        
+        # Mapeamos los días de Python (0=Lunes, 6=Domingo) con tus datos
+        dias_espanol = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+        dia_actual_str = dias_espanol[ahora.weekday()]
+
+        esta_abierto = False
+        dias_atencion = sede.dias_atencion or []
+
+        # ✨ 2. LÓGICA DE APERTURA Y CIERRE
+        if dia_actual_str in dias_atencion and sede.hora_apertura and sede.hora_cierre:
+            if sede.hora_apertura <= sede.hora_cierre:
+                # Horario normal en el mismo día (Ej: 10:00 a 22:00)
+                if sede.hora_apertura <= hora_actual <= sede.hora_cierre:
+                    esta_abierto = True
+            else:
+                # Horario nocturno/madrugada (Ej: 18:00 a 02:00)
+                if hora_actual >= sede.hora_apertura or hora_actual <= sede.hora_cierre:
+                    esta_abierto = True
+
+        # Formateamos bonito para que el bot no lea los segundos
+        str_apertura = sede.hora_apertura.strftime('%H:%M') if sede.hora_apertura else 'No definido'
+        str_cierre = sede.hora_cierre.strftime('%H:%M') if sede.hora_cierre else 'No definido'
+        dias_texto = ", ".join(dias_atencion) if dias_atencion else "ninguno"
+
         return Response({
             'sede_id':       sede.id,
             'negocio_id':    sede.negocio.id,
             'nombre_sede':   sede.nombre,
-            'nombre_negocio': sede.negocio.nombre
+            'nombre_negocio': sede.negocio.nombre,
+            # 👇 EL CEREBRO DEL BOT 👇
+            'esta_abierto':  esta_abierto,
+            'hora_apertura': str_apertura,
+            'hora_cierre':   str_cierre,
+            'mensaje_fuera_horario': f"¡Hola! Ahora mismo estamos cerrados 😴. Nuestro horario es de {str_apertura} a {str_cierre} los días {dias_texto}."
         })
-
+    
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
     def crear_instancia_whatsapp(self, request, pk=None):
         sede = self.get_object()
