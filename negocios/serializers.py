@@ -1,9 +1,13 @@
+from time import timezone
+
 from rest_framework import serializers
 from .models import (
-    InsumoBase, InsumoSede, Negocio, PlanSaaS, Sede, Mesa, Producto, Orden, DetalleOrden, Pago,
+    InsumoBase, InsumoSede, Negocio, PlanSaaS, ReglaNegocio, Sede, Mesa, Producto, Orden, DetalleOrden, Pago,
     ModificadorRapido, GrupoVariacion, OpcionVariacion, Rol, Empleado, SesionCaja,
-    DetalleOrdenOpcion , Categoria, RecetaOpcion
+    DetalleOrdenOpcion , Categoria, RecetaOpcion, Cliente, ZonaDelivery
 )
+
+
 class PlanSaaSSerializer(serializers.ModelSerializer):
     class Meta:
         model = PlanSaaS
@@ -151,24 +155,22 @@ class DetalleOrdenSerializer(serializers.ModelSerializer):
         read_only_fields = ['orden']
 
 class OrdenSerializer(serializers.ModelSerializer):
-    # ✨ CRUCIAL: Añadimos read_only=True. 
-    # Esto le dice a DRF: "Muestra los detalles al leer, pero cuando guardemos, yo lo haré manual en views.py"
     detalles = DetalleOrdenSerializer(many=True, read_only=True)
     mesa_nombre = serializers.ReadOnlyField(source='mesa.numero_o_nombre')
     sede_nombre = serializers.ReadOnlyField(source='sede.nombre')
     mesero_nombre = serializers.ReadOnlyField(source='mesero.nombre')
+
     class Meta:
         model = Orden
-        # 👇 MIRA AQUÍ: Agregué 'metodo' justo después de 'estado_pago'
         fields = [
             'id', 'sede', 'sede_nombre', 'mesa', 'mesa_nombre', 
             'mesero', 'mesero_nombre', 'tipo', 'estado', 'estado_pago', 
             'total', 'cliente_nombre', 'cliente_telefono', 
-            'motivo_cancelacion', 'creado_en', 'detalles'
+            'motivo_cancelacion', 'creado_en', 'detalles',
+            # ✨ AÑADIMOS LOS CAMPOS DE DELIVERY AQUÍ:
+            'direccion_entrega', 'latitud', 'longitud', 
+            'costo_envio', 'metodo_pago_esperado'
         ]
-        
-    # 🧹 ELIMINADO: Quitamos el def create() con bulk_create. 
-    # Ahora la magia segura y atómica ocurre 100% en tu views.py
 
 class PagoSerializer(serializers.ModelSerializer):
     class Meta:
@@ -215,4 +217,41 @@ class InsumoSedeSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = InsumoSede
+        fields = '__all__'
+
+class ClienteSerializer(serializers.ModelSerializer):
+    # ✨ Campo calculado: el bot solo lee un Booleano y sabe si saludar o no
+    es_cumpleanos_hoy = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Cliente
+        fields = [
+            'id', 'telefono', 'nombre', 'email', 'fecha_nacimiento', 
+            'puntos_acumulados', 'total_gastado', 'cantidad_pedidos', 
+            'ultima_compra', 'tags', 'es_cumpleanos_hoy','bot_estado', 'bot_memoria'
+        ]
+        # 🛡️ PROTECCIÓN: Estos campos solo los calcula el backend (Django)
+        # No permitimos que se modifiquen vía POST o PUT.
+        read_only_fields = [
+            'puntos_acumulados', 'total_gastado', 
+            'cantidad_pedidos', 'ultima_compra'
+        ]
+
+    def get_es_cumpleanos_hoy(self, obj):
+        """Lógica centralizada: Django decide si es el cumple, no el bot."""
+        if obj.fecha_nacimiento:
+            hoy = timezone.now().date()
+            return (obj.fecha_nacimiento.day == hoy.day and 
+                    obj.fecha_nacimiento.month == hoy.month)
+        return False
+
+
+class ZonaDeliverySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ZonaDelivery
+        fields = '__all__'
+
+class ReglaNegocioSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ReglaNegocio
         fields = '__all__'

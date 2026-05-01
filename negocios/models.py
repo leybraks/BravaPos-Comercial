@@ -3,6 +3,7 @@ from django.contrib.auth.models import User
 from django.contrib.auth.hashers import make_password, is_password_usable
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
+from openlocationcode import openlocationcode as olc
 
 class ActivoManager(models.Manager):
     def get_queryset(self):
@@ -24,18 +25,48 @@ class PlanSaaS(models.Model):
     def __str__(self):
         return self.nombre
 
+from django.db import models
+from django.contrib.auth.models import User
+# Asegúrate de importar tu modelo PlanSaaS si está en otro archivo, o déjalo como lo tienes
+
 class Negocio(models.Model):
     propietario = models.OneToOneField(User, on_delete=models.CASCADE)
     nombre = models.CharField(max_length=100)
 
-    plan = models.ForeignKey(PlanSaaS, on_delete=models.PROTECT, related_name='negocios', null=True, blank=True)
+    # ==========================================
+    # 🏢 1. IDENTIDAD COMERCIAL
+    # ==========================================
+    ruc = models.CharField(max_length=11, blank=True, null=True, unique=True)
+    razon_social = models.CharField(max_length=255, blank=True, null=True)
+    logo = models.ImageField(upload_to='negocios/logos/', blank=True, null=True)
 
+    # ==========================================
+    # 📱 2. BILLETERAS DIGITALES (QRs y Números)
+    # ==========================================
+    yape_numero = models.CharField(max_length=15, blank=True, null=True)
+    yape_qr = models.ImageField(upload_to='negocios/qrs/yape/', blank=True, null=True)
+    
+    plin_numero = models.CharField(max_length=15, blank=True, null=True)
+    plin_qr = models.ImageField(upload_to='negocios/qrs/plin/', blank=True, null=True)
+
+    # ==========================================
+    # 💳 3. PASARELA DE PAGO (Culqi)
+    # ==========================================
+    usa_culqi = models.BooleanField(default=False)
+    culqi_public_key = models.CharField(max_length=255, blank=True, null=True)
+    culqi_private_key = models.CharField(max_length=255, blank=True, null=True)
+
+    # ==========================================
+    # ⚙️ CONFIGURACIÓN DEL PLAN
+    # ==========================================
+    plan = models.ForeignKey('PlanSaaS', on_delete=models.PROTECT, related_name='negocios', null=True, blank=True)
     fecha_registro = models.DateTimeField(auto_now_add=True)
     fin_prueba = models.DateTimeField() # Para el demo de 15 días
     activo = models.BooleanField(default=True)
-    numero_yape = models.CharField(max_length=15, blank=True, null=True)
     
+    # ==========================================
     # 🛡️ MÓDULOS DEL SISTEMA (Feature Flags)
+    # ==========================================
     mod_salon_activo = models.BooleanField(default=True) # Activa/Desactiva el mapa de mesas
     mod_cocina_activo = models.BooleanField(default=False) # KDS
     mod_inventario_activo = models.BooleanField(default=False)
@@ -43,28 +74,71 @@ class Negocio(models.Model):
     mod_clientes_activo = models.BooleanField(default=False) # CRM (Base de datos de clientes)
     mod_facturacion_activo = models.BooleanField(default=False) # Boletas/Facturas Sunat
     mod_carta_qr_activo = models.BooleanField(default=False) # Carta digital con QR para mesas y delivery
-    mod_bot_wsp_activo = models.BooleanField(default=False) # Bot de WhatsApp para tomar pedidos y consultas automáticas
-    mod_ml_activo = models.BooleanField(default=False) # Módulo de Machine Learning para recomendaciones y predicciones de ventas
+    mod_bot_wsp_activo = models.BooleanField(default=False) # Bot de WhatsApp
+    mod_ml_activo = models.BooleanField(default=False) # Machine Learning
     
+    # ==========================================
     # 🎨 PERSONALIZACIÓN VISUAL
+    # ==========================================
     color_primario = models.CharField(max_length=7, default='#ff5a1f') # Naranja Brava por defecto
     tema_fondo = models.CharField(max_length=10, default='dark') # 'dark' o 'light'
     
+    carta_config = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Configuración visual de la carta digital (fuentes, fondos, colores, estilos)"
+    )
     def __str__(self):
         return self.nombre
 
 class Sede(models.Model):
     negocio = models.ForeignKey(Negocio, on_delete=models.CASCADE, related_name='sedes')
     nombre = models.CharField(max_length=100) # Ej: "Local Ventanilla", "Sede Centro"
-    direccion = models.CharField(max_length=200, null=True, blank=True)
+    
+    # Actualizamos el help_text para guiar al usuario
+    direccion = models.CharField(max_length=200, null=True, blank=True, help_text="Pega el Plus Code de Google Maps (Ej: 6MC5+QQ Ventanilla)")
     activo = models.BooleanField(default=True)
     columnas_salon = models.IntegerField(default=2)
+
+    latitud = models.FloatField(null=True, blank=True, help_text="Se autocompleta al guardar")
+    longitud = models.FloatField(null=True, blank=True, help_text="Se autocompleta al guardar")
+
+    # ✨ CAMPOS PARA EL BOT MULTI-SEDE
+    whatsapp_instancia = models.CharField(max_length=50, null=True, blank=True, help_text="Nombre exacto en Evolution API")
+    whatsapp_numero = models.CharField(max_length=20, null=True, blank=True, help_text="Número del bot")
+    enlace_carta_virtual = models.URLField(max_length=500, null=True, blank=True, help_text="Link a tu menú digital, Canva, Drive o Instagram")
+    carta_pdf = models.FileField(upload_to='cartas_pdf/', null=True, blank=True, help_text="Sube tu carta en formato PDF")
+    hora_apertura = models.TimeField(null=True, blank=True, help_text="Hora de apertura")
+    hora_cierre = models.TimeField(null=True, blank=True, help_text="Hora de cierre")
+    dias_atencion = models.JSONField(
+        default=list, 
+        blank=True,
+        help_text="Lista de días. Ej: ['Lunes', 'Martes', ...]"
+    )
     objects = ActivoManager()      
     all_objects = models.Manager()
+
     class Meta:
         unique_together = ('negocio', 'nombre')
+
     def __str__(self):
         return f"{self.nombre} ({self.negocio.nombre})"
+
+    # ✨ LA MAGIA: Interceptamos el guardado para calcular las coordenadas
+    def save(self, *args, **kwargs):
+        if self.direccion and '+' in self.direccion:
+            try:
+                # Extraemos solo el código, ignorando si el usuario pegó la ciudad (Ej: "6MC5+QQ Ventanilla")
+                codigo_limpio = self.direccion.split(' ')[0] 
+                
+                if olc.isFull(codigo_limpio):
+                    code_area = olc.decode(codigo_limpio)
+                    self.latitud = code_area.latitudeCenter
+                    self.longitud = code_area.longitudeCenter
+            except Exception as e:
+                print(f"Error decodificando Plus Code: {e}")
+                
+        super().save(*args, **kwargs)
 
 class Mesa(models.Model):
     # Cambio clave: La mesa ahora pertenece a la Sede, no al Negocio general
@@ -100,7 +174,7 @@ class Categoria(models.Model):
 class Producto(models.Model):
     # El producto sigue siendo del Negocio (Menú global)
     negocio = models.ForeignKey(Negocio, on_delete=models.CASCADE)
-    categoria = models.ForeignKey('Categoria', on_delete=models.SET_NULL, null=True, blank=True, related_name='productos') # 👈 ¡ESTA ES LA LÍNEA QUE FALTABA!
+    categoria = models.ForeignKey('Categoria', on_delete=models.SET_NULL, null=True, blank=True, related_name='productos')
     
     nombre = models.CharField(max_length=100)
     es_venta_rapida = models.BooleanField(default=False)
@@ -109,6 +183,10 @@ class Producto(models.Model):
     tiene_variaciones = models.BooleanField(default=False)
     requiere_seleccion = models.BooleanField(default=False)
     activo = models.BooleanField(default=True)
+    imagen = models.ImageField(upload_to='productos/fotos/', null=True, blank=True)
+    # ✨ LOS NUEVOS CAMPOS PARA COMBOS Y MARKETING ✨
+    es_combo = models.BooleanField(default=False, help_text="Indica si este producto está compuesto por otros productos")
+    destacar_como_promocion = models.BooleanField(default=False, help_text="¿Aparece destacado en el Bot de WhatsApp o Carta QR?")
     
     objects = ActivoManager()
     all_objects = models.Manager()
@@ -237,7 +315,15 @@ class Orden(models.Model):
     sesion_caja = models.ForeignKey(SesionCaja, on_delete=models.PROTECT, null=True, blank=True, related_name='ordenes', help_text="Turno en el que se cobró")
                                     
     tipo = models.CharField(max_length=20, choices=TIPO_CHOICES, default='salon')
+    # 🛵 DATOS DE DELIVERY
+    direccion_entrega = models.CharField(max_length=255, null=True, blank=True)
+    latitud = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
+    longitud = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
+    costo_envio = models.DecimalField(max_digits=6, decimal_places=2, default=0.00)
     
+    # 💳 MÉTODO DE PAGO ESPERADO (Para saber si el motorizado lleva POS o Vuelto)
+    metodo_pago_esperado = models.CharField(max_length=50, null=True, blank=True, help_text="Ej: Yape, Efectivo (con vuelto de S/50)")
+    pago_validado_bot = models.BooleanField(default=False, help_text="¿Gemini validó la captura?")
     estado = models.CharField(max_length=20, choices=ESTADOS_COCINA, default='pendiente')
     estado_pago = models.CharField(max_length=20, choices=ESTADOS_PAGO, default='pendiente') # 👈 NUEVO
     total = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
@@ -489,3 +575,160 @@ class RegistroAuditoria(models.Model):
 
     def __str__(self):
         return f"[{self.fecha.strftime('%d/%m %H:%M')}] {self.empleado_nombre}: {self.get_accion_display()}"
+    
+# En models.py
+class Cliente(models.Model):
+    negocio = models.ForeignKey('Negocio', on_delete=models.CASCADE, related_name='clientes')
+    telefono = models.CharField(max_length=20)
+    nombre = models.CharField(max_length=100, null=True, blank=True)
+    email = models.EmailField(null=True, blank=True)
+    
+    # 📊 DATOS DE FIDELIZACIÓN
+    puntos_acumulados = models.IntegerField(default=0)
+    total_gastado = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    cantidad_pedidos = models.IntegerField(default=0)
+    ultima_compra = models.DateTimeField(null=True, blank=True)
+    fecha_nacimiento = models.DateField(null=True, blank=True)
+    tags = models.JSONField(default=list, blank=True)
+
+    # 🧠 ✨ NUEVOS CAMPOS: MEMORIA DE ESTADO DEL BOT
+    bot_estado = models.CharField(
+        max_length=50, 
+        default='INICIO', 
+        help_text="Estado actual: INICIO, ESPERANDO_PAGO, ESPERANDO_UBICACION, etc."
+    )
+    bot_memoria = models.JSONField(
+        default=dict, 
+        blank=True, 
+        help_text="Guarda el carrito temporal, coordenadas y datos de la sesión actual."
+    )
+
+    class Meta:
+        unique_together = ('negocio', 'telefono')
+
+    def __str__(self):
+        return f"{self.nombre or 'Cliente'} ({self.telefono})"
+
+# ==========================================
+# 2. LOGÍSTICA Y COBERTURA
+# ==========================================
+class ZonaDelivery(models.Model):
+    sede = models.ForeignKey('Sede', on_delete=models.CASCADE, related_name='zonas_delivery')
+    nombre = models.CharField(max_length=100) # Ej: "Radio Corto (0-2km)"
+    costo_envio = models.DecimalField(max_digits=6, decimal_places=2)
+    pedido_minimo = models.DecimalField(max_digits=6, decimal_places=2, default=0.00)
+    
+    # ✨ EL NUEVO CORAZÓN DEL CÁLCULO
+    radio_max_km = models.FloatField(help_text="Radio máximo en kilómetros para esta tarifa", default=2.0)
+    
+    activa = models.BooleanField(default=True)
+
+    def __str__(self):
+        return f"{self.nombre} (hasta {self.radio_max_km}km) - S/ {self.costo_envio}"
+
+# ==========================================
+# 3. MOTOR DE REGLAS Y PROMOCIONES
+# ==========================================
+class ReglaNegocio(models.Model):
+    TIPO_REGLA = [
+        ('recargo_llevar', 'Recargo por empaque (Llevar)'),
+        ('delivery_gratis', 'Delivery Gratis por Monto'),
+        ('descuento_dia', 'Descuento por Día Específico'),
+    ]
+    negocio = models.ForeignKey('Negocio', on_delete=models.CASCADE)
+    tipo = models.CharField(max_length=30, choices=TIPO_REGLA)
+    valor = models.DecimalField(max_digits=10, decimal_places=2) # Monto o Porcentaje
+    es_porcentaje = models.BooleanField(default=False)
+    
+    # Condicionales
+    monto_minimo_orden = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    dia_semana = models.IntegerField(null=True, blank=True) # 0=Lunes, 6=Domingo
+    activa = models.BooleanField(default=True)
+
+class CuponPromocional(models.Model):
+    negocio = models.ForeignKey('Negocio', on_delete=models.CASCADE)
+    codigo = models.CharField(max_length=20, unique=True) # Ej: "BRAVA10"
+    descripcion = models.TextField(blank=True)
+    
+    monto_descuento = models.DecimalField(max_digits=10, decimal_places=2)
+    es_porcentaje = models.BooleanField(default=False)
+    
+    limite_usos = models.IntegerField(default=1)
+    fecha_expiracion = models.DateTimeField()
+    activo = models.BooleanField(default=True)
+
+# ==========================================
+# 4. COMBOS Y DISPONIBILIDAD TEMPORAL
+# ==========================================
+class HorarioVisibilidad(models.Model):
+    """Controla cuándo un producto (o combo) aparece en el POS/Carta QR"""
+    producto = models.OneToOneField('Producto', on_delete=models.CASCADE, related_name='horario')
+    
+    # JSON con los días permitidos: [0, 2, 4] -> Lun, Mie, Vie
+    dias_permitidos = models.JSONField(default=list)
+    hora_inicio = models.TimeField(null=True, blank=True)
+    hora_fin = models.TimeField(null=True, blank=True)
+    
+    mensaje_fuera_horario = models.CharField(max_length=100, default="Disponible otros días")
+
+class ComponenteCombo(models.Model):
+    """Define de qué está hecho un Combo para descontar stock real"""
+    combo = models.ForeignKey('Producto', on_delete=models.CASCADE, related_name='items_combo')
+    producto_hijo = models.ForeignKey('Producto', on_delete=models.CASCADE, related_name='+')
+    cantidad = models.PositiveIntegerField(default=1)
+
+# ==========================================
+# 5. CEREBRO DEL BOT DE WHATSAPP
+# ==========================================
+class ReglaBot(models.Model):
+    TRIGGERS = [
+        ('saludo', 'Mensaje de Bienvenida (Primer contacto)'),
+        ('fuera_horario', 'Mensaje de Fuera de Horario'),
+        ('despedida', 'Despedida tras compra exitosa'),
+        ('espera', 'Mensaje de espera (Cuando hay alta demanda)'),
+    ]
+    
+    sede = models.ForeignKey('Sede', on_delete=models.CASCADE, related_name='reglas_bot')
+    trigger = models.CharField(max_length=50, choices=TRIGGERS)
+    mensaje = models.TextField(help_text="Usa {nombre} para que el bot diga el nombre del cliente.")
+    activa = models.BooleanField(default=True)
+
+    class Meta:
+        unique_together = ('sede', 'trigger')
+
+    def __str__(self):
+        return f"Regla {self.get_trigger_display()} - {self.sede.nombre}"
+
+class PromocionBot(models.Model):
+    TIPOS_PROMO = [
+        ('cumpleanos', 'Felicitación de Cumpleaños'),
+        ('inactivo_15d', 'Cliente inactivo por 15 días'),
+        ('vip', 'Oferta exclusiva para clientes VIP'),
+    ]
+    
+    sede = models.ForeignKey('Sede', on_delete=models.CASCADE, related_name='promociones_bot')
+    nombre = models.CharField(max_length=100)
+    tipo = models.CharField(max_length=50, choices=TIPOS_PROMO)
+    
+    # Podemos enlazarlo a un cupón existente en tu modelo CuponPromocional
+    cupon = models.ForeignKey('CuponPromocional', on_delete=models.SET_NULL, null=True, blank=True)
+    
+    mensaje_gancho = models.TextField(help_text="Ej: ¡Feliz cumple {nombre}! Usa el código {cupon} para un 20% de dscto.")
+    activa = models.BooleanField(default=True)
+
+    def __str__(self):
+        return f"{self.nombre} ({self.sede.nombre})"
+    
+class SolicitudCambio(models.Model):
+    ESTADOS = [('pendiente', 'Esperando Cocina'), ('aprobada', 'Aprobada'), ('rechazada', 'Rechazada')]
+    ACCIONES = [('cancelar', 'Cancelar Orden'), ('agregar', 'Agregar Producto'), ('nota', 'Cambiar Nota')]
+
+    orden = models.ForeignKey('Orden', on_delete=models.CASCADE, related_name='solicitudes_cambio')
+    tipo_accion = models.CharField(max_length=20, choices=ACCIONES)
+    detalles_json = models.JSONField(help_text="Datos del cambio: {'producto': id, 'cantidad': 1, 'notas': '...'}")
+    estado = models.CharField(max_length=20, choices=ESTADOS, default='pendiente')
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Solicitud {self.tipo_accion} - Orden #{self.orden.id} ({self.get_estado_display()})"
+    
