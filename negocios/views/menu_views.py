@@ -50,10 +50,14 @@ class ProductoViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = Producto.objects.filter(activo=True)
-        negocio_id = self.request.query_params.get('negocio_id')
-        if not es_valor_nulo(negocio_id):
-            queryset = queryset.filter(negocio_id=negocio_id)
-        return queryset
+        if self.request.user.is_superuser:
+            negocio_id = self.request.query_params.get('negocio_id')
+            if not es_valor_nulo(negocio_id):
+                queryset = queryset.filter(negocio_id=negocio_id)
+            return queryset
+        if hasattr(self.request.user, 'negocio'):
+            return queryset.filter(negocio=self.request.user.negocio)
+        return queryset.none()
 
     @action(detail=True, methods=['post'])
     def configurar_receta(self, request, pk=None):

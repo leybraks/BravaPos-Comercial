@@ -21,17 +21,22 @@ const VistaInternaPOS = () => {
   useEffect(() => {
     const verificarSeguridad = async () => {
       try {
-        // 1. Le preguntamos al backend "¿Sigo teniendo una cookie válida?"
-        // Axios enviará la cookie automáticamente
-        await api.get('/verificar-sesion/'); 
+        const res = await api.get('/verificar-sesion/');
 
-        // 2. Si no tira error, estamos logueados. Recuperamos el rol.
-        // ⚠️ Nota: Asegúrate de que tu login guarda esto como 'usuario_rol' (o cámbialo a 'rol_usuario' si prefieres)
-        const rol = localStorage.getItem('usuario_rol') || localStorage.getItem('rol_usuario'); 
-        
-        if (rol) {
-          setRolUsuario(rol);
-          const rolLimpio = rol.toLowerCase().trim();
+        // Si este dispositivo está configurado como terminal POS (tiene sede asignada),
+        // siempre exigimos re-autenticación por PIN al recargar.
+        // Esto evita que un empleado manipule localStorage para saltar al ERP.
+        if (localStorage.getItem('sede_id')) {
+          setVista('login');
+          return;
+        }
+
+        // Para acceso ERP directo (dueño/admin), usamos el rol que nos devuelve
+        // el servidor desde el JWT — nunca confiamos en localStorage para esto.
+        const rolServidor = res.data.user?.rol;
+        if (rolServidor) {
+          setRolUsuario(rolServidor);
+          const rolLimpio = rolServidor.toLowerCase().trim();
           if (rolLimpio === 'dueño' || rolLimpio === 'admin') setVista('erp');
           else if (rolLimpio === 'cocinero' || rolLimpio === 'cocina') setVista('cocina');
           else setVista('terminal');
@@ -39,7 +44,6 @@ const VistaInternaPOS = () => {
           setVista('login');
         }
       } catch (error) {
-        // 3. Si da error (401), la cookie expiró o no existe
         setVista('login');
       } finally {
         setCargando(false);
@@ -84,7 +88,7 @@ const VistaInternaPOS = () => {
       {vista === 'cocina' && <KdsView onVolver={() => setVista('login')} />}
 
       {vista === 'erp' && (
-        <ErpDashboard onVolverAlPos={() => setVista('terminal')} />
+        <ErpDashboard onVolverAlPos={() => setVista('terminal')} rolUsuario={rolUsuario} />
       )}
     </div>
   );
