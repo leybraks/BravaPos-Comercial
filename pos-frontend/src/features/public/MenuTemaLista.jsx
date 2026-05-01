@@ -84,8 +84,17 @@ export default function MenuTemaHero({ mesaId, productos, categorias, ordenActiv
                     </div>
                   </div>
                   
-                  <div className="flex items-center gap-3 mb-4">
-                    {carta.mostrarBadge && plato.es_popular && <span className="text-[9px] font-black uppercase tracking-widest text-black px-2 py-1 rounded-lg" style={{ backgroundColor: colorAcento }}>⭐ Favorito</span>}
+                  <div className="flex items-center gap-2 mb-4 flex-wrap">
+                    {plato.destacar_como_promocion && (
+                      <span className="text-[9px] font-black uppercase tracking-widest text-white px-2 py-1 rounded-lg" style={{ background: 'linear-gradient(90deg,#e11d48,#f97316)' }}>
+                        🔥 Promo
+                      </span>
+                    )}
+                    {carta.mostrarBadge && plato.es_popular && (
+                      <span className="text-[9px] font-black uppercase tracking-widest text-black px-2 py-1 rounded-lg" style={{ backgroundColor: colorAcento }}>
+                        ⭐ Favorito
+                      </span>
+                    )}
                     <span className="text-xs text-neutral-400 font-bold px-2 py-1 bg-white/5 rounded-lg border border-white/5">🍽️ {plato.categoria}</span>
                   </div>
 

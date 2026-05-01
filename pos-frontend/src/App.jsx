@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { ToastProvider } from './context/ToastContext';
 
 // 🛡️ IMPORTAMOS TU INSTANCIA DE AXIOS SEGURA
 import api from './api/api'; 
@@ -96,6 +97,7 @@ const VistaInternaPOS = () => {
 
 export default function App() {
   return (
+    <ToastProvider>
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<VistaInternaPOS />} />
@@ -115,5 +117,6 @@ export default function App() {
         } />
       </Routes>
     </BrowserRouter>
+    </ToastProvider>
   );
 }

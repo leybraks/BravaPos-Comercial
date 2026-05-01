@@ -1,5 +1,6 @@
-import React, { useState } from 'react'; // ✅ AGREGADO useState
-import { useErpDashboard } from '../features/ERP/useErpDashboard'; 
+import React, { useState } from 'react';
+import { useErpDashboard } from '../features/ERP/useErpDashboard';
+import { useToast } from '../context/ToastContext';
 
 // ==========================================
 // 📦 IMPORTACIÓN DE COMPONENTES MODULARIZADOS
@@ -156,6 +157,7 @@ const SinPermisos = ({ onVolver }) => (
 // 🚀 VISTA PRINCIPAL (LAYOUT)
 // ==========================================
 export default function ErpDashboard({ onVolverAlPos, rolUsuario }) {
+  const toast = useToast();
   const rolesERP = ['dueño', 'administrador', 'admin'];
   if (!rolesERP.includes((rolUsuario || '').toLowerCase().trim())) {
     return <SinPermisos onVolver={onVolverAlPos} />;
@@ -338,10 +340,10 @@ export default function ErpDashboard({ onVolverAlPos, rolUsuario }) {
               await crearModificador(dataParaEnviar);
             }
             
-            alert("✅ Modificador guardado correctamente");
+            toast.success('Modificador guardado correctamente.');
           } catch (error) {
             console.error("Error al procesar modificador:", error);
-            alert("❌ Hubo un error al guardar. Revisa la consola.");
+            toast.error('Error al guardar el modificador.');
             throw error; // Re-lanzar para que el modal no se cierre si hay error
           }
         }}

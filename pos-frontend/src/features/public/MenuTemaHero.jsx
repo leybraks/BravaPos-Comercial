@@ -282,6 +282,15 @@ function CardGrid({ plato, idx, colorAcento, fuentes, theme, onSelect }) {
 
       {/* Info debajo, tipo etiqueta polaroid */}
       <div style={{ padding: '12px 4px 4px' }}>
+        {plato.destacar_como_promocion && (
+          <span style={{
+            display: 'inline-block', marginBottom: 4,
+            background: 'linear-gradient(90deg,#e11d48,#f97316)',
+            color: '#fff', fontSize: 8, fontWeight: 900,
+            letterSpacing: '0.1em', textTransform: 'uppercase',
+            padding: '2px 6px', borderRadius: 5,
+          }}>🔥 Promo</span>
+        )}
         <h3 style={{
           fontFamily: fuentes?.titulos,
           fontSize: 14, fontWeight: 500, fontStyle: 'italic',

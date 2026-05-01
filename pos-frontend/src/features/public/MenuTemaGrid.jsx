@@ -277,6 +277,15 @@ function CardGrid({ plato, colorAcento, fuentes, carta, onSelect }) {
         <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '45%', background: 'linear-gradient(to top, #1a1a1a, transparent)' }} />
       </div>
       <div style={{ padding: '10px 12px 14px' }}>
+        {plato.destacar_como_promocion && (
+          <span style={{
+            display: 'inline-block', marginBottom: 5,
+            background: 'linear-gradient(90deg,#e11d48,#f97316)',
+            color: '#fff', fontSize: 9, fontWeight: 900,
+            letterSpacing: '0.12em', textTransform: 'uppercase',
+            padding: '2px 7px', borderRadius: 6,
+          }}>🔥 Promo</span>
+        )}
         <h3 style={{
           fontFamily: fuentes.titulos, fontSize: 13, fontWeight: 900, color: '#fff',
           margin: '0 0 6px', lineHeight: 1.2, letterSpacing: '-0.01em',

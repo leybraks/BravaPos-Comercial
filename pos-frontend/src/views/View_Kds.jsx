@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { actualizarOrden, getOrdenes, getNegocio } from '../api/api'; 
-import api from '../api/api'; // Necesario para resolver la solicitud
-import usePosStore from '../store/usePosStore'; 
-import ModalAlertaBot from '../components/modals/ModalAlertaBot'; // ✨ INYECTAMOS EL MODAL
+import { actualizarOrden, getOrdenes, getNegocio } from '../api/api';
+import api from '../api/api';
+import usePosStore from '../store/usePosStore';
+import ModalAlertaBot from '../components/modals/ModalAlertaBot';
+import { useToast } from '../context/ToastContext';
 
 export default function KdsView({ onVolver }) {
+  const toast = useToast();
   const { configuracionGlobal } = usePosStore();
   const setConfiguracionGlobal = usePosStore((state) => state.setConfiguracionGlobal);
 
@@ -203,7 +205,7 @@ export default function KdsView({ onVolver }) {
       setOrdenes(ordenes.filter(o => o.kds_id !== orden.kds_id)); 
     } catch (error) {
       console.error("Error al despachar la orden:", error);
-      alert("La base de datos se rebeló. Revisa la consola.");
+      toast.error('Error al despachar la orden. Verifica la conexión.');
     }
   };
 
@@ -236,7 +238,7 @@ export default function KdsView({ onVolver }) {
         // ... (lógica de formateo omitida por brevedad, pero la orden desaparecerá)
       }
     } catch (error) {
-      alert("Hubo un error al resolver la solicitud.");
+      toast.error('Error al resolver la solicitud del bot.');
     }
   };
 

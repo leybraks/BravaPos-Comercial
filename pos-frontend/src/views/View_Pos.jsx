@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import usePosStore from '../store/usePosStore';
+import { useToast } from '../context/ToastContext';
 import ModalCobro from '../components/modals/ModalCobro';
 import ModalModificadores from '../components/modals/ModalModificadores';
 import { crearOrden, actualizarOrden, crearPago, agregarProductosAOrden, anularItemDeOrden } from '../api/api';
@@ -15,6 +16,7 @@ import { usePosData } from '../features/POS/hooks/usePosData';
 import { usePosSearch } from '../features/POS/hooks/usePosSearch';
 
 export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
+  const toast = useToast();
   const { estadoCaja, configuracionGlobal, carrito, agregarProducto, esDueño, sedes, manejarCambioSede, restarProducto, obtenerTotalItems, restarDesdeGrid, obtenerTotalDinero, vaciarCarrito, actualizarItemCompleto, sumarUnidad } = usePosStore();
   const tema = configuracionGlobal?.temaFondo || 'dark';
   const colorPrimario = configuracionGlobal?.colorPrimario || '#ff5a1f';
@@ -132,7 +134,7 @@ export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
 
   // ====================== HANDLERS ======================
   const manejarEnviarCocina = async () => {
-    if (!sedeActualId) { alert("⚠️ Elige una sede."); return; }
+    if (!sedeActualId) { toast.warning('Selecciona una sede antes de enviar.'); return; }
     setProcesando(true);
     try {
       const detallesNuevos = carrito.map(item => ({
@@ -193,7 +195,7 @@ export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
         
       } catch (error) {
         console.error("Error al anular pedido:", error);
-        alert("No se pudo anular. Verifica la conexión.");
+        toast.error('No se pudo anular. Verifica la conexión.');
       } finally {
         setProcesando(false);
       }
@@ -215,7 +217,7 @@ export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
         const montoRestado = detalleAnulado ? parseFloat(detalleAnulado.precio_unitario || 0) * (detalleAnulado.cantidad || 1) : 0;
         setOrdenActiva(prev => ({ ...prev, total: (parseFloat(prev.total) - montoRestado).toFixed(2), detalles: prev.detalles.filter(d => d.id !== detalleId) }));
       }
-    } catch (error) { alert("Error al anular"); } 
+    } catch (error) { toast.error('Error al anular el plato. Verifica la conexión.'); }
     finally { setProcesando(false); }
   };
   // 🧹 FUNCION PARA MATAR LA MESA ZOMBI
@@ -238,7 +240,7 @@ export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
       
     } catch (error) {
       console.error("Error al liberar la mesa:", error);
-      alert("Hubo un error al liberar la mesa. Revisa tu conexión.");
+      toast.error('No se pudo liberar la mesa. Revisa tu conexión.');
     }
   };
   const abrirModalParaNuevo = (producto) => {
@@ -321,15 +323,15 @@ export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
       )}
 
       {modalCobroAbierto && (
-          <ModalCobro 
-            isOpen={modalCobroAbierto} 
+          <ModalCobro
+            isOpen={modalCobroAbierto}
             onClose={() => {
               setModalCobroAbierto(false);
-              // Si cancelan el cobro, la mesa vuelve a estar en rojo
-              notificarEstadoMesa('ocupada', totalMesa); 
-            }} 
-            total={totalMesa} 
-            carrito={ordenActiva ? ordenActiva.detalles : []} 
+              notificarEstadoMesa('ocupada', totalMesa);
+            }}
+            total={totalMesa}
+            ordenId={ordenActiva?.id ?? null}
+            carrito={ordenActiva ? ordenActiva.detalles : []}
             onCobroExitoso={async (datosCobro) => { // 👈 Ahora recibe { pagos, telefono }
               try {
                 // 🚀 UNA SOLA LLAMADA AL ENDPOINT
@@ -347,9 +349,9 @@ export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
                 setCarritoAbierto(false); 
                 onVolver();
 
-              } catch (error) { 
+              } catch (error) {
                 console.error(error);
-                alert("Hubo un error al procesar el pago"); 
+                toast.error('Error al procesar el pago. Intenta de nuevo.');
               }
             }}
           />

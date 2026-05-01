@@ -1,11 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import usePosStore from '../../store/usePosStore';
+import { useToast } from '../../context/ToastContext';
+import api from '../../api/api';
 import { 
   X, Banknote, Smartphone, CreditCard, CheckCircle2, 
   Users, Receipt, QrCode, MessageCircle, ArrowLeft, Loader2
 } from 'lucide-react';
 
-export default function ModalCobroMejorado({ isOpen, onClose, total, onCobroExitoso, carrito = [], esVentaRapida = false }) {
+export default function ModalCobroMejorado({ isOpen, onClose, total, onCobroExitoso, carrito = [], esVentaRapida = false, ordenId = null }) {
+  const toast = useToast();
   const { configuracionGlobal } = usePosStore();
   const config = configuracionGlobal || {};
   const tema = config.temaFondo || 'dark';
@@ -27,6 +30,10 @@ export default function ModalCobroMejorado({ isOpen, onClose, total, onCobroExit
   const [qrCulqi, setQrCulqi] = useState(null);
   const [validandoPago, setValidandoPago] = useState(false);
 
+  // Preview de descuento por método de pago
+  const [preview, setPreview] = useState(null); // { subtotal, descuento_total, recargo_total, total }
+  const [loadingPreview, setLoadingPreview] = useState(false);
+
   useEffect(() => {
     if (isOpen) {
       setPaso('cobro');
@@ -40,14 +47,34 @@ export default function ModalCobroMejorado({ isOpen, onClose, total, onCobroExit
       setGenerandoQR(false);
       setQrCulqi(null);
       setValidandoPago(false);
+      setPreview(null);
     }
   }, [isOpen]);
 
+  // Consulta el preview de descuento cuando el método cambia (solo si hay ordenId)
+  const fetchPreview = useCallback(async (metodoActual) => {
+    if (!ordenId) return;
+    setLoadingPreview(true);
+    try {
+      const res = await api.post(`/ordenes/${ordenId}/preview_cobro/`, { metodo: metodoActual });
+      setPreview(res.data);
+    } catch {
+      setPreview(null);
+    } finally {
+      setLoadingPreview(false);
+    }
+  }, [ordenId]);
+
+  useEffect(() => {
+    if (isOpen && ordenId) fetchPreview(metodo);
+  }, [metodo, isOpen, ordenId, fetchPreview]);
+
   if (!isOpen) return null;
 
-  // Cálculos
+  // Cálculos — si hay preview del backend, usar ese total (tiene descuentos aplicados)
+  const totalEfectivo = preview ? preview.total : total;
   const totalPagado = pagosAcumulados.reduce((sum, p) => sum + p.monto, 0);
-  const restante = total - totalPagado;
+  const restante = totalEfectivo - totalPagado;
   
   const calcularMontoCobro = () => {
     if (tab === 'completo') return restante;
@@ -117,7 +144,7 @@ export default function ModalCobroMejorado({ isOpen, onClose, total, onCobroExit
       });
     } catch (error) {
       console.error('Error generando QR Culqi:', error);
-      alert('Error al generar el QR. Intenta de nuevo.');
+      toast.error('Error al generar el QR. Intenta de nuevo.');
     } finally {
       setGenerandoQR(false);
     }
@@ -131,11 +158,11 @@ export default function ModalCobroMejorado({ isOpen, onClose, total, onCobroExit
       /*
       const response = await fetch(`/api/culqi/validar-pago/${qrCulqi.orderId}`);
       const data = await response.json();
-      
+
       if (data.estado === 'pagado') {
         registrarPago(montoCobro, 0);
       } else {
-        alert('El pago aún no se ha procesado. Espera unos segundos.');
+        toast.warning('El pago aún no se ha procesado. Espera unos segundos.');
       }
       */
       
@@ -143,7 +170,7 @@ export default function ModalCobroMejorado({ isOpen, onClose, total, onCobroExit
       registrarPago(montoCobro, 0);
     } catch (error) {
       console.error('Error validando pago:', error);
-      alert('Error al validar el pago.');
+      toast.error('Error al validar el pago. Intenta de nuevo.');
     } finally {
       setValidandoPago(false);
     }
@@ -162,7 +189,7 @@ export default function ModalCobroMejorado({ isOpen, onClose, total, onCobroExit
     }
 
     if (!montoIngresado || montoRecibido <= 0) {
-      alert('Ingresa el monto recibido del cliente');
+      toast.warning('Ingresa el monto recibido del cliente.');
       return;
     }
 
@@ -185,13 +212,13 @@ export default function ModalCobroMejorado({ isOpen, onClose, total, onCobroExit
 
     const nuevoTotal = totalPagado + monto;
     
-    if (nuevoTotal >= total - 0.01) {
+    if (nuevoTotal >= totalEfectivo - 0.01) {
       setPaso('exito');
     } else {
-      // Pago parcial completado - mostrar feedback
-      const restanteNuevo = total - nuevoTotal;
-      alert(`✅ Pago de S/ ${monto.toFixed(2)} registrado\n\n📊 Falta por cobrar: S/ ${restanteNuevo.toFixed(2)}\n\nSelecciona otro método de pago para continuar.`);
-      
+      // Pago parcial — mostrar feedback con toast
+      const restanteNuevo = totalEfectivo - nuevoTotal;
+      toast.success(`Pago de S/ ${monto.toFixed(2)} registrado. Falta: S/ ${restanteNuevo.toFixed(2)}`);
+
       setMontoIngresado('');
       setTab('completo');
       setItemsSeleccionados({});
@@ -285,11 +312,36 @@ export default function ModalCobroMejorado({ isOpen, onClose, total, onCobroExit
               <p className={`text-xs font-bold uppercase tracking-wider mb-2 ${
                 isDark ? 'text-neutral-500' : 'text-gray-500'
               }`}>
-                {restante < total ? 'Por cobrar' : 'Total'}
+                {restante < totalEfectivo ? 'Por cobrar' : 'Total'}
               </p>
               <p className={`text-5xl font-black tracking-tight ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                S/ {restante.toFixed(2)}
+                {loadingPreview
+                  ? <span className="text-2xl opacity-50">Calculando...</span>
+                  : `S/ ${restante.toFixed(2)}`
+                }
               </p>
+
+              {/* Desglose de reglas de negocio */}
+              {preview && (preview.descuento_total > 0 || preview.recargo_total > 0) && (
+                <div className={`mt-4 pt-4 border-t text-left space-y-1 ${isDark ? 'border-[#1a1a1a]' : 'border-gray-200'}`}>
+                  <div className="flex justify-between text-xs">
+                    <span className={isDark ? 'text-neutral-500' : 'text-gray-500'}>Subtotal</span>
+                    <span className={isDark ? 'text-neutral-300' : 'text-gray-700'}>S/ {preview.subtotal.toFixed(2)}</span>
+                  </div>
+                  {preview.descuento_total > 0 && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-green-400 font-bold">Descuento aplicado</span>
+                      <span className="text-green-400 font-bold">− S/ {preview.descuento_total.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {preview.recargo_total > 0 && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-orange-400 font-bold">Recargo</span>
+                      <span className="text-orange-400 font-bold">+ S/ {preview.recargo_total.toFixed(2)}</span>
+                    </div>
+                  )}
+                </div>
+              )}
               
               {/* Resumen de pagos previos */}
               {pagosAcumulados.length > 0 && (
@@ -790,7 +842,7 @@ export default function ModalCobroMejorado({ isOpen, onClose, total, onCobroExit
                     });
                     Culqi.open();
                     */
-                    alert('🚧 Aquí se abrirá la pasarela Culqi (pendiente de integración)');
+                    toast.info('Pasarela Culqi en integración. Confirmando pago manual.');
                     registrarPago(montoCobro, 0);
                   }}
                   className="w-full py-4 rounded-xl font-bold text-white transition-all"
