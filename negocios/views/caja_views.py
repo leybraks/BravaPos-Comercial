@@ -27,9 +27,17 @@ class SesionCajaViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        queryset = SesionCaja.objects.all().order_by('-fecha_apertura')
-        empleado = get_empleado_desde_header(self.request)
+        queryset = SesionCaja.objects.all().order_by('-hora_apertura')
 
+        # 🛡️ IDOR FIX: Acotar siempre al negocio del JWT antes de filtrar por sede
+        if self.request.user.is_superuser:
+            pass
+        elif hasattr(self.request.user, 'negocio'):
+            queryset = queryset.filter(sede__negocio=self.request.user.negocio)
+        else:
+            return queryset.none()
+
+        empleado = get_empleado_desde_header(self.request)
         if empleado:
             return queryset.filter(sede=empleado.sede)
 

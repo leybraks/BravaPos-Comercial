@@ -18,20 +18,6 @@ import { useMesasData } from './hooks/useMesasData';
 import { useMesasWS } from './hooks/useMesasWS';
 
 export default function MesasView({ onSeleccionarMesa, onIrAErp, mesaActivaId }) {
-  const decodificarToken = (token) => {
-    try {
-      if (!token) return null;
-      const base64Url = token.split('.')[1];
-      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-      const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
-          return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-      }).join(''));
-      return JSON.parse(jsonPayload);
-    } catch (error) {
-      return null;
-    }
-  };
-
   const { estadoCaja, configuracionGlobal, setConfiguracionGlobal } = usePosStore();
   const tema = configuracionGlobal?.temaFondo || 'dark';
   const colorPrimario = configuracionGlobal?.colorPrimario || '#ff5a1f';
@@ -39,11 +25,10 @@ export default function MesasView({ onSeleccionarMesa, onIrAErp, mesaActivaId })
 
   // ── ESTADOS LOCALES ──────────────────────────────────────────────────────────
   const [sedeActualId, setSedeActualId] = useState(localStorage.getItem('sede_id') || '');
-  // 🔒 EXTRACCIÓN SEGURA DEL ROL DESDE EL TOKEN
-  const token = localStorage.getItem('tablet_token');
-  const infoUsuario = decodificarToken(token) || {};
-  const rolUsuario = infoUsuario.rol || 'Empleado'; 
-  const esDueño = ['dueño', 'admin'].includes(rolUsuario.trim().toLowerCase());
+  // 🔒 ROL: leemos del localStorage donde el login lo almacena tras autenticar
+  // (el JWT de Django no incluye el campo "rol" en su payload)
+  const rolUsuario = localStorage.getItem('usuario_rol') || 'Empleado';
+  const esDueño = ['dueño', 'admin', 'administrador'].includes(rolUsuario.trim().toLowerCase());
   
   const [modoUnir, setModoUnir] = useState(false);
   const [mesaPrincipal, setMesaPrincipal] = useState(null);
@@ -59,11 +44,18 @@ export default function MesasView({ onSeleccionarMesa, onIrAErp, mesaActivaId })
   const [modalMovimientosAbierto, setModalMovimientosAbierto] = useState(false);
   const [ordenACobrar, setOrdenACobrar] = useState(null);
 
+  // ── HELPER: cambio de sede (declarado antes del hook para poder pasarlo como callback) ──
+  const manejarCambioSede = (nuevaSedeId) => {
+    if (!nuevaSedeId) return;
+    localStorage.setItem('sede_id', nuevaSedeId);
+    setSedeActualId(nuevaSedeId);
+  };
+
   // ── HOOKS DE DATOS Y WEBSOCKETS ─────────────────────────────────────────────
-  const { 
-    sedes, mesas, setMesas, ordenesLlevar, setOrdenesLlevar, 
-    vistaLocal, setVistaLocal, modulos 
-  } = useMesasData(sedeActualId, triggerRecarga, setConfiguracionGlobal);
+  const {
+    sedes, mesas, setMesas, ordenesLlevar, setOrdenesLlevar,
+    vistaLocal, setVistaLocal, modulos
+  } = useMesasData(sedeActualId, triggerRecarga, setConfiguracionGlobal, manejarCambioSede);
 
   useMesasWS(sedeActualId, setMesas, setOrdenesLlevar);
   const wsRef = useMesasWS(sedeActualId, setMesas, setOrdenesLlevar);
@@ -76,13 +68,6 @@ export default function MesasView({ onSeleccionarMesa, onIrAErp, mesaActivaId })
         estado: nuevoEstado
       }));
     }
-  };
-
-  // ── HELPERS ─────────────────────────────────────────────────────────────────
-  const manejarCambioSede = (nuevaSedeId) => {
-    if (!nuevaSedeId) return;
-    localStorage.setItem('sede_id', nuevaSedeId);
-    setSedeActualId(nuevaSedeId);
   };
 
   const manejarCancelacion = async (id) => {

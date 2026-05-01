@@ -1,5 +1,7 @@
 import logging
+import time as time_module
 
+from django.core.cache import cache
 from django.utils import timezone
 from django.contrib.auth.hashers import check_password, make_password
 from rest_framework import viewsets, status
@@ -83,6 +85,25 @@ class EmpleadoViewSet(viewsets.ModelViewSet):
         if not pin_ingresado or not sede_id:
             return Response({'error': 'PIN y sede_id son obligatorios'}, status=status.HTTP_400_BAD_REQUEST)
 
+        # 🛡️ LOCKOUT BACKEND: Verificar si esta tablet/sede está bloqueada
+        lock_key  = f"pin_locked_{sede_id}"
+        fail_key  = f"pin_fails_{sede_id}"
+        MAX_FAILS = 5
+        LOCKOUT_S = 120  # 2 minutos
+
+        lockout_until = cache.get(lock_key)
+        if lockout_until:
+            remaining = int(lockout_until - time_module.time())
+            if remaining > 0:
+                return Response(
+                    {'error': f'Tablet bloqueada por intentos fallidos. Espera {remaining} segundos.',
+                     'segundos_restantes': remaining},
+                    status=status.HTTP_429_TOO_MANY_REQUESTS
+                )
+            # El bloqueo expiró — limpiar
+            cache.delete(lock_key)
+            cache.delete(fail_key)
+
         empleados = Empleado.objects.filter(sede_id=sede_id, activo=True)
         empleado_valido = None
 
@@ -103,7 +124,28 @@ class EmpleadoViewSet(viewsets.ModelViewSet):
                 break
 
         if not empleado_valido:
-            return Response({'error': 'PIN incorrecto o inactivo'}, status=status.HTTP_401_UNAUTHORIZED)
+            # Incrementar contador de fallos
+            fails = cache.get(fail_key, 0) + 1
+            cache.set(fail_key, fails, timeout=300)  # Ventana de 5 min
+
+            if fails >= MAX_FAILS:
+                cache.set(lock_key, time_module.time() + LOCKOUT_S, timeout=LOCKOUT_S + 10)
+                cache.delete(fail_key)
+                return Response(
+                    {'error': f'Demasiados intentos fallidos. Tablet bloqueada por {LOCKOUT_S // 60} minutos.',
+                     'segundos_restantes': LOCKOUT_S},
+                    status=status.HTTP_429_TOO_MANY_REQUESTS
+                )
+
+            intentos_restantes = MAX_FAILS - fails
+            return Response(
+                {'error': f'PIN incorrecto. Intentos restantes: {intentos_restantes}.'},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
+        # ✅ Éxito: limpiar contadores de fallo
+        cache.delete(fail_key)
+        cache.delete(lock_key)
 
         if accion == 'asistencia':
             empleado_valido.ultimo_ingreso = timezone.now()

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { getMesas, getOrdenes, getSedes, getNegocio } from '../../../api/api';
 
-export const useMesasData = (sedeActualId, triggerRecarga, setConfiguracionGlobal) => {
+export const useMesasData = (sedeActualId, triggerRecarga, setConfiguracionGlobal, onSedeAutoselected) => {
   const [sedes, setSedes] = useState([]);
   const [mesas, setMesas] = useState([]);
   const [ordenesLlevar, setOrdenesLlevar] = useState([]);
@@ -46,51 +46,66 @@ export const useMesasData = (sedeActualId, triggerRecarga, setConfiguracionGloba
     return () => { isMounted = false; };
   }, [setConfiguracionGlobal]);
 
-  // 2. Cargar Datos del Salón y Órdenes
+  // 2a. Cargar listado de sedes (siempre, para mostrar el selector al dueño)
+  //     Si no hay sede seleccionada, auto-selecciona la primera.
+  useEffect(() => {
+    let isMounted = true;
+    getSedes().then(resSedes => {
+      if (!isMounted) return;
+      const sedesData = resSedes.data;
+      setSedes(sedesData);
+      // Auto-seleccionar la primera sede si no hay ninguna activa
+      if (!sedeActualId && sedesData.length > 0 && onSedeAutoselected) {
+        onSedeAutoselected(String(sedesData[0].id));
+      }
+    }).catch(err => console.error('Error cargando sedes:', err));
+    return () => { isMounted = false; };
+  // Solo se ejecuta al montar y cuando sedeActualId pasa de vacío a tener valor
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 2b. Cargar mesas y órdenes cuando hay una sede activa
   useEffect(() => {
     if (!sedeActualId) return;
     let isMounted = true;
 
     const cargarSalon = async () => {
       try {
-        const [resMesas, resOrdenes, resSedes] = await Promise.all([
+        const [resMesas, resOrdenes] = await Promise.all([
           getMesas({ sede_id: sedeActualId }),
           getOrdenes({ sede_id: sedeActualId }),
-          getSedes()
         ]);
-        
-        if (!isMounted) return;
-        
-        setSedes(resSedes.data);
 
-        const ordenesVivas = resOrdenes.data.filter(o => 
+        if (!isMounted) return;
+
+        const ordenesVivas = resOrdenes.data.filter(o =>
           o.estado !== 'completado' && o.estado !== 'cancelado' && o.estado_pago !== 'pagado'
         );
-        
+
         setOrdenesLlevar(
           resOrdenes.data
-            .filter(o => o.tipo === 'llevar' && o.estado !== 'completado' && o.estado !== 'cancelado') 
-            .reverse() 
+            .filter(o => o.tipo === 'llevar' && o.estado !== 'completado' && o.estado !== 'cancelado')
+            .reverse()
             .slice(0, 10)
         );
-        
+
         setMesas(resMesas.data.map(mesaDB => {
-          const ordenDeEstaMesa = ordenesVivas.find(o => 
+          const ordenDeEstaMesa = ordenesVivas.find(o =>
             o.mesa !== null && (o.mesa === mesaDB.id || o.mesa === mesaDB.mesa_principal)
           );
 
           let estadoFinal = 'libre';
-          if (mesaDB.mesa_principal) estadoFinal = 'unida'; 
+          if (mesaDB.mesa_principal) estadoFinal = 'unida';
           else if (ordenDeEstaMesa) estadoFinal = 'ocupada';
 
           return {
             id: mesaDB.id,
-            numero: mesaDB.numero_o_nombre || mesaDB.id, 
+            numero: mesaDB.numero_o_nombre || mesaDB.id,
             estado: estadoFinal,
             unida_a: mesaDB.mesa_principal || null,
             capacidad: mesaDB.capacidad || 4,
-            totalConsumido: ordenDeEstaMesa ? parseFloat(ordenDeEstaMesa.total) : 0 ,
-            posicion_x: mesaDB.posicion_x, 
+            totalConsumido: ordenDeEstaMesa ? parseFloat(ordenDeEstaMesa.total) : 0,
+            posicion_x: mesaDB.posicion_x,
             posicion_y: mesaDB.posicion_y
           };
         }));

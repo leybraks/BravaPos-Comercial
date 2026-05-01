@@ -11,25 +11,52 @@ from .models import (
 class PlanSaaSSerializer(serializers.ModelSerializer):
     class Meta:
         model = PlanSaaS
-        fields = '__all__'
-        
+        fields = [
+            'id', 'nombre', 'precio_mensual',
+            'modulo_kds', 'modulo_inventario', 'modulo_delivery',
+            'modulo_carta_qr', 'modulo_bot_wsp', 'modulo_ml', 'max_sedes',
+        ]
+
 class NegocioSerializer(serializers.ModelSerializer):
     plan_detalles = PlanSaaSSerializer(source='plan', read_only=True)
     class Meta:
         model = Negocio
-        fields = '__all__'
+        fields = [
+            'id', 'propietario', 'nombre', 'ruc', 'razon_social', 'logo',
+            'yape_numero', 'yape_qr', 'plin_numero', 'plin_qr',
+            'usa_culqi', 'culqi_public_key', 'culqi_private_key',
+            'plan', 'plan_detalles', 'fecha_registro', 'fin_prueba', 'activo',
+            'mod_salon_activo', 'mod_cocina_activo', 'mod_inventario_activo',
+            'mod_delivery_activo', 'mod_clientes_activo', 'mod_facturacion_activo',
+            'mod_carta_qr_activo', 'mod_bot_wsp_activo', 'mod_ml_activo',
+            'color_primario', 'tema_fondo', 'carta_config',
+        ]
+        extra_kwargs = {
+            # 🛡️ La clave privada de pago NUNCA debe aparecer en respuestas GET
+            'culqi_private_key': {'write_only': True},
+        }
 
 class SedeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Sede
-        fields = '__all__'
+        fields = [
+            'id', 'negocio', 'nombre', 'direccion', 'activo', 'columnas_salon',
+            'latitud', 'longitud', 'whatsapp_instancia', 'whatsapp_numero',
+            'enlace_carta_virtual', 'carta_pdf', 'hora_apertura', 'hora_cierre',
+            'dias_atencion', 'bot_puntos_activos', 'bot_max_pedidos_pendientes',
+            'bot_cumple_activo', 'bot_cumple_tipo', 'bot_cumple_valor',
+            'bot_cumple_minimo', 'bot_cumple_productos',
+        ]
 
 class MesaSerializer(serializers.ModelSerializer):
     sede_nombre = serializers.ReadOnlyField(source='sede.nombre')
-    
+
     class Meta:
         model = Mesa
-        fields = '__all__'
+        fields = [
+            'id', 'sede', 'sede_nombre', 'numero_o_nombre', 'capacidad',
+            'mesa_principal', 'activo', 'posicion_x', 'posicion_y', 'forma',
+        ]
 
 # ==========================================
 # SERIALIZADORES: MODIFICADORES Y VARIACIONES
@@ -45,7 +72,7 @@ class RecetaOpcionSerializer(serializers.ModelSerializer):
 class ModificadorRapidoSerializer(serializers.ModelSerializer):
     class Meta:
         model = ModificadorRapido
-        fields = '__all__'
+        fields = ['id', 'negocio', 'nombre', 'precio', 'categorias_aplicables']
 
 class OpcionVariacionSerializer(serializers.ModelSerializer):
     ingredientes = RecetaOpcionSerializer(many=True, required=False)
@@ -71,7 +98,12 @@ class ProductoSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Producto
-        fields = '__all__'
+        fields = [
+            'id', 'negocio', 'categoria', 'nombre', 'es_venta_rapida',
+            'precio_base', 'disponible', 'tiene_variaciones', 'requiere_seleccion',
+            'activo', 'imagen', 'es_combo', 'destacar_como_promocion',
+            'grupos_variacion', 'precio_minimo', 'precio_maximo',
+        ]
 
     def get_precio_minimo(self, obj):
         base = float(obj.precio_base)
@@ -100,59 +132,56 @@ class ProductoSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         grupos_data = validated_data.pop('grupos_variacion', [])
         producto = Producto.objects.create(**validated_data)
-        
+
         for grupo_data in grupos_data:
             opciones_data = grupo_data.pop('opciones', [])
             grupo = GrupoVariacion.objects.create(producto=producto, **grupo_data)
-            
+
             for opcion_data in opciones_data:
                 # 👇 Sacamos los ingredientes antes de crear la opción
-                ingredientes_data = opcion_data.pop('ingredientes', []) 
+                ingredientes_data = opcion_data.pop('ingredientes', [])
                 opcion = OpcionVariacion.objects.create(grupo=grupo, **opcion_data)
-                
+
                 # 👇 Guardamos los ingredientes físicos (La carne, el rachi, etc.)
                 for ing_data in ingredientes_data:
-                    # 'insumo' es un objeto en la BD, así que extraemos su ID o la instancia si DRF la resolvió
-                    insumo_obj = ing_data.get('insumo') 
+                    insumo_obj = ing_data.get('insumo')
                     RecetaOpcion.objects.create(
-                        opcion=opcion, 
-                        insumo=insumo_obj, 
+                        opcion=opcion,
+                        insumo=insumo_obj,
                         cantidad_necesaria=ing_data.get('cantidad_necesaria')
                     )
-                
+
         return producto
 
     # 🚀 MAGIA 2 ACTUALIZADA (Actualización segura)
     def update(self, instance, validated_data):
         grupos_data = validated_data.pop('grupos_variacion', None)
-        
+
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
 
         if grupos_data is not None:
-            instance.grupos_variacion.all().delete() 
-            
+            instance.grupos_variacion.all().delete()
+
             for grupo_data in grupos_data:
                 opciones_data = grupo_data.pop('opciones', [])
-                grupo_data.pop('id', None) 
+                grupo_data.pop('id', None)
                 grupo = GrupoVariacion.objects.create(producto=instance, **grupo_data)
-                
+
                 for opcion_data in opciones_data:
-                    # 👇 Extraemos los ingredientes
                     ingredientes_data = opcion_data.pop('ingredientes', [])
                     opcion_data.pop('id', None)
                     opcion = OpcionVariacion.objects.create(grupo=grupo, **opcion_data)
-                    
-                    # 👇 Recreamos la receta de esta opción
+
                     for ing_data in ingredientes_data:
                         insumo_obj = ing_data.get('insumo')
                         RecetaOpcion.objects.create(
-                            opcion=opcion, 
-                            insumo=insumo_obj, 
+                            opcion=opcion,
+                            insumo=insumo_obj,
                             cantidad_necesaria=ing_data.get('cantidad_necesaria')
                         )
-                    
+
         return instance
 
 # ==========================================
@@ -174,8 +203,8 @@ class DetalleOrdenSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DetalleOrden
-        fields = ['id', 'orden', 'producto', 'producto_nombre', 'cantidad', 
-                  'precio_unitario', 'notas_y_modificadores', 'notas_cocina', 
+        fields = ['id', 'orden', 'producto', 'producto_nombre', 'cantidad',
+                  'precio_unitario', 'notas_y_modificadores', 'notas_cocina',
                   'opciones_seleccionadas']
         read_only_fields = ['orden']
 
@@ -200,12 +229,12 @@ class OrdenSerializer(serializers.ModelSerializer):
 class PagoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Pago
-        fields = '__all__'
+        fields = ['id', 'orden', 'metodo', 'monto', 'sesion_caja', 'fecha_pago']
 
 class RolSerializer(serializers.ModelSerializer):
     class Meta:
         model = Rol
-        fields = '__all__'
+        fields = ['id', 'nombre', 'puede_cobrar', 'puede_configurar']
 
 class EmpleadoSerializer(serializers.ModelSerializer):
     rol_nombre = serializers.CharField(source='rol.nombre', read_only=True)
@@ -217,23 +246,29 @@ class EmpleadoSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'pin': {'write_only': True}
         }
-        
+
 class SesionCajaSerializer(serializers.ModelSerializer):
     class Meta:
         model = SesionCaja
-        fields = '__all__'
+        fields = [
+            'id', 'sede', 'empleado_abre', 'empleado_cierra',
+            'hora_apertura', 'hora_cierre', 'fondo_inicial',
+            'ventas_efectivo', 'ventas_digitales', 'estado',
+            'esperado_efectivo', 'esperado_digital',
+            'declarado_efectivo', 'declarado_yape', 'declarado_tarjeta',
+            'diferencia',
+        ]
 
 class CategoriaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Categoria
-        fields = '__all__'
+        fields = ['id', 'negocio', 'nombre', 'orden', 'activo']
 
 
-# En serializers.py
 class InsumoBaseSerializer(serializers.ModelSerializer):
     class Meta:
         model = InsumoBase
-        fields = '__all__'
+        fields = ['id', 'nombre', 'negocio', 'unidad_medida', 'imagen', 'activo', 'stock_general']
 
 class InsumoSedeSerializer(serializers.ModelSerializer):
     # Traemos el nombre del insumo base para que React lo vea fácil
@@ -242,7 +277,10 @@ class InsumoSedeSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = InsumoSede
-        fields = '__all__'
+        fields = [
+            'id', 'insumo_base', 'nombre_insumo', 'unidad_medida',
+            'sede', 'stock_actual', 'stock_minimo', 'costo_unitario',
+        ]
 
 class ClienteSerializer(serializers.ModelSerializer):
     # ✨ Campo calculado: el bot solo lee un Booleano y sabe si saludar o no
@@ -251,14 +289,14 @@ class ClienteSerializer(serializers.ModelSerializer):
     class Meta:
         model = Cliente
         fields = [
-            'id', 'telefono', 'nombre', 'email', 'fecha_nacimiento', 
-            'puntos_acumulados', 'total_gastado', 'cantidad_pedidos', 
+            'id', 'telefono', 'nombre', 'email', 'fecha_nacimiento',
+            'puntos_acumulados', 'total_gastado', 'cantidad_pedidos',
             'ultima_compra', 'tags', 'es_cumpleanos_hoy','bot_estado', 'bot_memoria'
         ]
         # 🛡️ PROTECCIÓN: Estos campos solo los calcula el backend (Django)
         # No permitimos que se modifiquen vía POST o PUT.
         read_only_fields = [
-            'puntos_acumulados', 'total_gastado', 
+            'puntos_acumulados', 'total_gastado',
             'cantidad_pedidos', 'ultima_compra'
         ]
 
@@ -266,7 +304,7 @@ class ClienteSerializer(serializers.ModelSerializer):
         """Lógica centralizada: Django decide si es el cumple, no el bot."""
         if obj.fecha_nacimiento:
             hoy = timezone.now().date()
-            return (obj.fecha_nacimiento.day == hoy.day and 
+            return (obj.fecha_nacimiento.day == hoy.day and
                     obj.fecha_nacimiento.month == hoy.month)
         return False
 
@@ -274,9 +312,9 @@ class ClienteSerializer(serializers.ModelSerializer):
 class ZonaDeliverySerializer(serializers.ModelSerializer):
     class Meta:
         model = ZonaDelivery
-        fields = '__all__'
+        fields = ['id', 'sede', 'nombre', 'radio_max_km', 'costo_envio', 'pedido_minimo', 'activa']
 
 class ReglaNegocioSerializer(serializers.ModelSerializer):
     class Meta:
         model = ReglaNegocio
-        fields = '__all__'
+        fields = ['id', 'negocio', 'tipo', 'valor', 'es_porcentaje', 'activa', 'monto_minimo_orden', 'dia_semana']
