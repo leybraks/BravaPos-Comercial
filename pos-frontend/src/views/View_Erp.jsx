@@ -127,9 +127,39 @@ const Topbar = ({ vistaActiva, setMenuAbierto, tema, colorPrimario }) => {
 
 
 // ==========================================
+// 🔒 PANTALLA SIN PERMISOS
+// ==========================================
+const SinPermisos = ({ onVolver }) => (
+  <div className="min-h-screen bg-[#0a0a0a] flex flex-col items-center justify-center p-8 font-sans">
+    <div className="max-w-md w-full text-center">
+      <div className="w-24 h-24 rounded-3xl bg-[#1a1a1a] border border-[#2a2a2a] flex items-center justify-center mx-auto mb-8 shadow-2xl">
+        <i className="fi fi-rr-lock text-4xl text-neutral-600 mt-1"></i>
+      </div>
+      <h1 className="text-3xl font-black text-white tracking-tighter mb-3">
+        Acceso Restringido
+      </h1>
+      <p className="text-neutral-500 text-sm leading-relaxed mb-10">
+        No tienes permisos para acceder al Panel de Control.<br />
+        Solo los administradores y dueños del negocio pueden ingresar aquí.
+      </p>
+      <button
+        onClick={onVolver}
+        className="w-full bg-gradient-to-r from-[#ff5a1f] to-[#e0155b] hover:opacity-90 active:scale-95 text-white py-4 rounded-2xl font-black text-sm tracking-widest uppercase transition-all shadow-[0_8px_30px_rgba(255,90,31,0.25)]"
+      >
+        Volver al Terminal POS
+      </button>
+    </div>
+  </div>
+);
+
+// ==========================================
 // 🚀 VISTA PRINCIPAL (LAYOUT)
 // ==========================================
-export default function ErpDashboard({ onVolverAlPos }) {
+export default function ErpDashboard({ onVolverAlPos, rolUsuario }) {
+  const rolesERP = ['dueño', 'administrador', 'admin'];
+  if (!rolesERP.includes((rolUsuario || '').toLowerCase().trim())) {
+    return <SinPermisos onVolver={onVolverAlPos} />;
+  }
   const {
     tema, colorPrimario, config, setConfig, vistaActiva, 
     sedeFiltro, cambiarSedeFiltro, sedeFiltroId, setSedeFiltroId, 

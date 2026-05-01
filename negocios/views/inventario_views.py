@@ -32,8 +32,12 @@ class InsumoSedeViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         sede_id = self.request.query_params.get('sede_id')
-        if sede_id:
+        if not sede_id:
+            return InsumoSede.objects.none()
+        if self.request.user.is_superuser:
             return InsumoSede.objects.filter(sede_id=sede_id)
+        if hasattr(self.request.user, 'negocio'):
+            return InsumoSede.objects.filter(sede_id=sede_id, sede__negocio=self.request.user.negocio)
         return InsumoSede.objects.none()
 
     @action(detail=False, methods=['post'])
@@ -44,6 +48,10 @@ class InsumoSedeViewSet(viewsets.ModelViewSet):
                 return Response({"error": "Falta el ID del insumo."}, status=400)
 
             insumo_base = InsumoBase.objects.get(id=insumo_base_id)
+
+            if not request.user.is_superuser:
+                if not hasattr(request.user, 'negocio') or insumo_base.negocio != request.user.negocio:
+                    return Response({'error': 'No autorizado'}, status=403)
 
             stock_actual_matriz     = float(insumo_base.stock_general)
             nuevo_ingreso           = float(request.data.get('ingreso_global', 0) or 0)
