@@ -81,6 +81,15 @@ const Icons = {
   ),
 };
 
+// ── Regla de negocio: precio a mostrar ───────────────────────
+function textoPrecio(plato) {
+  const base = parseFloat(plato.precio_base ?? 0);
+  const min  = parseFloat(plato.precio_minimo ?? base);
+  const max  = parseFloat(plato.precio_maximo ?? base);
+  if (!plato.tiene_variaciones || min === max) return { desde: false, valor: min.toFixed(2) };
+  return { desde: true, valor: min.toFixed(2) };
+}
+
 // ── Imagen con fallback ───────────────────────────────────────
 function Img({ src, alt, style, fallback = '🍽️', fallbackSize = 44, fallbackBg = 'rgba(128,128,128,0.08)' }) {
   const url = resolverImagen(src);
@@ -158,7 +167,7 @@ function HeroDestacado({ productos, productosRecomendados, colorAcento, fuentes,
             fontFamily: fuentes?.cuerpo, fontSize: 12, fontWeight: 700,
             color: colorAcento, letterSpacing: '0.04em',
           }}>
-            S/ {parseFloat(plato.precio_base).toFixed(2)}
+            {textoPrecio(plato).desde ? `Desde S/ ${textoPrecio(plato).valor}` : `S/ ${textoPrecio(plato).valor}`}
             <span style={{ width: 4, height: 4, borderRadius: '50%', background: theme.borderSoft }} />
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
               Leer más <Icons.ArrowRight />
@@ -297,7 +306,8 @@ function CardGrid({ plato, idx, colorAcento, fuentes, theme, onSelect }) {
             fontFamily: fuentes?.titulos, fontSize: 13, fontWeight: 600,
             color: colorAcento, whiteSpace: 'nowrap',
           }}>
-            S/{parseFloat(plato.precio_base).toFixed(2)}
+            {textoPrecio(plato).desde && <span style={{ fontSize: 10, opacity: 0.7, marginRight: 2 }}>Desde </span>}
+            S/{textoPrecio(plato).valor}
           </span>
         </div>
       </div>
@@ -459,8 +469,11 @@ function ModalDetalle({ plato, colorAcento, fuentes, theme, onClose }) {
                 fontFamily: fuentes?.titulos, fontSize: 32, fontWeight: 500, fontStyle: 'italic',
                 color: theme.text, lineHeight: 1, marginTop: 4,
               }}>
+                {textoPrecio(plato).desde && (
+                  <span style={{ display: 'block', fontSize: 11, fontWeight: 700, color: colorAcento, opacity: 0.7, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 2 }}>Desde</span>
+                )}
                 <span style={{ fontSize: 16, color: colorAcento, marginRight: 4 }}>S/</span>
-                {parseFloat(plato.precio_base).toFixed(2)}
+                {textoPrecio(plato).valor}
               </div>
             </div>
             <div style={{

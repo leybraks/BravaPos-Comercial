@@ -49,7 +49,7 @@ class ProductoViewSet(viewsets.ModelViewSet):
     permission_classes = [EsDuenioOsoloLectura]
 
     def get_queryset(self):
-        queryset = Producto.objects.filter(activo=True)
+        queryset = Producto.objects.filter(activo=True).prefetch_related('grupos_variacion__opciones')
         if self.request.user.is_superuser:
             negocio_id = self.request.query_params.get('negocio_id')
             if not es_valor_nulo(negocio_id):

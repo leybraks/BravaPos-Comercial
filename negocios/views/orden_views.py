@@ -16,6 +16,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from .helpers import es_valor_nulo, get_empleado_desde_header
+from ..services import aplicar_reglas_negocio
 from ..models import (
     Orden, DetalleOrden, DetalleOrdenOpcion, Pago,
     Producto, OpcionVariacion, Cliente, SolicitudCambio, SesionCaja, RegistroAuditoria
@@ -162,7 +163,7 @@ class OrdenViewSet(viewsets.ModelViewSet):
 
                 nuevo_total += precio_final_unitario * int(d['cantidad'])
 
-            orden.total = nuevo_total
+            aplicar_reglas_negocio(orden)
             orden.save()
 
         orden_data = self.get_serializer(orden).data
@@ -250,15 +251,7 @@ class OrdenViewSet(viewsets.ModelViewSet):
                         precio_adicional_aplicado=opcion.precio_adicional
                     )
 
-            detalles_db = DetalleOrden.objects.filter(orden=orden)
-            nuevo_total = Decimal('0.00')
-            for d in detalles_db:
-                total_item = d.precio_unitario
-                variaciones = DetalleOrdenOpcion.objects.filter(detalle_orden=d)
-                total_item += sum(v.precio_adicional_aplicado for v in variaciones)
-                nuevo_total += d.cantidad * total_item
-
-            orden.total = nuevo_total
+            aplicar_reglas_negocio(orden)
             orden.save()
 
         nuevos_detalles_json = DetalleOrdenSerializer(detalles_creados, many=True).data
@@ -314,13 +307,7 @@ class OrdenViewSet(viewsets.ModelViewSet):
 
                 detalle.delete()
 
-                detalles_vivos = orden.detalles.all()
-                nuevo_total = sum(d.cantidad * d.precio_unitario for d in detalles_vivos)
-                for d in detalles_vivos:
-                    nuevo_total += sum(
-                        v.precio_adicional_aplicado for v in d.opciones_seleccionadas.all()
-                    ) * d.cantidad
-                orden.total = nuevo_total
+                aplicar_reglas_negocio(orden)
                 orden.save()
 
             orden_fresca = Orden.objects.prefetch_related(
@@ -365,6 +352,11 @@ class OrdenViewSet(viewsets.ModelViewSet):
                             sesion_caja=sesion_caja
                         )
                         total_pagado_ahora += monto_pago
+
+                # Re-aplicar reglas con el método de pago real (activa descuento_yape_efectivo si aplica)
+                metodo_dominante = max(pagos_data, key=lambda p: float(p.get('monto', 0)), default={}).get('metodo', '') if pagos_data else ''
+                aplicar_reglas_negocio(orden, metodo_pago=metodo_dominante)
+                orden.save()
 
                 pagos_historicos = Pago.objects.filter(orden=orden).aggregate(Sum('monto'))['monto__sum'] or Decimal('0.00')
                 total_cubierto = pagos_historicos + total_pagado_ahora

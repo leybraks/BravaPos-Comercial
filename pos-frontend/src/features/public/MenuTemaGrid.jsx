@@ -61,6 +61,20 @@ const Icons = {
 };
 
 // ─────────────────────────────────────────────────────────────
+//  REGLA DE NEGOCIO: PRECIO A MOSTRAR
+//  - Sin variaciones          → precio_base fijo
+//  - Con variaciones, min=max → precio único
+//  - Con variaciones, min<max → "Desde S/ X"
+// ─────────────────────────────────────────────────────────────
+function textoPrecio(plato) {
+  const base = parseFloat(plato.precio_base ?? 0);
+  const min  = parseFloat(plato.precio_minimo ?? base);
+  const max  = parseFloat(plato.precio_maximo ?? base);
+  if (!plato.tiene_variaciones || min === max) return { desde: false, valor: min.toFixed(2) };
+  return { desde: true, valor: min.toFixed(2) };
+}
+
+// ─────────────────────────────────────────────────────────────
 //  IMAGEN CON FALLBACK
 // ─────────────────────────────────────────────────────────────
 function Img({ src, alt, style, fallback = '🍽️', fallbackSize = 44 }) {
@@ -176,7 +190,8 @@ function CarruselHero({ productos, productosRecomendados, colorAcento, fuentes, 
               Ver detalles
             </button>
             <span style={{ fontFamily: fuentes.titulos, fontSize: 16, fontWeight: 900, color: colorAcento }}>
-              S/ {parseFloat(plato.precio_base).toFixed(2)}
+              {textoPrecio(plato).desde && <span style={{ fontSize: 11, fontWeight: 700, opacity: 0.7, marginRight: 2 }}>Desde</span>}
+              S/ {textoPrecio(plato).valor}
             </span>
           </div>
         </div>
@@ -273,7 +288,8 @@ function CardGrid({ plato, colorAcento, fuentes, carta, onSelect }) {
             <span style={{ fontFamily: fuentes.cuerpo, fontSize: 10 }}>En mesa</span>
           </div>
           <span style={{ fontFamily: fuentes.titulos, fontSize: 14, fontWeight: 900, color: colorAcento }}>
-            S/{parseFloat(plato.precio_base).toFixed(2)}
+            {textoPrecio(plato).desde && <span style={{ fontSize: 10, fontWeight: 700, opacity: 0.7, marginRight: 2 }}>Desde</span>}
+            S/{textoPrecio(plato).valor}
           </span>
         </div>
       </div>
@@ -429,8 +445,11 @@ function ModalDetalle({ plato, colorAcento, fuentes, onClose }) {
             <div>
               <p style={{ fontFamily: fuentes.cuerpo, fontSize: 10, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', margin: 0 }}>Precio</p>
               <p style={{ fontFamily: fuentes.titulos, fontSize: 30, fontWeight: 900, color: colorAcento, margin: '3px 0 0', lineHeight: 1 }}>
+                {textoPrecio(plato).desde && (
+                  <span style={{ display: 'block', fontSize: 11, fontWeight: 700, opacity: 0.6, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 2 }}>Desde</span>
+                )}
                 <span style={{ fontSize: 16, marginRight: 2 }}>S/</span>
-                {parseFloat(plato.precio_base).toFixed(2)}
+                {textoPrecio(plato).valor}
               </p>
             </div>
             <button
