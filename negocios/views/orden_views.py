@@ -16,14 +16,13 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from .helpers import es_valor_nulo, get_empleado_desde_header, get_empleado_verificado
-from ..services import aplicar_reglas_negocio
+from ..services import aplicar_reglas_negocio,calcular_preview_happy_hours
 from ..models import (
     Orden, DetalleOrden, DetalleOrdenOpcion, Pago,
     Producto, OpcionVariacion, Cliente, SolicitudCambio, SesionCaja, RegistroAuditoria, Sede
 )
 from ..serializers import OrdenSerializer, DetalleOrdenSerializer, PagoSerializer
 from django.db.models import Sum
-
 logger = logging.getLogger(__name__)
 
 
@@ -463,21 +462,17 @@ class OrdenViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def preview_cobro(self, request, pk=None):
-        """
-        Devuelve el desglose de precios (subtotal / descuento / recargo / total)
-        que resultaría de cobrar con un método de pago dado, SIN persistir nada.
-        Útil para mostrar el descuento Yape/Efectivo en el modal de cobro del POS.
-        """
         orden = self.get_object()
         metodo_pago = request.data.get('metodo', '')
         aplicar_reglas_negocio(orden, metodo_pago=metodo_pago)
-        # Nota: NO llamamos orden.save() — solo calculamos y devolvemos.
+        lineas_hh = calcular_preview_happy_hours(orden)
         return Response({
             'subtotal':        float(orden.subtotal),
             'descuento_total': float(orden.descuento_total),
             'recargo_total':   float(orden.recargo_total),
             'total':           float(orden.total),
             'metodo':          metodo_pago,
+            'lineas_happy_hour': lineas_hh,  # 👈 nuevo
         })
 
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])

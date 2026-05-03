@@ -25,7 +25,7 @@ import Erp_ModalVariaciones from '../features/ERP/Erp_ModalVariaciones';
 import Erp_Sidebar from '../features/ERP/Erp_Sidebar';
 import ModalModificadores from '../features/ERP/Erp_ModalModificadores';
 import { crearModificador, actualizarModificador, getModificadores } from '../api/api';
-
+import DrawerCombosNormales from '../features/ERP/MenuComponents/DrawerCombosNormales';
 // ==========================================
 // 🌟 COMPONENTE HEADER INTEGRADOR (TOPBAR)
 // ==========================================
@@ -182,7 +182,7 @@ export default function ErpDashboard({ onVolverAlPos, rolUsuario }) {
   
   // ✅ Estado local para controlar el modal
   const [modalModificadoresAbierto, setModalModificadoresAbierto] = useState(false);
-
+  const [drawerCombosAbierto, setDrawerCombosAbierto] = useState(false);
   const handleOpenModificadores = () => {
     setModalModificadoresAbierto(true);
   };
@@ -250,6 +250,7 @@ export default function ErpDashboard({ onVolverAlPos, rolUsuario }) {
               onOpenReceta={(plato) => { setProductoParaReceta(plato); setModalRecetaOpen(true); }} 
               onOpenVariaciones={(plato) => { setProductoParaVariaciones(plato); setModalVariacionesOpen(true); }} 
               onOpenModificadores={handleOpenModificadores} 
+              onOpenCombos={() => setDrawerCombosAbierto(true)}
             />
           )}
 
@@ -310,7 +311,14 @@ export default function ErpDashboard({ onVolverAlPos, rolUsuario }) {
       <Erp_ModalCambios isOpen={modalCambiosPendientes} config={config} onGuardar={guardarYCambiarVista} onDescartar={descartarCambios} onCancelar={cancelarCambioVista} />
       <Erp_ModalReceta isOpen={modalRecetaOpen} onClose={() => setModalRecetaOpen(false)} producto={productoParaReceta} config={config} />
       <Erp_ModalVariaciones isOpen={modalVariacionesOpen} onClose={() => setModalVariacionesOpen(false)} producto={productoParaVariaciones} config={config} />
-      
+      <DrawerCombosNormales
+        isOpen={drawerCombosAbierto}
+        onClose={() => setDrawerCombosAbierto(false)}
+        isDark={tema === 'dark'}
+        colorPrimario={colorPrimario}
+        productosReales={productosReales}
+        categoriasReales={categorias}
+      />
       {/* ✅ MODAL DE MODIFICADORES */}
       <ModalModificadores 
         isOpen={modalModificadoresAbierto}

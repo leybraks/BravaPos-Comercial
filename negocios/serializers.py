@@ -2,9 +2,9 @@ from django.utils import timezone
 
 from rest_framework import serializers
 from .models import (
-    InsumoBase, InsumoSede, Negocio, PlanSaaS, ReglaNegocio, Sede, Mesa, Producto, Orden, DetalleOrden, Pago,
+    ComboPromocional, ComponenteCombo, InsumoBase, InsumoSede, ItemComboPromocional, Negocio, PlanSaaS, ReglaNegocio, Sede, Mesa, Producto, Orden, DetalleOrden, Pago,
     ModificadorRapido, GrupoVariacion, OpcionVariacion, Rol, Empleado, SesionCaja,
-    DetalleOrdenOpcion , Categoria, RecetaOpcion, Cliente, ZonaDelivery
+    DetalleOrdenOpcion , Categoria, RecetaOpcion, Cliente, VariacionProducto, ZonaDelivery, HorarioVisibilidad
 )
 
 
@@ -91,8 +91,23 @@ class GrupoVariacionSerializer(serializers.ModelSerializer):
         fields = ['id', 'nombre', 'obligatorio', 'seleccion_multiple', 'opciones']
         extra_kwargs = {'id': {'read_only': False, 'required': False}}
 
+class VariacionProductoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = VariacionProducto
+        fields = ['id', 'nombre', 'precio']
+
+class ComponenteComboSerializer(serializers.ModelSerializer):
+    producto_hijo_nombre = serializers.CharField(source='producto_hijo.nombre', read_only=True)
+    
+    class Meta:
+        model = ComponenteCombo
+        fields = ['id', 'producto_hijo', 'producto_hijo_nombre', 'cantidad',
+                  'opcion_seleccionada', 'variacion_seleccionada']
+        
 class ProductoSerializer(serializers.ModelSerializer):
     grupos_variacion = GrupoVariacionSerializer(many=True, required=False)
+    variaciones = VariacionProductoSerializer(many=True, read_only=True)
+    items_combo = ComponenteComboSerializer(many=True, read_only=True) 
     precio_minimo = serializers.SerializerMethodField()
     precio_maximo = serializers.SerializerMethodField()
 
@@ -101,8 +116,8 @@ class ProductoSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'negocio', 'categoria', 'nombre', 'es_venta_rapida',
             'precio_base', 'disponible', 'tiene_variaciones', 'requiere_seleccion',
-            'activo', 'imagen', 'es_combo', 'destacar_como_promocion',
-            'grupos_variacion', 'precio_minimo', 'precio_maximo',
+            'activo', 'imagen', 'es_combo', 'destacar_como_promocion','items_combo',
+            'grupos_variacion', 'variaciones', 'precio_minimo', 'precio_maximo',
         ]
 
     def get_precio_minimo(self, obj):
@@ -314,7 +329,90 @@ class ZonaDeliverySerializer(serializers.ModelSerializer):
         model = ZonaDelivery
         fields = ['id', 'sede', 'nombre', 'radio_max_km', 'costo_envio', 'pedido_minimo', 'activa']
 
+# ============================================================
+# Agrega estos serializers al final de tu serializers.py
+# (antes de la línea de ReglaNegocioSerializer que ya tienes)
+# ============================================================
+
+class HorarioVisibilidadSerializer(serializers.ModelSerializer):
+    producto_nombre = serializers.CharField(source='producto.nombre', read_only=True)
+    categoria_nombre = serializers.CharField(source='categoria.nombre', read_only=True)
+    opcion_variacion_nombre = serializers.CharField(source='opcion_variacion.nombre', read_only=True)  # 👈
+
+    class Meta:
+        model = HorarioVisibilidad
+        fields = [
+            'id', 'negocio',
+            'producto', 'producto_nombre',
+            'categoria', 'categoria_nombre',
+            'opcion_variacion', 'opcion_variacion_nombre',  # 👈
+            'nombre', 'tipo_promo',
+            'precio_especial', 'porcentaje_descuento',
+            'compra_x', 'lleva_y',
+            'hora_inicio', 'hora_fin',
+            'dias_permitidos', 'se_repite_semanalmente',
+            'rangos_fechas', 'activa', 'creado_en',
+        ]
+        read_only_fields = ['negocio', 'creado_en']
+
+
 class ReglaNegocioSerializer(serializers.ModelSerializer):
+    # Nombres legibles para producto y categoría objetivo
+    accion_producto_nombre = serializers.CharField(source='accion_producto.nombre', read_only=True)
+    accion_categoria_nombre = serializers.CharField(source='accion_categoria.nombre', read_only=True)
+
     class Meta:
         model = ReglaNegocio
-        fields = ['id', 'negocio', 'tipo', 'valor', 'es_porcentaje', 'activa', 'monto_minimo_orden', 'dia_semana']
+        fields = [
+            'id', 'negocio', 'nombre', 'tipo',
+            'valor', 'es_porcentaje',
+            # Condiciones
+            'monto_minimo_orden', 'dia_semana',
+            'condicion_tipo_orden', 'condicion_metodo_pago',
+            'condicion_hora_inicio', 'condicion_hora_fin',
+            # Acción
+            'accion_aplica_a', 'accion_es_descuento',
+            'accion_producto', 'accion_producto_nombre',
+            'accion_categoria', 'accion_categoria_nombre',
+            'activa',
+        ]
+        read_only_fields = ['negocio']
+
+
+
+
+class ProductoParaComboSerializer(serializers.ModelSerializer):
+    """
+    Versión liviana del producto para el selector de combos.
+    Trae lo necesario para saber qué tipo es y mostrar sus opciones.
+    """
+    grupos_variacion = GrupoVariacionSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Producto
+        fields = [
+            'id', 'nombre', 'precio_base', 'imagen', 'categoria',
+            'tiene_variaciones', 'requiere_seleccion',
+            'grupos_variacion', 'variaciones',
+        ]
+
+class ItemComboPromocionalSerializer(serializers.ModelSerializer):
+    producto_detalle = ProductoParaComboSerializer(source='producto', read_only=True)
+    
+    class Meta:
+        model = ItemComboPromocional
+        fields = [
+            'id', 'producto', 'producto_detalle', 'cantidad',
+            'opcion_seleccionada', 'variacion_seleccionada',
+        ]
+
+class ComboPromocionalSerializer(serializers.ModelSerializer):
+    items = ItemComboPromocionalSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = ComboPromocional
+        fields = [
+            'id', 'negocio', 'nombre', 'precio', 'imagen',
+            'rangos_fechas', 'activo', 'creado_en', 'items',
+        ]
+        read_only_fields = ['negocio', 'creado_en']

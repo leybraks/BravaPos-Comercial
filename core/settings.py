@@ -250,3 +250,13 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 EVO_API_URL = os.environ.get('EVO_API_URL', 'http://163.176.135.213:8080')
 EVO_GLOBAL_KEY = os.environ.get('EVO_GLOBAL_KEY', 'BravaSuperSecret2026')
 APIS_NET_PE_TOKEN = os.environ.get('APIS_NET_PE_TOKEN', '')
+
+# settings.py
+# Reemplaza las últimas líneas de email por esto:
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+DEFAULT_FROM_EMAIL = f'BravaPOS <{os.environ.get("EMAIL_HOST_USER", "")}>'

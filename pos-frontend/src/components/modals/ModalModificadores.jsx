@@ -3,7 +3,7 @@ import usePosStore from '../../store/usePosStore';
 
 const formatearSoles = (monto) => `S/ ${parseFloat(monto || 0).toFixed(2)}`;
 
-export default function ModalModificadores({ isOpen, onClose, producto, modificadoresGlobales = [], onAgregarAlCarrito }) {
+export default function ModalModificadores({ isOpen, onClose, producto, modificadoresGlobales = [], onAgregarAlCarrito, happyHours = [] }) {
   const { configuracionGlobal } = usePosStore();
   const tema = configuracionGlobal?.temaFondo || 'dark';
   const colorPrimario = configuracionGlobal?.colorPrimario || '#ff5a1f';
@@ -135,7 +135,10 @@ export default function ModalModificadores({ isOpen, onClose, producto, modifica
     onAgregarAlCarrito(itemCarrito, esEdicion);
     onClose();
   };
-
+  const tieneHappyHour = happyHours.some(hh =>
+    (hh.producto && String(hh.producto) === String(producto?.id)) ||
+    (hh.categoria && String(hh.categoria) === String(producto?.categoria))
+  );
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 sm:p-6 transition-all duration-300">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm transition-opacity" onClick={onClose}></div>
@@ -152,7 +155,14 @@ export default function ModalModificadores({ isOpen, onClose, producto, modifica
             <h2 className={`text-2xl font-black leading-tight ${tema === 'dark' ? 'text-white' : 'text-gray-900'}`}>
               {producto.nombre}
             </h2>
-            
+            {tieneHappyHour && (
+              <div className="flex items-center gap-1.5 mt-2">
+                <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-lg"
+                  style={{ backgroundColor: '#f59e0b20', color: '#f59e0b', border: '1px solid #f59e0b30' }}>
+                  <i className="fi fi-rr-clock text-[9px]" /> Happy Hour activa
+                </span>
+              </div>
+            )}
             {!(producto.requiere_seleccion && precioBase === 0) && (
               <p className={`font-bold text-sm mt-1 tracking-widest uppercase ${tema === 'dark' ? 'text-neutral-500' : 'text-gray-500'}`}>
                 Precio Base: {formatearSoles(precioBase)}
