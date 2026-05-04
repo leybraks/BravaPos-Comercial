@@ -91,6 +91,12 @@ class Negocio(models.Model):
     )
     def __str__(self):
         return self.nombre
+    def save(self, *args, **kwargs):
+        # Si el RUC llega como un string vacío, lo forzamos a ser estrictamente NULL
+        if self.ruc == "":
+            self.ruc = None
+            
+        super().save(*args, **kwargs)
 
 class Sede(models.Model):
     negocio = models.ForeignKey(Negocio, on_delete=models.CASCADE, related_name='sedes')
