@@ -10,10 +10,10 @@ import PosHeader from '../features/POS/components/PosHeader';
 import ProductGrid from '../features/POS/components/ProductGrid';
 import PosFooter from '../features/POS/components/PosFooter';
 import CartDrawer from '../features/POS/components/CartDrawer';
-import { happyHourActivaAhora } from '../features/POS/hooks/usePosData';
 // Hooks
 import { usePosData } from '../features/POS/hooks/usePosData';
 import { usePosSearch } from '../features/POS/hooks/usePosSearch';
+import { calcularLineasHappyHour, calcularLineasReglas, happyHourActivaAhora } from '../features/POS/hooks/usePosData';
 
 export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
   const toast = useToast();
@@ -129,8 +129,9 @@ export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
   // ====================== CÁLCULOS ======================
   const totalOrdenActiva = ordenActiva ? ordenActiva.detalles.reduce((acc, d) => acc + parseFloat(d.precio_unitario || 0) * (d.cantidad || 1), 0) : 0;
   const totalMesa = totalOrdenActiva + obtenerTotalDinero();
+  
   const cantItemsMesa = (ordenActiva ? ordenActiva.detalles.reduce((acc, el) => acc + el.cantidad, 0) : 0) + obtenerTotalItems();
-
+  
   // ====================== HANDLERS ======================
   const manejarEnviarCocina = async () => {
     if (!sedeActualId) { toast.warning('Selecciona una sede antes de enviar.'); return; }

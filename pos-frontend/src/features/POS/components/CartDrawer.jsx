@@ -70,8 +70,6 @@ export default function CartDrawer({
   const contenedorClasses = esDesktop
     ? `relative w-full h-full flex flex-col ${isDark ? 'bg-[#0d0d0d]' : 'bg-[#fcfcfc]'}`
     : `absolute inset-x-0 bottom-0 z-40 rounded-t-[2rem] border-t flex flex-col transition-transform duration-300 ease-out shadow-[0_-20px_60px_rgba(0,0,0,0.8)] ${carritoAbierto ? 'translate-y-0' : 'translate-y-full'} ${isDark ? 'bg-[#0d0d0d] border-[#222]' : 'bg-white border-gray-200'}`;
-  console.log('hhActivas en drawer:', hhActivas);
-  console.log('lineasHH calculadas:', lineasHH);
   return (
     <>
       {!esDesktop && carritoAbierto && (
