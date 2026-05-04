@@ -402,10 +402,13 @@ useEffect(() => {
       )}
       
       <ModalModificadores 
-      isOpen={modalModsAbierto} 
-      onClose={() => setModalModsAbierto(false)} 
-      happyHours={happyHours}
-      producto={productoParaModificar} modificadoresGlobales={modificadoresGlobales} onAgregarAlCarrito={manejarAgregarAlCarritoDesdeModal} happyHours={happyHours} />
+        isOpen={modalModsAbierto} 
+        onClose={() => setModalModsAbierto(false)} 
+        producto={productoParaModificar} 
+        modificadoresGlobales={modificadoresGlobales} 
+        onAgregarAlCarrito={manejarAgregarAlCarritoDesdeModal}
+        happyHours={happyHours}
+      />
     </div>
   );
 }

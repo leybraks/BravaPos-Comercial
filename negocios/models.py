@@ -791,7 +791,11 @@ class HorarioVisibilidad(models.Model):
     negocio = models.ForeignKey('Negocio', on_delete=models.CASCADE, related_name='happy_hours', null=True, blank=True)
     producto = models.ForeignKey('Producto', on_delete=models.CASCADE, related_name='horarios', null=True, blank=True)
     categoria = models.ForeignKey('Categoria', on_delete=models.CASCADE, related_name='horarios', null=True, blank=True)
-
+    sede = models.ForeignKey(
+        'Sede', on_delete=models.CASCADE, null=True, blank=True,
+        related_name='happy_hours',
+        help_text="Si es null, aplica a todas las sedes del negocio"
+    )
     nombre = models.CharField(max_length=100)
     tipo_promo = models.CharField(max_length=20, choices=TIPO_PROMO_CHOICES, default='visibilidad')
 
@@ -912,7 +916,11 @@ class ComboPromocional(models.Model):
     rangos_fechas = models.JSONField(default=list, help_text="Lista de rangos de fechas en que aplica el combo")
     activo = models.BooleanField(default=True)
     creado_en = models.DateTimeField(auto_now_add=True)
-
+    sede = models.ForeignKey(
+        'Sede', on_delete=models.CASCADE, null=True, blank=True,
+        related_name='combos_promocionales_sede',
+        help_text="Si es null, aplica a todas las sedes del negocio"
+    )
     class Meta:
         unique_together = ('negocio', 'nombre')
 

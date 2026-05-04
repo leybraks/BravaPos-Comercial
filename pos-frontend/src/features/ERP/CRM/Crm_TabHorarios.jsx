@@ -156,13 +156,14 @@ function SelectorOpcion({ producto, isDark, colorPrimario, valorOpcion, onChange
 }
 
 // ── Formulario de Happy Hour ──────────────────────────────────
-function FormHappyHour({ hh, isDark, colorPrimario, productosReales, categoriasReales, onGuardar, onCancelar, guardando }) {
+function FormHappyHour({ hh, isDark, colorPrimario, productosReales, sedesReales, categoriasReales, onGuardar, onCancelar, guardando }) {
   const [form, setForm] = useState({
     nombre: hh?.nombre ?? '',
     tipo_promo: hh?.tipo_promo ?? 'visibilidad',
     producto: hh?.producto ?? null,
     categoria: hh?.categoria ?? null,
     opcion_variacion: hh?.opcion_variacion ?? null,
+    sede: hh?.sede ?? null,
     aplica_a: hh ? (hh.producto ? 'producto' : 'categoria') : 'producto',
     precio_especial: hh?.precio_especial ?? '',
     porcentaje_descuento: hh?.porcentaje_descuento ?? '',
@@ -213,6 +214,7 @@ function FormHappyHour({ hh, isDark, colorPrimario, productosReales, categoriasR
     const payload = {
       nombre: form.nombre,
       tipo_promo: form.tipo_promo,
+      sede: form.sede || null,
       producto: form.aplica_a === 'producto' ? form.producto : null,
       categoria: form.aplica_a === 'categoria' ? form.categoria : null,
       opcion_variacion: (form.aplica_a === 'producto' && productoTieneOpciones)
@@ -233,7 +235,7 @@ function FormHappyHour({ hh, isDark, colorPrimario, productosReales, categoriasR
   };
 
   return (
-    <div className={`p-6 rounded-2xl border animate-fadeIn space-y-5 ${isDark ? 'bg-[#161616] border-[#333]' : 'bg-gray-50 border-gray-200'}`}>
+    <div className={`p-6 rounded-2xl border space-y-5 ${isDark ? 'bg-[#161616] border-[#333]' : 'bg-gray-50 border-gray-200'}`}>
       <h4 className={`font-black uppercase tracking-widest text-xs ${isDark ? 'text-neutral-500' : 'text-gray-400'}`}>
         {hh ? 'Editar Happy Hour' : 'Nueva Happy Hour'}
       </h4>
@@ -361,7 +363,32 @@ function FormHappyHour({ hh, isDark, colorPrimario, productosReales, categoriasR
             className={`w-full px-4 py-3 rounded-xl outline-none text-sm font-bold border text-center ${isDark ? 'bg-[#0a0a0a] border-[#333] text-white' : 'bg-white border-gray-200 text-gray-900'}`} />
         </div>
       </div>
-
+        {/* Sede */}
+      <div>
+        <label className="text-[9px] font-black uppercase tracking-widest text-neutral-500 block mb-1.5">
+          Aplica en
+        </label>
+        <div className="flex gap-2 flex-wrap">
+          <button
+            onClick={() => setForm(f => ({ ...f, sede: null }))}
+            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wide border transition-all ${
+              form.sede === null ? 'text-white' : isDark ? 'border-[#333] text-neutral-500' : 'border-gray-200 text-gray-500'
+            }`}
+            style={form.sede === null ? { backgroundColor: colorPrimario, borderColor: colorPrimario } : {}}>
+            Todas las sedes
+          </button>
+          {sedesReales.map(sede => (
+            <button key={sede.id}
+              onClick={() => setForm(f => ({ ...f, sede: sede.id }))}
+              className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wide border transition-all ${
+                String(form.sede) === String(sede.id) ? 'text-white' : isDark ? 'border-[#333] text-neutral-500' : 'border-gray-200 text-gray-500'
+              }`}
+              style={String(form.sede) === String(sede.id) ? { backgroundColor: colorPrimario, borderColor: colorPrimario } : {}}>
+              {sede.nombre}
+            </button>
+          ))}
+        </div>
+      </div>
       <div>
         <label className="text-[9px] font-black uppercase tracking-widest text-neutral-500 block mb-2">Días permitidos</label>
         <div className="flex flex-wrap gap-2">
@@ -430,7 +457,7 @@ function FormHappyHour({ hh, isDark, colorPrimario, productosReales, categoriasR
 }
 
 // ── Componente principal ──────────────────────────────────────
-export default function Crm_TabHorarios({ isDark, colorPrimario, productosReales = [], categoriasReales = [] }) {
+export default function Crm_TabHorarios({ isDark, colorPrimario, productosReales = [], categoriasReales = [], sedesReales = [] }) {
   const [lista, setLista] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
@@ -459,15 +486,14 @@ export default function Crm_TabHorarios({ isDark, colorPrimario, productosReales
       } else {
         await api.post('/happy-hours/', payload);
       }
-      await cargar();
       setFormularioAbierto(false);
       setEditando(null);
+      setGuardando(false);
+      setTimeout(() => cargar(), 100);
     } catch (err) {
-      console.error('Error guardando:', err);
+      setGuardando(false);
       const msg = err.response?.data ? JSON.stringify(err.response.data) : 'Error desconocido';
       alert(`Error: ${msg}`);
-    } finally {
-      setGuardando(false);
     }
   };
 
@@ -514,6 +540,7 @@ export default function Crm_TabHorarios({ isDark, colorPrimario, productosReales
           colorPrimario={colorPrimario}
           productosReales={productosReales}
           categoriasReales={categoriasReales}
+          sedesReales={sedesReales}
           onGuardar={handleGuardar}
           onCancelar={() => { setFormularioAbierto(false); setEditando(null); }}
           guardando={guardando}
@@ -556,6 +583,16 @@ export default function Crm_TabHorarios({ isDark, colorPrimario, productosReales
                       {hh.tipo_promo === 'nx_y' && <span>• Compra {hh.compra_x} lleva {hh.lleva_y}</span>}
                       {hh.tipo_promo === 'precio_especial' && <span>• S/ {hh.precio_especial}</span>}
                       {hh.tipo_promo === 'porcentaje' && <span>• {hh.porcentaje_descuento}% off</span>}
+                      
+                      {/* 👈 Agrega esto al final */}
+                      {hh.sede_nombre 
+                        ? <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${isDark ? 'bg-[#222] text-neutral-400' : 'bg-gray-100 text-gray-500'}`}>
+                            📍 {hh.sede_nombre}
+                          </span>
+                        : <span className={`text-[9px] font-bold ${isDark ? 'text-neutral-600' : 'text-gray-400'}`}>
+                            · Todas las sedes
+                          </span>
+                      }
                     </p>
                   </div>
                 </div>
