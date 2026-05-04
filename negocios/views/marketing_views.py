@@ -30,7 +30,16 @@ class HappyHourView(APIView):
 
     def get(self, request):
         negocio = request.user.negocio
-        horarios = HorarioVisibilidad.objects.filter(negocio=negocio).order_by('-creado_en')
+        sede_id = request.query_params.get('sede_id')
+
+        horarios = HorarioVisibilidad.objects.filter(negocio=negocio)
+        
+        if sede_id:
+            # Trae las de esta sede específica + las globales (sede=null)
+            horarios = horarios.filter(
+                Q(sede_id=sede_id) | Q(sede__isnull=True)
+            )
+        
         return Response(HorarioVisibilidadSerializer(horarios, many=True).data)
 
     @transaction.atomic
@@ -198,6 +207,8 @@ class ComboPromocionalView(APIView):
 
     def get(self, request):
         negocio = request.user.negocio
+        sede_id = request.query_params.get('sede_id')
+
         combos = ComboPromocional.objects.filter(
             negocio=negocio, activo=True
         ).prefetch_related(
@@ -206,6 +217,12 @@ class ComboPromocionalView(APIView):
             'items__opcion_seleccionada',
             'items__variacion_seleccionada',
         )
+
+        if sede_id:
+            combos = combos.filter(
+                Q(sede_id=sede_id) | Q(sede__isnull=True)
+            )
+
         return Response(ComboPromocionalSerializer(combos, many=True).data)
 
     @transaction.atomic
@@ -216,6 +233,7 @@ class ComboPromocionalView(APIView):
 
         combo = ComboPromocional.objects.create(
             negocio=negocio,
+            sede_id=data.get('sede') or None,  # 👈
             nombre=data.get('nombre'),
             precio=float(data.get('precio', 0)),
             rangos_fechas=data.get('rangos_fechas', []),
@@ -232,7 +250,6 @@ class ComboPromocionalView(APIView):
             )
 
         return Response(ComboPromocionalSerializer(combo).data, status=status.HTTP_201_CREATED)
-
 
 class ComboPromocionalDetalleView(APIView):
     permission_classes = [IsAuthenticated]
@@ -260,6 +277,7 @@ class ComboPromocionalDetalleView(APIView):
         combo.precio = float(data.get('precio', combo.precio))
         combo.rangos_fechas = data.get('rangos_fechas', combo.rangos_fechas)
         combo.activo = data.get('activo', combo.activo)
+        combo.sede_id = data.get('sede', combo.sede_id) or None  # 👈
         combo.save()
 
         items = data.get('items')

@@ -162,6 +162,7 @@ export default function Erp_Crm({ config, sedesReales = [], productosReales = []
             config={config} 
             productosReales={productosReales} 
             categoriasReales={categoriasReales}
+            sedesReales={sedesReales} 
           />
         </div>
       )}

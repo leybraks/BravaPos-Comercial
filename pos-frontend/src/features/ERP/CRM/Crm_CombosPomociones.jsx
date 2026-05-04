@@ -4,7 +4,7 @@ import Crm_TabCombos from './Crm_TabCombos';
 import Crm_TabHorarios from './Crm_TabHorarios';
 import Crm_TabReglas from './Crm_TabReglas';
 
-export default function Crm_CombosPromociones({ config, productosReales = [], categoriasReales = [] }) {
+export default function Crm_CombosPromociones({ config, productosReales = [], categoriasReales = [] , sedesReales = []}) {
   const isDark = config.temaFondo === 'dark';
   const colorPrimario = config.colorPrimario || '#ff5a1f';
   const [modoActivo, setModoActivo] = useState('reglas');
@@ -55,6 +55,7 @@ export default function Crm_CombosPromociones({ config, productosReales = [], ca
           colorPrimario={colorPrimario}
           productosReales={productosReales}
           categoriasReales={categoriasReales}
+          sedesReales={sedesReales}
         />
       )}
 
@@ -64,6 +65,7 @@ export default function Crm_CombosPromociones({ config, productosReales = [], ca
           colorPrimario={colorPrimario}
           productosReales={productosReales}
           categoriasReales={categoriasReales}
+          sedesReales={sedesReales}
         />
       )}
     </div>

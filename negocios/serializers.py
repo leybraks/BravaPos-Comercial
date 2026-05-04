@@ -338,7 +338,7 @@ class HorarioVisibilidadSerializer(serializers.ModelSerializer):
     producto_nombre = serializers.CharField(source='producto.nombre', read_only=True)
     categoria_nombre = serializers.CharField(source='categoria.nombre', read_only=True)
     opcion_variacion_nombre = serializers.CharField(source='opcion_variacion.nombre', read_only=True)  # 👈
-
+    sede_nombre = serializers.CharField(source='sede.nombre', read_only=True)
     class Meta:
         model = HorarioVisibilidad
         fields = [
@@ -348,7 +348,7 @@ class HorarioVisibilidadSerializer(serializers.ModelSerializer):
             'opcion_variacion', 'opcion_variacion_nombre',  # 👈
             'nombre', 'tipo_promo',
             'precio_especial', 'porcentaje_descuento',
-            'compra_x', 'lleva_y',
+            'compra_x', 'lleva_y','sede', 'sede_nombre', 
             'hora_inicio', 'hora_fin',
             'dias_permitidos', 'se_repite_semanalmente',
             'rangos_fechas', 'activa', 'creado_en',
@@ -408,11 +408,11 @@ class ItemComboPromocionalSerializer(serializers.ModelSerializer):
 
 class ComboPromocionalSerializer(serializers.ModelSerializer):
     items = ItemComboPromocionalSerializer(many=True, read_only=True)
-
+    sede_nombre = serializers.CharField(source='sede.nombre', read_only=True)
     class Meta:
         model = ComboPromocional
         fields = [
             'id', 'negocio', 'nombre', 'precio', 'imagen',
-            'rangos_fechas', 'activo', 'creado_en', 'items',
+            'rangos_fechas', 'activo', 'creado_en', 'items','sede', 'sede_nombre', 
         ]
         read_only_fields = ['negocio', 'creado_en']

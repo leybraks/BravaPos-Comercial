@@ -281,11 +281,12 @@ function ProductCardSelector({ producto, isDark, colorPrimario, onClickCard, onC
 // ============================================================
 // SUBCOMPONENTE: Modal principal de combo
 // ============================================================
-function ModalCombo({ combo, isDark, colorPrimario, productosReales, categoriasReales, onGuardar, onCerrar, guardando }) {
+function ModalCombo({ combo, isDark, colorPrimario, productosReales, sedesReales, categoriasReales, onGuardar, onCerrar, guardando }) {
   const [paso, setPaso] = useState('info'); // 'info' | 'productos'
   const [form, setForm] = useState({
     nombre: combo?.nombre ?? '',
     precio: combo?.precio ?? '',
+    sede: combo?.sede ?? null,
     rangos_fechas: combo?.rangos_fechas ?? [],
     items: combo?.items?.map(i => ({
       productoId: i.producto,
@@ -370,6 +371,7 @@ function ModalCombo({ combo, isDark, colorPrimario, productosReales, categoriasR
     onGuardar({
       nombre: form.nombre,
       precio: parseFloat(form.precio),
+      sede: form.sede || null,
       rangos_fechas: form.rangos_fechas,
       items: form.items,
     });
@@ -455,7 +457,32 @@ function ModalCombo({ combo, isDark, colorPrimario, productosReales, categoriasR
                     />
                   </div>
                 </div>
-
+                {/* Sede */}
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-neutral-500 block mb-2">
+                    Aplica en
+                  </label>
+                  <div className="flex gap-2 flex-wrap">
+                    <button
+                      onClick={() => setForm(f => ({ ...f, sede: null }))}
+                      className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wide border transition-all ${
+                        form.sede === null ? 'text-white' : isDark ? 'border-[#333] text-neutral-500' : 'border-gray-200 text-gray-500'
+                      }`}
+                      style={form.sede === null ? { backgroundColor: colorPrimario, borderColor: colorPrimario } : {}}>
+                      Todas las sedes
+                    </button>
+                    {sedesReales.map(sede => (
+                      <button key={sede.id}
+                        onClick={() => setForm(f => ({ ...f, sede: sede.id }))}
+                        className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wide border transition-all ${
+                          String(form.sede) === String(sede.id) ? 'text-white' : isDark ? 'border-[#333] text-neutral-500' : 'border-gray-200 text-gray-500'
+                        }`}
+                        style={String(form.sede) === String(sede.id) ? { backgroundColor: colorPrimario, borderColor: colorPrimario } : {}}>
+                        {sede.nombre}
+                      </button>
+                    ))}
+                  </div>
+                </div>      
                 {/* Fechas */}
                 <div className={`p-5 rounded-2xl border ${isDark ? 'bg-[#111] border-[#222]' : 'bg-gray-50 border-gray-200'}`}>
                   <label className="text-[10px] font-black uppercase tracking-widest text-neutral-500 flex items-center gap-2 mb-4">
@@ -684,7 +711,7 @@ function ModalCombo({ combo, isDark, colorPrimario, productosReales, categoriasR
 // ============================================================
 // COMPONENTE PRINCIPAL
 // ============================================================
-export default function Crm_TabCombos({ isDark, colorPrimario, productosReales = [], categoriasReales = [] }) {
+export default function Crm_TabCombos({ isDark, colorPrimario, productosReales = [],sedesReales = [] ,categoriasReales = [] }) {
   const [combos, setCombos] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
@@ -713,6 +740,7 @@ export default function Crm_TabCombos({ isDark, colorPrimario, productosReales =
       const payload = {
         nombre: formData.nombre,
         precio: formData.precio,
+        sede: formData.sede || null,
         rangos_fechas: formData.rangos_fechas,
         items: formData.items.map(it => ({
           productoId: it.productoId,
@@ -728,15 +756,18 @@ export default function Crm_TabCombos({ isDark, colorPrimario, productosReales =
         await api.post('/combos-promocionales/', payload);
       }
 
-      await cargarCombos();
+      // 👈 Cerrar primero, recargar después
       setModalAbierto(false);
       setComboEditando(null);
+      setGuardando(false);
+      setTimeout(() => cargarCombos(), 100);
+
     } catch (err) {
+      setGuardando(false);
       console.error('Error guardando combo:', err);
       alert('Hubo un error al guardar el combo. Intenta de nuevo.');
-    } finally {
-      setGuardando(false);
     }
+    // 👈 Sin finally
   };
 
   // ── Eliminar ──
@@ -815,7 +846,9 @@ export default function Crm_TabCombos({ isDark, colorPrimario, productosReales =
                     </div>
                   ))}
                 </div>
-
+                <div className={`text-[10px] font-bold ${isDark ? 'text-neutral-600' : 'text-gray-400'}`}>
+                  {combo.sede_nombre ? `📍 ${combo.sede_nombre}` : 'Todas las sedes'}
+                </div>
                 {/* Items */}
                 <div className={`text-[10px] font-bold mb-4 ${isDark ? 'text-neutral-600' : 'text-gray-400'}`}>
                   {combo.items?.length ?? 0} producto{(combo.items?.length ?? 0) !== 1 ? 's' : ''}
@@ -851,6 +884,7 @@ export default function Crm_TabCombos({ isDark, colorPrimario, productosReales =
           productosReales={productosReales}
           categoriasReales={categoriasReales}
           onGuardar={handleGuardar}
+          sedesReales={sedesReales}
           onCerrar={() => { setModalAbierto(false); setComboEditando(null); }}
           guardando={guardando}
         />
