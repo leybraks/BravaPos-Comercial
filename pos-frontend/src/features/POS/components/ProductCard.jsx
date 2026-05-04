@@ -14,13 +14,18 @@ export default function ProductCard({
   agregarProducto,
   restarDesdeGrid,
   notificarEstadoMesa,
-  formatearSoles
+  formatearSoles,
+  happyHours
 }) {
   const isDark = tema === 'dark';
   const totalCantidadProd = carrito.filter(item => item.id === prod.id).reduce((acc, curr) => acc + curr.cantidad, 0);
   const tieneVariantes = carrito.some(item => item.id === prod.id && item.cart_id !== `base_${prod.id}`);
   const nombreCategoriaMuestra = categoriasReales.find(c => String(c.id) === String(prod.categoria))?.nombre || 'Sin categoría';
-
+  // Verificar si este producto tiene alguna HH activa
+  const tieneHappyHour = happyHours?.some(hh => 
+    (hh.producto && String(hh.producto) === String(prod.id)) ||
+    (hh.categoria && String(hh.categoria) === String(prod.categoria))
+  );
   // ==========================================
   // CASO 1: PRODUCTO REQUIERE SELECCIÓN OBLIGATORIA
   // ==========================================
@@ -34,9 +39,10 @@ export default function ProductCard({
             }
         }} 
         disabled={!prod.disponible}
-        className={`relative p-3 sm:p-4 rounded-3xl transition-all flex flex-col justify-between h-36 sm:h-44 text-left group border ${
+        className={`relative p-3 sm:p-4 rounded-3xl transition-all flex flex-col text-left justify-between overflow-hidden h-36 sm:h-44 border ${
+          tieneHappyHour ? 'border-amber-500/30' :  // 👈 agrega esto primero
           prod.disponible 
-            ? (isDark ? 'bg-[#141414] border-[#222] hover:border-[#444] active:scale-95 cursor-pointer hover:-translate-y-1' : 'bg-white border-gray-200 hover:border-gray-300 hover:-translate-y-1 active:scale-95 cursor-pointer') 
+            ? (isDark ? 'bg-[#141414] border-[#222] hover:border-[#333] hover:-translate-y-1 cursor-pointer' : 'bg-white border-gray-200 hover:border-gray-300 hover:-translate-y-1 cursor-pointer') 
             : (isDark ? 'bg-[#0a0a0a] border-[#1a1a1a] opacity-50 cursor-not-allowed' : 'bg-gray-50 border-gray-200 opacity-50 cursor-not-allowed')
         }`}
       >
@@ -50,7 +56,13 @@ export default function ProductCard({
           <span className={`font-bold leading-tight text-[14px] sm:text-[16px] line-clamp-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
             {prod.nombre}
           </span>
-          
+         
+          {tieneHappyHour && (
+            <span className="inline-flex items-center gap-1 text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-md mt-1 w-fit"
+              style={{ backgroundColor: '#f59e0b20', color: '#f59e0b' }}>
+              <i className="fi fi-rr-clock text-[8px]" /> Happy Hour
+            </span>
+          )}
           {prod._coincidenciaVariacion && (
             <span className="text-[10px] font-black uppercase mt-0.5 animate-pulse" style={{ color: colorPrimario }}>
               ↳ {prod._coincidenciaVariacion}
@@ -61,7 +73,7 @@ export default function ProductCard({
             {nombreCategoriaMuestra}
           </p>
         </div>
-        
+
         <div className="flex justify-between items-end w-full mt-1 shrink-0">
             <span className={`text-[9px] sm:text-[10px] uppercase font-black tracking-widest px-2.5 py-1.5 rounded-lg border flex items-center gap-1.5 ${isDark ? 'text-neutral-400 bg-[#1a1a1a] border-[#333]' : 'text-gray-500 bg-gray-100 border-gray-200'}`}>
               <i className="fi fi-rr-list text-[10px] mt-0.5"></i> Opciones
@@ -110,7 +122,12 @@ export default function ProductCard({
         <span className={`font-bold leading-tight text-[14px] sm:text-[16px] line-clamp-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
           {prod.nombre}
         </span>
-        
+        {tieneHappyHour && (
+          <span className="inline-flex items-center gap-1 text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-md mt-1 w-fit"
+            style={{ backgroundColor: '#f59e0b20', color: '#f59e0b' }}>
+            <i className="fi fi-rr-clock text-[8px]" /> Happy Hour
+          </span>
+        )}
         {prod._coincidenciaVariacion && (
           <span className="text-[10px] font-black uppercase mt-0.5 animate-pulse" style={{ color: colorPrimario }}>
             ↳ {prod._coincidenciaVariacion}

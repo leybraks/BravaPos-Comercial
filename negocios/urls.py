@@ -1,8 +1,15 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
-from negocios.views.marketing_views import MarketingGlobalView
-
+from negocios.views.marketing_views import (
+    HappyHourDetalleView,
+    HappyHourView,
+    MarketingGlobalView,
+    ComboPromocionalView,
+    ComboPromocionalDetalleView,
+    ReglaNegocioDetalleView,
+    ReglaNegocioView,
+)
 # 🛡️ IMPORTAMOS TUS VISTAS SEGURAS DE COOKIES
 from .serializers_jwt import CustomTokenObtainPairView, CustomTokenRefreshView, LogoutView
 from . import views
@@ -62,4 +69,13 @@ urlpatterns = [
     # ==========================================
     path('menu-publico/<int:sede_id>/', views.menu_publico, name='menu_publico'),
     path('orden-publica/<int:sede_id>/<int:mesa_id>/', views.orden_publica, name='orden_publica'),
+    path('combos-promocionales/', ComboPromocionalView.as_view(), name='combos_promocionales'),
+    path('combos-promocionales/<int:pk>/', ComboPromocionalDetalleView.as_view(), name='combo_promocional_detalle'),
+    path('happy-hours/', HappyHourView.as_view(), name='happy_hours'),
+    path('happy-hours/<int:pk>/', HappyHourDetalleView.as_view(), name='happy_hour_detalle'),
+    path('reglas-negocio-v2/', ReglaNegocioView.as_view(), name='reglas_negocio'),
+    path('reglas-negocio-v2/<int:pk>/', ReglaNegocioDetalleView.as_view(), name='regla_negocio_detalle'),
+    path('combos-promocionales/', ComboPromocionalView.as_view(), name='combos_promocionales'),
+    path('combos-promocionales/<int:pk>/', ComboPromocionalDetalleView.as_view(), name='combo_promocional_detalle'),
+    path('marketing/guardar-global/', MarketingGlobalView.as_view(), name='guardar_marketing_global'),
 ]

@@ -23,24 +23,35 @@ const VistaInternaPOS = () => {
     const verificarSeguridad = async () => {
       try {
         const res = await api.get('/verificar-sesion/');
-
-        // Si este dispositivo está configurado como terminal POS (tiene sede asignada),
-        // siempre exigimos re-autenticación por PIN al recargar.
-        // Esto evita que un empleado manipule localStorage para saltar al ERP.
-        if (localStorage.getItem('sede_id')) {
-          setVista('login');
-          return;
-        }
-
-        // Para acceso ERP directo (dueño/admin), usamos el rol que nos devuelve
-        // el servidor desde el JWT — nunca confiamos en localStorage para esto.
         const rolServidor = res.data.user?.rol;
+
         if (rolServidor) {
           setRolUsuario(rolServidor);
           const rolLimpio = rolServidor.toLowerCase().trim();
-          if (rolLimpio === 'dueño' || rolLimpio === 'admin') setVista('erp');
-          else if (rolLimpio === 'cocinero' || rolLimpio === 'cocina') setVista('cocina');
-          else setVista('terminal');
+
+          // ✨ 1. EXCEPCIÓN PARA EL DUEÑO/ADMIN:
+          // Si tu cookie dice que eres el administrador, entras directo al ERP.
+          // Ignoramos si el navegador tiene un "sede_id" guardado.
+          if (rolLimpio === 'dueño' || rolLimpio === 'admin') {
+            setVista('erp');
+            return;
+          }
+
+          // 🛡️ 2. REGLA ESTRICTA PARA TERMINALES POS:
+          // Si NO eres admin, y el dispositivo es una caja (tiene sede_id),
+          // exigimos re-autenticación por PIN por seguridad.
+          if (localStorage.getItem('sede_id')) {
+            setVista('login');
+            return;
+          }
+
+          // 3. Distribución para otros roles
+          if (rolLimpio === 'cocinero' || rolLimpio === 'cocina') {
+            setVista('cocina');
+          } else {
+            setVista('terminal');
+          }
+
         } else {
           setVista('login');
         }

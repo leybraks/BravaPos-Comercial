@@ -1,13 +1,13 @@
 import logging
 import os
 from django.db import transaction
-from rest_framework import viewsets
+from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
 from .helpers import es_valor_nulo, get_empleado_desde_header
 from ..models import (
-    Mesa, Producto, Categoria, GrupoVariacion, OpcionVariacion,
+    ComponenteCombo, Mesa, Producto, Categoria, GrupoVariacion, OpcionVariacion,
     RecetaDetalle, RecetaOpcion, ModificadorRapido
 )
 from ..serializers import (
@@ -31,13 +31,51 @@ class MesaViewSet(viewsets.ModelViewSet):
         queryset = Mesa.objects.filter(activo=True).order_by('posicion_x')
         empleado = get_empleado_desde_header(self.request)
 
+        # Empleado autenticado por PIN → solo ve las mesas de su sede
         if empleado:
             return queryset.filter(sede=empleado.sede)
 
+        # Dueño/admin autenticado por JWT → filtra por sede_id si se indica
         sede_id = self.request.query_params.get('sede_id')
         if not es_valor_nulo(sede_id):
             queryset = queryset.filter(sede_id=sede_id)
         return queryset
+
+    def create(self, request, *args, **kwargs):
+        """
+        Si existe una mesa inactiva (activo=False) con el mismo sede+nombre,
+        la reactivamos en lugar de intentar insertar una nueva fila que violaría
+        el unique_together a nivel de base de datos.
+        Esto le da al dueño una experiencia limpia: "crear mesa" = activarla si ya existió.
+        """
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        sede  = serializer.validated_data.get('sede')
+        nombre = serializer.validated_data.get('numero_o_nombre')
+
+        # ¿Hay una mesa inactiva con ese mismo sede+nombre?
+        mesa_inactiva = Mesa.all_objects.filter(
+            sede=sede, numero_o_nombre=nombre, activo=False
+        ).first()
+
+        if mesa_inactiva:
+            # Actualizar campos editables y reactivar
+            for campo in ('capacidad', 'posicion_x', 'posicion_y', 'forma'):
+                val = serializer.validated_data.get(campo)
+                if val is not None:
+                    setattr(mesa_inactiva, campo, val)
+            mesa_inactiva.activo = True
+            mesa_inactiva.save()
+            return Response(
+                self.get_serializer(mesa_inactiva).data,
+                status=status.HTTP_201_CREATED,
+            )
+
+        # Camino normal: no existe ninguna mesa inactiva con ese nombre
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
 
 # ============================================================
@@ -49,14 +87,21 @@ class ProductoViewSet(viewsets.ModelViewSet):
     permission_classes = [EsDuenioOsoloLectura]
 
     def get_queryset(self):
-        queryset = Producto.objects.filter(activo=True).prefetch_related('grupos_variacion__opciones')
+    # Excluimos los combos que pertenecen al modelo ComboPromocional
+    # es_combo=True aquí solo aplica a combos NORMALES del módulo de platos
+        queryset = Producto.objects.filter(
+            activo=True
+        ).prefetch_related('grupos_variacion__opciones')
+
         if self.request.user.is_superuser:
             negocio_id = self.request.query_params.get('negocio_id')
             if not es_valor_nulo(negocio_id):
                 queryset = queryset.filter(negocio_id=negocio_id)
             return queryset
+
         if hasattr(self.request.user, 'negocio'):
             return queryset.filter(negocio=self.request.user.negocio)
+
         return queryset.none()
 
     @action(detail=True, methods=['post'])
@@ -120,6 +165,25 @@ class ProductoViewSet(viewsets.ModelViewSet):
         # Devolvemos la URL absoluta para que React la pinte al instante
         url = request.build_absolute_uri(producto.imagen.url)
         return Response({'ok': True, 'url': url})
+    
+    @action(detail=True, methods=['post'], url_path='actualizar_items_combo')
+    @transaction.atomic
+    def actualizar_items_combo(self, request, pk=None):
+        producto = self.get_object()
+        if not producto.es_combo:
+            return Response({"error": "Este producto no es un combo."}, status=400)
+        
+        items = request.data.get('items', [])
+        ComponenteCombo.objects.filter(combo=producto).delete()
+        for item in items:
+            ComponenteCombo.objects.create(
+                combo=producto,
+                producto_hijo_id=item['producto_hijo_id'],
+                cantidad=item.get('cantidad', 1),
+                opcion_seleccionada_id=item.get('opcion_seleccionada_id') or None,
+                variacion_seleccionada_id=item.get('variacion_seleccionada_id') or None,
+            )
+        return Response({"mensaje": "Items del combo actualizados."})
 
 
 # ============================================================

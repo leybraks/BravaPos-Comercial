@@ -60,11 +60,20 @@ export default function Erp_GestionSedes() {
     const cargarSedes = async () => {
       try {
         const res = await getSedes();
-        setSedes(res.data);
-        if (!sedeActivaId && res.data.length > 0) setSedeActivaId(res.data[0].id);
+        const sedesData = res.data;
+        setSedes(sedesData);
+        if (sedesData.length > 0) {
+          // Si la sede activa guardada no existe en las sedes retornadas (ej. fue desactivada
+          // o el localStorage tiene un valor obsoleto), auto-seleccionamos la primera sede.
+          const existe = sedesData.some(s => String(s.id) === String(sedeActivaId));
+          if (!sedeActivaId || !existe) {
+            setSedeActivaId(String(sedesData[0].id));
+          }
+        }
       } catch (error) { console.error(error); }
     };
     cargarSedes();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── Carga cuando cambia la sede activa ──────
@@ -204,7 +213,16 @@ export default function Erp_GestionSedes() {
       setMesas(deSede.map(m => m.posicion_x == null ? { ...m, posicion_x: huecoLibre } : m));
       setModalNuevaMesa(false);
       setFormMesa({ numero: '', capacidad: 4 });
-    } catch { alert('Error al crear la mesa.'); }
+    } catch (err) {
+      const errData = err.response?.data;
+      const mensaje =
+        errData?.non_field_errors?.[0] ||
+        errData?.numero_o_nombre?.[0] ||
+        errData?.sede?.[0] ||
+        errData?.detail ||
+        'Error al crear la mesa.';
+      alert(`⚠️ ${mensaje}`);
+    }
     setCreandoMesa(false);
   };
 

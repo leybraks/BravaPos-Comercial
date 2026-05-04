@@ -4,6 +4,7 @@ from django.contrib.auth.hashers import make_password, is_password_usable
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from openlocationcode import openlocationcode as olc
+from django.utils import timezone
 
 class ActivoManager(models.Manager):
     def get_queryset(self):
@@ -706,18 +707,56 @@ class ReglaNegocio(models.Model):
         ('delivery_gratis', 'Delivery Gratis por Monto'),
         ('descuento_dia', 'Descuento por Día Específico'),
         ('descuento_yape_efectivo', 'Descuento por pagar con Yape/Efectivo'),
-        ('servicio_grupo_grande', 'Recargo 10% por mesa grande (> X personas)'),
+        ('servicio_grupo_grande', 'Recargo por mesa grande'),
         ('recargo_nocturno', 'Tarifa extra de madrugada'),
+        ('personalizada', 'Regla Personalizada'),  # 👈 nuevo
     ]
+
+    CONDICION_ORDEN = [
+        ('cualquiera', 'Cualquier tipo'),
+        ('salon', 'Solo Salón'),
+        ('llevar', 'Solo Para Llevar'),
+        ('delivery', 'Solo Delivery'),
+    ]
+
+    CONDICION_PAGO = [
+        ('cualquiera', 'Cualquier método'),
+        ('yape', 'Solo Yape'),
+        ('plin', 'Solo Plin'),
+        ('efectivo', 'Solo Efectivo'),
+        ('tarjeta', 'Solo Tarjeta'),
+    ]
+
+    ACCION_APLICA = [
+        ('orden', 'A toda la orden'),
+        ('categoria', 'A una categoría'),
+        ('producto', 'A un producto'),
+    ]
+
     negocio = models.ForeignKey('Negocio', on_delete=models.CASCADE)
+    nombre = models.CharField(max_length=100, default='', blank=True)  # 👈 nuevo
     tipo = models.CharField(max_length=30, choices=TIPO_REGLA)
-    valor = models.DecimalField(max_digits=10, decimal_places=2) # Monto o Porcentaje
+    valor = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     es_porcentaje = models.BooleanField(default=False)
-    
-    # Condicionales
+
+    # Condiciones
     monto_minimo_orden = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-    dia_semana = models.IntegerField(null=True, blank=True) # 0=Lunes, 6=Domingo
+    dia_semana = models.IntegerField(null=True, blank=True)  # 0=Lunes, 6=Domingo
+    condicion_tipo_orden = models.CharField(max_length=30, choices=CONDICION_ORDEN, default='cualquiera')
+    condicion_metodo_pago = models.CharField(max_length=30, choices=CONDICION_PAGO, default='cualquiera')
+    condicion_hora_inicio = models.TimeField(null=True, blank=True)
+    condicion_hora_fin = models.TimeField(null=True, blank=True)
+
+    # Acción
+    accion_aplica_a = models.CharField(max_length=30, choices=ACCION_APLICA, default='orden')
+    accion_es_descuento = models.BooleanField(default=False)  # True=descuento, False=recargo  # 👈 nuevo
+    accion_producto = models.ForeignKey('Producto', on_delete=models.SET_NULL, null=True, blank=True)
+    accion_categoria = models.ForeignKey('Categoria', on_delete=models.SET_NULL, null=True, blank=True)
+
     activa = models.BooleanField(default=True)
+
+    def __str__(self):
+        return f"{self.nombre or self.get_tipo_display()} — {self.negocio.nombre}"
 
 class CuponPromocional(models.Model):
     negocio = models.ForeignKey('Negocio', on_delete=models.CASCADE)
@@ -735,21 +774,78 @@ class CuponPromocional(models.Model):
 # 4. COMBOS Y DISPONIBILIDAD TEMPORAL
 # ==========================================
 class HorarioVisibilidad(models.Model):
-    """Controla cuándo un producto (o combo) aparece en el POS/Carta QR"""
-    producto = models.OneToOneField('Producto', on_delete=models.CASCADE, related_name='horario')
-    
-    # JSON con los días permitidos: [0, 2, 4] -> Lun, Mie, Vie
-    dias_permitidos = models.JSONField(default=list)
+    """Happy Hours: controla cuándo un producto/categoría tiene promoción"""
+    from django.utils import timezone
+
+    TIPO_PROMO_CHOICES = [
+        ('visibilidad', 'Solo Visibilidad (aparece/desaparece)'),
+        ('precio_especial', 'Precio Especial'),
+        ('porcentaje', 'Descuento por Porcentaje'),
+        ('nx_y', 'Compra X Lleva Y'),
+    ]
+    opcion_variacion = models.ForeignKey(
+        'OpcionVariacion', on_delete=models.SET_NULL, 
+        null=True, blank=True,
+        help_text="Si es null, aplica a todas las presentaciones del producto"
+    )
+    negocio = models.ForeignKey('Negocio', on_delete=models.CASCADE, related_name='happy_hours', null=True, blank=True)
+    producto = models.ForeignKey('Producto', on_delete=models.CASCADE, related_name='horarios', null=True, blank=True)
+    categoria = models.ForeignKey('Categoria', on_delete=models.CASCADE, related_name='horarios', null=True, blank=True)
+
+    nombre = models.CharField(max_length=100)
+    tipo_promo = models.CharField(max_length=20, choices=TIPO_PROMO_CHOICES, default='visibilidad')
+
+    precio_especial = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    porcentaje_descuento = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+
+    compra_x = models.PositiveIntegerField(default=2)
+    lleva_y = models.PositiveIntegerField(default=1)
+
     hora_inicio = models.TimeField(null=True, blank=True)
     hora_fin = models.TimeField(null=True, blank=True)
-    
-    mensaje_fuera_horario = models.CharField(max_length=100, default="Disponible otros días")
+    dias_permitidos = models.JSONField(default=list, help_text="[0,1,2] = Lun,Mar,Mié")
+    se_repite_semanalmente = models.BooleanField(default=True)
+    rangos_fechas = models.JSONField(
+        default=list, blank=True,
+        help_text="[{'inicio':'2026-05-01','fin':'2026-05-15'}]"
+    )
+
+    activa = models.BooleanField(default=True)
+    creado_en = models.DateTimeField(default=timezone.now)  # 👈 cambiado de auto_now_add
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        if self.tipo_promo == 'nx_y':
+            if self.compra_x > 6:
+                raise ValidationError({'compra_x': 'Máximo 6 unidades.'})
+            if self.lleva_y >= self.compra_x:
+                raise ValidationError({'lleva_y': 'Lleva Y debe ser menor que Compra X.'})
+        if self.producto and self.categoria:
+            raise ValidationError('Elige producto O categoría, no ambos.')
+        if not self.producto and not self.categoria:
+            raise ValidationError('Debes elegir un producto o una categoría.')
+
+    def __str__(self):
+        objetivo = self.producto.nombre if self.producto else (self.categoria.nombre if self.categoria else '?')
+        return f"{self.nombre} — {objetivo}"
 
 class ComponenteCombo(models.Model):
-    """Define de qué está hecho un Combo para descontar stock real"""
+    """Define de qué está hecho un Combo Normal para descontar stock real"""
     combo = models.ForeignKey('Producto', on_delete=models.CASCADE, related_name='items_combo')
     producto_hijo = models.ForeignKey('Producto', on_delete=models.CASCADE, related_name='+')
     cantidad = models.PositiveIntegerField(default=1)
+    
+    # Si el producto_hijo requiere_seleccion → qué opción se preseleccionó
+    opcion_seleccionada = models.ForeignKey(
+        'OpcionVariacion', on_delete=models.SET_NULL, null=True, blank=True,
+        help_text="Solo si el producto hijo requiere selección"
+    )
+    # Si el producto_hijo tiene_variaciones → qué variación se preseleccionó (null = producto base)
+    variacion_seleccionada = models.ForeignKey(
+        'VariacionProducto', on_delete=models.SET_NULL, null=True, blank=True,
+        help_text="Solo si el producto hijo tiene variaciones"
+    )
+
 
 # ==========================================
 # 5. CEREBRO DEL BOT DE WHATSAPP
@@ -806,3 +902,40 @@ class SolicitudCambio(models.Model):
     def __str__(self):
         return f"Solicitud {self.tipo_accion} - Orden #{self.orden.id} ({self.get_estado_display()})"
     
+class ComboPromocional(models.Model):
+    """Combo creado desde el módulo CRM, con fechas. No aparece en la sección de platos."""
+    negocio = models.ForeignKey('Negocio', on_delete=models.CASCADE, related_name='combos_promocionales')
+    nombre = models.CharField(max_length=100)
+    precio = models.DecimalField(max_digits=10, decimal_places=2)
+    imagen = models.ImageField(upload_to='combos_promocionales/', null=True, blank=True)
+    # Ej: [{"inicio": "2026-05-01", "fin": "2026-05-15"}, {"inicio": "2026-12-24", "fin": "2026-12-31"}]
+    rangos_fechas = models.JSONField(default=list, help_text="Lista de rangos de fechas en que aplica el combo")
+    activo = models.BooleanField(default=True)
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('negocio', 'nombre')
+
+    def __str__(self):
+        return f"Combo Promo: {self.nombre} - S/ {self.precio}"
+
+
+class ItemComboPromocional(models.Model):
+    """Un producto dentro de un ComboPromocional, con su variante/opción preseleccionada."""
+    combo = models.ForeignKey(ComboPromocional, on_delete=models.CASCADE, related_name='items')
+    producto = models.ForeignKey('Producto', on_delete=models.CASCADE)
+    cantidad = models.PositiveIntegerField(default=1)
+
+    # Solo si el producto requiere_seleccion
+    opcion_seleccionada = models.ForeignKey(
+        'OpcionVariacion', on_delete=models.SET_NULL, null=True, blank=True,
+        help_text="Solo si el producto hijo requiere selección"
+    )
+    # Solo si el producto tiene_variaciones (null = se eligió el producto base)
+    variacion_seleccionada = models.ForeignKey(
+        'VariacionProducto', on_delete=models.SET_NULL, null=True, blank=True,
+        help_text="Solo si el producto hijo tiene variaciones"
+    )
+
+    def __str__(self):
+        return f"{self.cantidad}x {self.producto.nombre} → Combo {self.combo.nombre}"

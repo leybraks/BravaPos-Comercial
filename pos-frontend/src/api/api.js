@@ -315,4 +315,10 @@ export const crearModificador = (data) => api.post('/modificadores-rapidos/', da
 export const actualizarModificador = (id, data) => api.put(`/modificadores-rapidos/${id}/`, data);
 export const eliminarModificador = (id) => api.delete(`/modificadores-rapidos/${id}/`);
 
+
+export const getCombosPromocionales = () => api.get('/combos-promocionales/');
+export const crearComboPromocional = (data) => api.post('/combos-promocionales/', data);
+export const actualizarComboPromocional = (id, data) => api.put(`/combos-promocionales/${id}/`, data);
+export const eliminarComboPromocional = (id) => api.delete(`/combos-promocionales/${id}/`);
+
 export default api;

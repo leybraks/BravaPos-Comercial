@@ -3,22 +3,21 @@ import usePosStore from '../store/usePosStore';
 import { useToast } from '../context/ToastContext';
 import ModalCobro from '../components/modals/ModalCobro';
 import ModalModificadores from '../components/modals/ModalModificadores';
-import { crearOrden, actualizarOrden, crearPago, agregarProductosAOrden, anularItemDeOrden } from '../api/api';
+import { crearOrden, actualizarOrden, agregarProductosAOrden, anularItemDeOrden } from '../api/api';
 import api from '../api/api';
 // Componentes
 import PosHeader from '../features/POS/components/PosHeader';
 import ProductGrid from '../features/POS/components/ProductGrid';
 import PosFooter from '../features/POS/components/PosFooter';
 import CartDrawer from '../features/POS/components/CartDrawer';
-
+import { happyHourActivaAhora } from '../features/POS/hooks/usePosData';
 // Hooks
 import { usePosData } from '../features/POS/hooks/usePosData';
 import { usePosSearch } from '../features/POS/hooks/usePosSearch';
 
 export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
   const toast = useToast();
-  const { estadoCaja, configuracionGlobal, carrito, agregarProducto, esDueño, sedes, manejarCambioSede, restarProducto, obtenerTotalItems, restarDesdeGrid, obtenerTotalDinero, vaciarCarrito, actualizarItemCompleto, sumarUnidad } = usePosStore();
-  const tema = configuracionGlobal?.temaFondo || 'dark';
+  const { estadoCaja, configuracionGlobal, carrito, agregarProducto, agregarCombo, esDueño, sedes, manejarCambioSede, restarProducto, obtenerTotalItems, restarDesdeGrid, obtenerTotalDinero, vaciarCarrito, actualizarItemCompleto, sumarUnidad } = usePosStore();  const tema = configuracionGlobal?.temaFondo || 'dark';
   const colorPrimario = configuracionGlobal?.colorPrimario || '#ff5a1f';
   const [wsListo, setWsListo] = useState(false);
   const sedeActualId = localStorage.getItem('sede_id');
@@ -27,7 +26,7 @@ export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
   const [telefonoLlevar] = useState('');
 
   // 1. DATA HOOK
-  const { productosBase, categoriasReales, modificadoresGlobales, ordenActiva, setOrdenActiva, cargando } = usePosData(sedeActualId, mesaId, vaciarCarrito);
+  const { productosBase, combosPromocionalesHoy, happyHours, reglasNegocio, categoriasReales, modificadoresGlobales, ordenActiva, setOrdenActiva, cargando } = usePosData(sedeActualId, mesaId, vaciarCarrito);
 
   // 2. SEARCH & FILTER HOOK
   const { busqueda, setBusqueda, inputBusquedaActivo, setInputBusquedaActivo, categoriaActiva, setCategoriaActiva, aprenderSeleccion, productosFiltrados } = usePosSearch(productosBase, categoriasReales, modificadoresGlobales);
@@ -272,6 +271,18 @@ export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modalCobroAbierto]);
+  useEffect(() => {
+    console.log('HH recibidas:', happyHours);
+    console.log('Combos hoy:', combosPromocionalesHoy);
+  }, [happyHours, combosPromocionalesHoy]);
+  useEffect(() => {
+  console.log('Carrito actual:', carrito.map(i => ({ id: i.id, nombre: i.nombre, categoria: i.categoria, cantidad: i.cantidad })));
+}, [carrito]);
+useEffect(() => {
+  happyHours.forEach(hh => {
+    console.log(`HH "${hh.nombre}" activa ahora:`, happyHourActivaAhora(hh));
+  });
+}, [happyHours]);
   return (
     <div className={`relative h-full flex flex-col overflow-hidden font-sans transition-colors duration-500 ${tema === 'dark' ? 'bg-[#0a0a0a] text-neutral-100' : 'bg-[#f4f4f5] text-gray-900'}`}>
       
@@ -284,31 +295,53 @@ export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
             <p className="mt-4 font-bold text-sm tracking-widest uppercase opacity-50">Sincronizando caja...</p>
         </div>
       ) : (
-        <ProductGrid productosFiltrados={productosFiltrados} tema={tema} colorPrimario={colorPrimario} carrito={carrito} categoriasReales={categoriasReales} ordenActiva={ordenActiva} totalMesa={totalMesa} busqueda={busqueda} abrirModalParaNuevo={abrirModalParaNuevo} aprenderSeleccion={aprenderSeleccion} agregarProducto={agregarProducto} restarDesdeGrid={restarDesdeGrid} notificarEstadoMesa={notificarEstadoMesa} formatearSoles={formatearSoles} />
+        <ProductGrid 
+          productosFiltrados={productosFiltrados} 
+          tema={tema} 
+          colorPrimario={colorPrimario} 
+          carrito={carrito} 
+          categoriasReales={categoriasReales} 
+          ordenActiva={ordenActiva} 
+          totalMesa={totalMesa} 
+          busqueda={busqueda} 
+          abrirModalParaNuevo={abrirModalParaNuevo} 
+          aprenderSeleccion={aprenderSeleccion} 
+          agregarProducto={agregarProducto} 
+          restarDesdeGrid={restarDesdeGrid} 
+          notificarEstadoMesa={notificarEstadoMesa} 
+          formatearSoles={formatearSoles} 
+          combosPromocionalesHoy={combosPromocionalesHoy}
+          happyHours={happyHours}
+          agregarCombo={(combo) => agregarCombo(combo, 'promo')}  // 👈
+        />
       )}
 
       <PosFooter tema={tema} colorPrimario={colorPrimario} cantItemsMesa={cantItemsMesa} totalMesa={totalMesa} setCarritoAbierto={setCarritoAbierto} manejarEnviarCocina={manejarEnviarCocina} procesando={procesando} carrito={carrito} formatearSoles={formatearSoles} />
 
       <CartDrawer 
-      carritoAbierto={carritoAbierto} 
-      setCarritoAbierto={setCarritoAbierto} 
-      tema={tema} colorPrimario={colorPrimario} 
-      totalMesa={totalMesa} 
-      cantItemsMesa={cantItemsMesa} 
-      carrito={carrito} 
-      vaciarStore={vaciarCarrito} 
-      ordenActiva={ordenActiva} 
-      manejarAnularItem={manejarAnularItem} 
-      procesando={procesando} 
-      abrirModalParaEditar={(item) => { setProductoParaModificar(item); setModalModsAbierto(true); }} 
-      restarProducto={restarProducto} 
-      sumarUnidad={sumarUnidad} 
-      manejarEnviarCocina={manejarEnviarCocina} 
-      setModalCobroAbierto={setModalCobroAbierto} 
-      notificarEstadoMesa={notificarEstadoMesa} 
-      formatearSoles={formatearSoles} 
-      manejarCancelarOrden={manejarCancelarOrden}
-      manejarAnulacionCompleta={manejarAnulacionCompleta}
+        carritoAbierto={carritoAbierto} 
+        setCarritoAbierto={setCarritoAbierto} 
+        tema={tema} colorPrimario={colorPrimario} 
+        totalMesa={totalMesa} 
+        cantItemsMesa={cantItemsMesa} 
+        carrito={carrito} 
+        vaciarStore={vaciarCarrito} 
+        ordenActiva={ordenActiva} 
+        manejarAnularItem={manejarAnularItem} 
+        procesando={procesando} 
+        abrirModalParaEditar={(item) => { setProductoParaModificar(item); setModalModsAbierto(true); }} 
+        restarProducto={restarProducto} 
+        sumarUnidad={sumarUnidad} 
+        manejarEnviarCocina={manejarEnviarCocina} 
+        setModalCobroAbierto={setModalCobroAbierto} 
+        notificarEstadoMesa={notificarEstadoMesa} 
+        formatearSoles={formatearSoles} 
+        manejarCancelarOrden={manejarCancelarOrden}
+        manejarAnulacionCompleta={manejarAnulacionCompleta}
+        happyHours={happyHours}
+        reglasNegocio={reglasNegocio}
+        tipoOrden={esParaLlevar ? 'llevar' : 'salon'}
+        productosBase={productosBase}
       />
 
       {/* MODALES */}
@@ -368,7 +401,11 @@ export default function PosView({ mesaId, onVolver, esModoTerminal = false }) {
         </div>
       )}
       
-      <ModalModificadores isOpen={modalModsAbierto} onClose={() => setModalModsAbierto(false)} producto={productoParaModificar} modificadoresGlobales={modificadoresGlobales} onAgregarAlCarrito={manejarAgregarAlCarritoDesdeModal} />
+      <ModalModificadores 
+      isOpen={modalModsAbierto} 
+      onClose={() => setModalModsAbierto(false)} 
+      happyHours={happyHours}
+      producto={productoParaModificar} modificadoresGlobales={modificadoresGlobales} onAgregarAlCarrito={manejarAgregarAlCarritoDesdeModal} happyHours={happyHours} />
     </div>
   );
 }
