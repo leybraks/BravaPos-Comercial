@@ -1,0 +1,113 @@
+name: Deploy Brava POS
+
+on:
+  push:
+    branches:
+      - V2-Estable-Cloud
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🚀 Despliegue Profesional Brava POS
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK }}
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          envs: WEBHOOK_URL
+          command_timeout: 15m
+          script: |
+            set -e
+            DEPLOY_START=$SECONDS
+
+            # ✅ Volvemos a curl (funciona sin problemas con Discord)
+            # FIX 4: || true para que un fallo de notificación no corte el deploy
+            notificar() {
+              curl -s -H "Content-Type: application/json" \
+                -d "{\"content\": \"$1\"}" \
+                "$WEBHOOK_URL" || true
+            }
+
+            notificar "🚀 **[BRAVA POS]** Iniciando pipeline de despliegue..."
+
+            cd BravaPos-Comercial
+
+            # 📌 [1/7] Trazabilidad y Seguridad
+            mkdir -p backups
+            COMMIT_ANTERIOR=$(git rev-parse HEAD)
+            echo $COMMIT_ANTERIOR > .last_commit
+            COMMIT_NUEVO=$(git rev-parse --short origin/V2-Estable-Cloud || echo "nuevo")
+
+            # 🗄️ [2/7] Backup con Timestamp
+            TIMESTAMP=$(date +%F_%H-%M-%S)
+            notificar "🗄️ Backup de seguridad: pre_deploy_$TIMESTAMP.sql"
+            sudo docker compose exec -T db pg_dump -U bravapos_user bravapos_db > "backups/pre_deploy_$TIMESTAMP.sql"
+
+            # 📥 [3/7] Sincronización Real
+            notificar "📥 Sincronizando commit: $COMMIT_NUEVO"
+            git fetch origin V2-Estable-Cloud
+            git reset --hard origin/V2-Estable-Cloud
+
+            # 🏗️ [4/7] Build y Recreación
+            # FIX 3: sin --force-recreate, Docker solo recrea lo que cambió
+            notificar "🏗️ Reconstruyendo contenedores..."
+            sudo docker compose up -d --build
+
+            # ⚙️ [5/7] Migraciones
+            notificar "⚙️ Aplicando cambios en la base de datos..."
+            sudo docker compose exec -T backend python manage.py migrate
+
+            # 🩺 [6/7] Healthcheck con curl desde el host
+            # FIX 5: curl directo, sin depender de librerías Python del contenedor
+            notificar "🩺 Verificando estabilidad del servicio..."
+            HEALTH_SUCCESS=false
+            for i in {1..10}; do
+              if curl -sf --max-time 5 http://localhost:8000/api/health/ | grep -q "ok"; then
+                HEALTH_SUCCESS=true
+                break
+              fi
+              echo "Esperando backend... ($i/10)"
+              sleep 5
+            done
+
+            if [ "$HEALTH_SUCCESS" = false ]; then
+              notificar "🚨 **ERROR:** El sistema no responde tras el deploy."
+              exit 1
+            fi
+
+            DEPLOY_SECS=$(( SECONDS - DEPLOY_START ))
+            notificar "✅ **[BRAVA POS]** ¡Sistema online y estable! Commit: $COMMIT_NUEVO — ⏱️ ${DEPLOY_SECS}s"
+
+      - name: ⏪ Rollback Seguro de Código
+        if: failure()
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK }}
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          envs: WEBHOOK_URL
+          script: |
+            notificar() {
+              curl -s -H "Content-Type: application/json" \
+                -d "{\"content\": \"$1\"}" \
+                "$WEBHOOK_URL" || true
+            }
+
+            cd BravaPos-Comercial
+            LAST_COMMIT=$(cat .last_commit)
+
+            notificar "⚠️ **FALLO DETECTADO:** Revirtiendo código al commit $LAST_COMMIT..."
+
+            git reset --hard $LAST_COMMIT
+            sudo docker compose up -d --build
+
+            # Nota: si el fallo ocurrió DESPUÉS del paso [5/7] (migrate),
+            # la DB puede tener migraciones nuevas. Verificar con:
+            #   docker compose exec backend python manage.py showmigrations
+            notificar "⏪ Rollback completado al commit $LAST_COMMIT. ⚠️ Verificar migraciones si el fallo fue en paso 5 o posterior."
